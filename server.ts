@@ -194,29 +194,37 @@ async function startServer() {
     }
   });
 
-  // ✅ حماية تلقائية ضد ازدحام خوادم Gemini المؤقت (خطأ 503/429):
-  // إعادة محاولة ذكية بتأخير متزايد — تحمي كل استدعاءات الذكاء الاصطناعي دفعة واحدة.
+  // ✅ طبقة متانة نهائية للذكاء الاصطناعي:
+  // إعادة محاولة ذكية + تبديل تلقائي إلى نموذج بديل عند ازدحام الخوادم (خطأ 503/429).
   const _origGenerateContent = (ai.models.generateContent as any).bind(ai.models);
+  const GEMINI_FALLBACK_MODELS = ['gemini-2.5-flash','gemini-2.0-flash', 'gemini-1.5-flash'];
+
   (ai.models as any).generateContent = async function (params: any) {
-    const maxRetries = 4;
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        return await _origGenerateContent(params);
-      } catch (err: any) {
-        const status = err?.status ?? err?.code;
-        const msg = String(err?.message ?? err ?? '');
-        const retryable = status === 503 || status === 429 || status === 500 ||
-          /UNAVAILABLE|high demand|overloaded|quota|try again/i.test(msg);
-        if (retryable && attempt < maxRetries) {
-          const wait = 1500 * attempt; // تأخير متزايد: 1.5s → 3s → 4.5s
-          console.warn(`[Gemini] محاولة ${attempt} فشلت (${status || 'error'}) — إعادة المحاولة خلال ${wait}ms...`);
-          await new Promise(r => setTimeout(r, wait));
-          continue;
+    // جرّب النموذج المطلوب أولاً، ثم النماذج البديلة بالترتيب
+    const modelsToTry = [params?.model, ...GEMINI_FALLBACK_MODELS]
+      .filter((m: any, i: number, a: any[]) => m && a.indexOf(m) === i);
+    let lastErr: any;
+    for (const model of modelsToTry) {
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          return await _origGenerateContent({ ...params, model });
+        } catch (err: any) {
+          lastErr = err;
+          const status = err?.status ?? err?.code;
+          const msg = String(err?.message ?? err ?? '');
+          const retryable = status === 503 || status === 429 || status === 500 ||
+            /UNAVAILABLE|high demand|overloaded|quota|try again/i.test(msg);
+          if (!retryable) throw err; // خطأ حقيقي (مثل صيغة خاطئة) → لا تُعِد المحاولة
+          console.warn(`[Gemini] ${model} — محاولة ${attempt} فشلت (${status || 'error'})`);
+          if (attempt < 3) {
+            await new Promise(r => setTimeout(r, 1200 * attempt));
+          } else {
+            console.warn(`[Gemini] ${model} غير متاح حالياً — التبديل إلى نموذج بديل...`);
+          }
         }
-        throw err;
       }
     }
-    throw new Error('Gemini retries exhausted');
+    throw lastErr;
   };
 
   // Endpoint for Manual Refill validation

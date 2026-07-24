@@ -194,14 +194,14 @@ async function startServer() {
     }
   });
 
-  // ✅ طبقة متانة نهائية للذكاء الاصطناعي:
-  // إعادة محاولة ذكية + تبديل تلقائي إلى نموذج بديل عند ازدحام الخوادم (خطأ 503/429).
+  // ✅ طبقة متانة نهائية: إعادة محاولة عند الازدحام (503) + تجاوز النماذج المهملة (404).
   const _origGenerateContent = (ai.models.generateContent as any).bind(ai.models);
-  const GEMINI_FALLBACK_MODELS = ['gemini-2.5-flash','gemini-2.0-flash', 'gemini-1.5-flash'];
+  // نبدأ بالأحدث (مقاوم للإهمال)، ثم بدائل أقدم — مع تجاهل أي نموذج مزدحم/مهمل.
+  const GEMINI_FALLBACK_MODELS = ['gemini-flash-latest', 'gemini-2.0-flash', 'gemini-1.5-flash'];
 
   (ai.models as any).generateContent = async function (params: any) {
-    // جرّب النموذج المطلوب أولاً، ثم النماذج البديلة بالترتيب
-    const modelsToTry = [params?.model, ...GEMINI_FALLBACK_MODELS]
+    // ضع النماذج المضمونة أولاً، ثم المطلوب (إن كان مختلفاً)
+    const modelsToTry = [...GEMINI_FALLBACK_MODELS, params?.model]
       .filter((m: any, i: number, a: any[]) => m && a.indexOf(m) === i);
     let lastErr: any;
     for (const model of modelsToTry) {
@@ -212,15 +212,24 @@ async function startServer() {
           lastErr = err;
           const status = err?.status ?? err?.code;
           const msg = String(err?.message ?? err ?? '');
-          const retryable = status === 503 || status === 429 || status === 500 ||
+          const isOverloaded = status === 503 || status === 429 || status === 500 ||
             /UNAVAILABLE|high demand|overloaded|quota|try again/i.test(msg);
-          if (!retryable) throw err; // خطأ حقيقي (مثل صيغة خاطئة) → لا تُعِد المحاولة
-          console.warn(`[Gemini] ${model} — محاولة ${attempt} فشلت (${status || 'error'})`);
-          if (attempt < 3) {
-            await new Promise(r => setTimeout(r, 1200 * attempt));
-          } else {
-            console.warn(`[Gemini] ${model} غير متاح حالياً — التبديل إلى نموذج بديل...`);
+          const isModelGone = status === 404 || /no longer available|not found|NOT_FOUND/i.test(msg);
+
+          if (isModelGone) {
+            console.warn(`[Gemini] ${model} مهمل/غير متاح (404) — التبديل إلى نموذج بديل...`);
+            break; // النموذج غير موجود → انتقل للتالي فوراً (لا تستسلم)
           }
+          if (isOverloaded) {
+            console.warn(`[Gemini] ${model} مزدحم — محاولة ${attempt} فشلت (503)`);
+            if (attempt < 3) {
+              await new Promise(r => setTimeout(r, 1200 * attempt));
+              continue;
+            }
+            console.warn(`[Gemini] ${model} استنفد المحاولات — التبديل إلى نموذج بديل...`);
+            break;
+          }
+          throw err; // خطأ حقيقي آخر (صيغة/مفتاح) → ارمِه
         }
       }
     }
@@ -349,7 +358,7 @@ Provide your output in strict JSON format. Do not combine or nest it in any mark
 `;
 
         const response = await ai.models.generateContent({
-          model: "gemini-3.5-flash",
+          model: "gemini-flash-latest",
           contents: [imagePart, { text: promptText }],
           config: {
             responseMimeType: "application/json",
@@ -983,7 +992,7 @@ Provide your output in strict JSON format. Do not combine or nest it in any mark
 `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-flash-latest",
         contents: [frontImagePart, backImagePart, { text: promptText }],
         config: {
           responseMimeType: "application/json",

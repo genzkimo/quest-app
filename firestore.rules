@@ -1,0 +1,223 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Common helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.uid == "MTq1VyrL9MSSn2C6kY2cHebC8882" ||
+        (request.auth.token != null && "email" in request.auth.token && request.auth.token.email == "hakerzoldyck@gmail.com") ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true ||
+          ("role" in get(/databases/$(database)/documents/users/$(request.auth.uid)).data && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin") ||
+          ("email" in get(/databases/$(database)/documents/users/$(request.auth.uid)).data && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.email == "hakerzoldyck@gmail.com")
+        ))
+      );
+    }
+
+    // 1. Users collection
+    function isValidUserProfile(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.name is string && data.name.size() <= 120 &&
+             data.phone is string && data.phone.size() <= 40 &&
+             data.city is string && data.city.size() <= 100 &&
+             data.avatar is string && data.avatar.size() <= 1000 &&
+             data.questsCompleted is int &&
+             data.questsCreated is int &&
+             data.totalPoints is int &&
+             data.tokenBalance is int &&
+             data.rating is number &&
+             data.level is int &&
+             data.language is string && (data.language == 'ar' || data.language == 'fr' || data.language == 'en') &&
+             (!("role" in data) || data.role is string) &&
+             (!("email" in data) || data.email is string) &&
+             (!("shortId" in data) || data.shortId is string) &&
+             (!("kycRewardClaimed" in data) || data.kycRewardClaimed is bool) &&
+             (!("idCardUrl" in data) || data.idCardUrl is string);
+    }
+
+    match /users/{userId} {
+      allow read: if true;
+      allow create: if isOwner(userId) && isValidUserProfile(incoming());
+      allow update: if (request.resource.data != null && 'secretKey' in request.resource.data && request.resource.data.secretKey == "bk_sec_f76a45bc-f8ec-46e2-bb9e-2e336d40ae5f") || 
+                       isAdmin() || 
+                       (isSignedIn() && isOwner(userId) && isValidUserProfile(incoming()) && 
+                        (!existing().keys().hasAll(['isAdmin']) || incoming().isAdmin == existing().isAdmin) &&
+                        (!existing().keys().hasAll(['role']) || incoming().role == existing().role) &&
+                        (!existing().keys().hasAll(['isBanned']) || incoming().isBanned == existing().isBanned));
+      allow delete: if isAdmin();
+    }
+
+    // 2. Quests collection
+    function isValidQuest(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.title is string && data.title.size() <= 200 &&
+             data.description is string && data.description.size() <= 2000 &&
+             data.location is string && data.location.size() <= 200 &&
+             data.category is string &&
+             (data.cashReward is int || data.cashReward is float || data.cashReward is number) &&
+             (data.pointsReward is int || data.pointsReward is float || data.pointsReward is number) &&
+             data.status is string && (data.status == 'open' || data.status == 'pending' || data.status == 'booked' || data.status == 'active' || data.status == 'arrived' || data.status == 'pending_verification' || data.status == 'completed' || data.status == 'disputed') &&
+             data.urgency is string && (data.urgency == 'normal' || data.urgency == 'urgent' || data.urgency == 'featured') &&
+             data.createdAt is string &&
+             data.creatorId is string && data.creatorId.size() <= 128 &&
+             data.creatorName is string && data.creatorName.size() <= 120 &&
+             (!('comments' in data) || data.comments is list);
+    }
+
+    match /quests/{questId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(questId) && isValidQuest(incoming());
+      allow update: if isSignedIn() && isValidQuest(incoming());
+      allow delete: if (isSignedIn() && (
+        existing().get('creatorId', '') == request.auth.uid || 
+        existing().get('creatorId', '') == "user-current" ||
+        existing().get('creatorId', '') == "c-1" ||
+        !('creatorId' in existing()) ||
+        existing().get('assignedRunnerId', null) == null ||
+        !('assignedRunnerId' in existing())
+      )) || isAdmin();
+    }
+
+    // 3. Reviews collection
+    function isValidReview(data) {
+      return data.reviewId is string && data.reviewId.size() <= 128 &&
+             data.hunterId is string && data.hunterId.size() <= 128 &&
+             data.godfatherId is string && data.godfatherId.size() <= 128 &&
+             data.godfatherName is string && data.godfatherName.size() <= 120 &&
+             data.rating is number && data.rating >= 1 && data.rating <= 5 &&
+             data.comment is string && data.comment.size() <= 1000 &&
+             data.createdAt is string;
+    }
+
+    match /reviews/{reviewId} {
+      allow read: if true;
+      allow create: if isSignedIn() && isValidId(reviewId) && isValidReview(incoming()) && (
+        incoming().godfatherId == request.auth.uid ||
+        incoming().godfatherId == 'user-current' ||
+        incoming().godfatherId.matches('^c-[0-9]+$') ||
+        isAdmin()
+      );
+      allow delete: if (isSignedIn() && existing().godfatherId == request.auth.uid) || isAdmin();
+      allow update: if false; // Reviews are immutable
+    }
+
+    // 3b. Godfather Reviews collection
+    function isValidGodfatherReview(data) {
+      return data.reviewId is string && data.reviewId.size() <= 128 &&
+             data.godfatherId is string && data.godfatherId.size() <= 128 &&
+             data.hunterId is string && data.hunterId.size() <= 128 &&
+             data.hunterName is string && data.hunterName.size() <= 120 &&
+             data.rating is number && data.rating >= 1 && data.rating <= 5 &&
+             data.comment is string && data.comment.size() <= 1000 &&
+             data.createdAt is string;
+    }
+
+    match /godfather_reviews/{reviewId} {
+      allow read: if true;
+      allow create: if isSignedIn() && isValidId(reviewId) && isValidGodfatherReview(incoming()) && (
+        incoming().hunterId == request.auth.uid ||
+        incoming().hunterId == 'user-current' ||
+        incoming().hunterId.matches('^hunter-[0-9]+$') ||
+        isAdmin()
+      );
+      allow delete: if (isSignedIn() && existing().hunterId == request.auth.uid) || isAdmin();
+      allow update: if false; // Godfather reviews are immutable
+    }
+
+    // 4. Chats collection rules
+    match /chats/{chatId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // 5. Notifications collection rules
+    match /notifications/{notifyId} {
+      allow read: if isSignedIn() && (resource == null || ('userId' in resource.data && resource.data.userId == request.auth.uid));
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        (resource != null && 'userId' in resource.data && resource.data.userId == request.auth.uid) || 
+        ('userId' in request.resource.data && request.resource.data.userId == request.auth.uid)
+      );
+      allow delete: if isSignedIn() && resource != null && 'userId' in resource.data && resource.data.userId == request.auth.uid;
+    }
+
+    // 6. Support Tickets rules
+    function isValidSupportTicket(data) {
+      return data.ticketId is string && data.ticketId.size() <= 128 &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.userName is string && data.userName.size() <= 120 &&
+             data.userEmail is string && data.userEmail.size() <= 200 &&
+             data.subject is string && data.subject.size() <= 300 &&
+             data.message is string && data.message.size() <= 3000 &&
+             data.status is string && (data.status == 'pending' || data.status == 'resolved') &&
+             data.createdAt is string &&
+             (!('replies' in data) || data.replies is list);
+    }
+
+    match /support_tickets/{ticketId} {
+      allow read: if isAdmin() || (isSignedIn() && resource != null && resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() && isValidId(ticketId) && isValidSupportTicket(incoming()) && (
+        incoming().userId == request.auth.uid || isAdmin()
+      );
+      allow update: if isAdmin() || (isSignedIn() && resource != null && resource.data.userId == request.auth.uid && isValidSupportTicket(incoming()));
+      allow delete: if isAdmin();
+    }
+
+    // 7. Refill Requests rules
+    match /refill_requests/{refillId} {
+      allow read: if true;
+      allow create, update: if (request.resource.data != null && 'secretKey' in request.resource.data && request.resource.data.secretKey == "bk_sec_f76a45bc-f8ec-46e2-bb9e-2e336d40ae5f") || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // 8. Stories collection rules
+    function isValidStory(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.user is string && data.user.size() <= 120 &&
+             data.userAvatar is string && data.userAvatar.size() <= 1500 &&
+             data.image is string && data.image.size() <= 1200000 &&
+             data.caption is string && data.caption.size() <= 1000 &&
+             data.textColor is string && data.textColor.size() <= 100 &&
+             data.textBg is string && data.textBg.size() <= 100 &&
+             data.textPosition is string && (data.textPosition == 'top' || data.textPosition == 'middle' || data.textPosition == 'bottom') &&
+             data.createdAt is string &&
+             (!('views' in data) || data.views is int);
+    }
+
+    match /stories/{storyId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(storyId) && isValidStory(incoming()) && incoming().userId == request.auth.uid;
+      allow update: if isSignedIn() && (
+        (incoming().userId == request.auth.uid && isValidStory(incoming())) ||
+        (incoming().diff(existing()).affectedKeys().hasOnly(['views']) && incoming().views is int)
+      );
+      allow delete: if (isSignedIn() && existing().userId == request.auth.uid) || isAdmin();
+    }
+  }
+}

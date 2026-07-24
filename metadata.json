@@ -1,0 +1,6 @@
+{
+  "name": "Quest",
+  "description": "An intelligent platform connecting users to local services and tasks with micro-job opportunities, ratings, goals, and challenges.",
+  "requestFramePermissions": ["camera", "microphone", "geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+
+# Environment variables (مفاتيحك السرية)
+.env
+.env.local
+.env.production
+
+# Native mobile folders
+android/
+ios/
+
+# IDE & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Firebase
+firebase-debug.log
+.firebaserc
+firebase.json
+
+# Capacitor
+capacitor.config.ts.bak

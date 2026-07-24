@@ -1,0 +1,163 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User account registration profile and credentials",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "city": { "type": "string" },
+        "avatar": { "type": "string" },
+        "questsCompleted": { "type": "integer" },
+        "questsCreated": { "type": "integer" },
+        "totalPoints": { "type": "integer" },
+        "tokenBalance": { "type": "integer" },
+        "rating": { "type": "number" },
+        "level": { "type": "integer" },
+        "shortId": { "type": "string" },
+        "kycRewardClaimed": { "type": "boolean" }
+      },
+      "required": ["id", "name", "phone", "city", "avatar"]
+    },
+    "Quest": {
+      "title": "Quest",
+      "description": "A freelance micro-mission or gig for runners",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "location": { "type": "string" },
+        "category": { "type": "string" },
+        "status": { "type": "string" },
+        "cashReward": { "type": "number" },
+        "comments": {
+          "type": "array",
+          "description": "Interactive question/comment discussion thread regarding this quest"
+        }
+      },
+      "required": ["id", "title", "description", "creatorId"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "A notification alert regarding a quest or message",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "text": { "type": "string" },
+        "questId": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "read": { "type": "boolean" },
+        "type": { "type": "string" }
+      },
+      "required": ["id", "userId", "text", "createdAt", "read", "type"]
+    },
+    "HunterReview": {
+      "title": "HunterReview",
+      "description": "A review review written for a runner by a Godfather",
+      "type": "object",
+      "properties": {
+        "reviewId": { "type": "string" },
+        "hunterId": { "type": "string" },
+        "godfatherId": { "type": "string" },
+        "godfatherName": { "type": "string" },
+        "completedTaskImage": { "type": "string" },
+        "rating": { "type": "number" },
+        "comment": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["reviewId", "hunterId", "godfatherId", "godfatherName", "rating", "comment", "createdAt"]
+    },
+    "GodfatherReview": {
+      "title": "GodfatherReview",
+      "description": "A reciprocal review review written for a Godfather by a runner",
+      "type": "object",
+      "properties": {
+        "reviewId": { "type": "string" },
+        "godfatherId": { "type": "string" },
+        "hunterId": { "type": "string" },
+        "hunterName": { "type": "string" },
+        "completedTaskImage": { "type": "string" },
+        "rating": { "type": "number" },
+        "comment": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["reviewId", "godfatherId", "hunterId", "hunterName", "rating", "comment", "createdAt"]
+    },
+    "RefillRequest": {
+      "title": "RefillRequest",
+      "description": "A top-up manual payment verification request with image proof",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "paymentMethod": { "type": "string" },
+        "amount": { "type": "number" },
+        "referenceNumber": { "type": "string" },
+        "date": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "verifiedBy": { "type": "string" },
+        "reason": { "type": "string" },
+        "receiptImage": { "type": "string" }
+      },
+      "required": ["userId", "amount", "referenceNumber", "status"]
+    },
+    "QuestStory": {
+      "title": "QuestStory",
+      "description": "A field proof story posted by runners/godfathers showing completed tasks",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "user": { "type": "string" },
+        "userAvatar": { "type": "string" },
+        "image": { "type": "string" },
+        "proofImage": { "type": "string" },
+        "caption": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "textColor": { "type": "string" },
+        "textBg": { "type": "string" },
+        "textPosition": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "views": { "type": "integer" }
+      },
+      "required": ["id", "userId", "user", "image", "caption", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/stories/{storyId}": {
+      "schema": "QuestStory",
+      "description": "Real-time user completed work stories and field proofs"
+    },
+    "/refill_requests/{refillId}": {
+      "schema": "RefillRequest",
+      "description": "User submit payment transfer receipt audit trace log"
+    },
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "A registered user on the platform"
+    },
+    "/quests/{questId}": {
+      "schema": "Quest",
+      "description": "A posted quest proposal"
+    },
+    "/notifications/{notifyId}": {
+      "schema": "Notification",
+      "description": "An interactive real-time user notification"
+    },
+    "/reviews/{reviewId}": {
+      "schema": "HunterReview",
+      "description": "Feedback evaluation posted for a runner"
+    },
+    "/godfather_reviews/{reviewId}": {
+      "schema": "GodfatherReview",
+      "description": "Reciprocal feedback evaluation posted for a Godfather"
+    }
+  }
+}

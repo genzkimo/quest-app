@@ -185,7 +185,7 @@ async function startServer() {
 
   // Server-side initialized Gemini client
   const apiKey = process.env.GEMINI_API_KEY;
-  const ai = new GoogleGenAI({
+    const ai = new GoogleGenAI({
     apiKey: apiKey,
     httpOptions: {
       headers: {
@@ -193,6 +193,31 @@ async function startServer() {
       }
     }
   });
+
+  // ✅ حماية تلقائية ضد ازدحام خوادم Gemini المؤقت (خطأ 503/429):
+  // إعادة محاولة ذكية بتأخير متزايد — تحمي كل استدعاءات الذكاء الاصطناعي دفعة واحدة.
+  const _origGenerateContent = (ai.models.generateContent as any).bind(ai.models);
+  (ai.models as any).generateContent = async function (params: any) {
+    const maxRetries = 4;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await _origGenerateContent(params);
+      } catch (err: any) {
+        const status = err?.status ?? err?.code;
+        const msg = String(err?.message ?? err ?? '');
+        const retryable = status === 503 || status === 429 || status === 500 ||
+          /UNAVAILABLE|high demand|overloaded|quota|try again/i.test(msg);
+        if (retryable && attempt < maxRetries) {
+          const wait = 1500 * attempt; // تأخير متزايد: 1.5s → 3s → 4.5s
+          console.warn(`[Gemini] محاولة ${attempt} فشلت (${status || 'error'}) — إعادة المحاولة خلال ${wait}ms...`);
+          await new Promise(r => setTimeout(r, wait));
+          continue;
+        }
+        throw err;
+      }
+    }
+    throw new Error('Gemini retries exhausted');
+  };
 
   // Endpoint for Manual Refill validation
   app.post("/api/wallet/refill-manual", async (req, res) => {

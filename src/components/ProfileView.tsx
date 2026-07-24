@@ -768,7 +768,7 @@ export default function ProfileView({
       console.log("BEFORE FETCH");
     try {
       console.log("2");
-      const response = await fetch(`${API_BASE_URL}/api/kyc/verify', {
+      const response = await fetch(`${API_BASE_URL}/api/kyc/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1061,7 +1061,7 @@ export default function ProfileView({
       setRefillLoading(true);
 
       try {
-        const response = await fetch(`${API_BASE_URL}/api/wallet/initiate-paypal-refill', {
+        const response = await fetch(`${API_BASE_URL}/api/wallet/initiate-paypal-refill`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1148,7 +1148,7 @@ export default function ProfileView({
 
     // Step 2 & 3: API call to the server-side validation which handles database logging and balance updates securely
     try {
-      const response = await fetch(`${API_BASE_URL}/api/wallet/refill-manual', {
+      const response = await fetch(`${API_BASE_URL}/api/wallet/refill-manual`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1278,7 +1278,7 @@ export default function ProfileView({
     setOtpError('');
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/wallet/verify-otp-refill', {
+      const response = await fetch(`${API_BASE_URL}/api/wallet/verify-otp-refill`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -211,22 +211,45 @@ export default function MyQuestsView({
 
   // Scroll and highlight pre-selected quest on created tab
   useEffect(() => {
-    if (activeTab === 'created' && initialSelectedQuestId) {
-      const timer = setTimeout(() => {
+    if (initialSelectedQuestId) {
+      if (activeTab !== 'created') {
+        setActiveTab('created');
+      }
+
+      // Check if target quest is in history vs active tab
+      const targetQuest = quests.find(q => q.id === initialSelectedQuestId);
+      if (targetQuest) {
+        const isHistory = isHistoryStatus(targetQuest.status);
+        if (showHistory !== isHistory) {
+          setShowHistory(isHistory);
+        }
+      }
+
+      let attempts = 0;
+      const attemptScroll = () => {
         const element = document.getElementById(`quest-${initialSelectedQuestId}`);
         if (element) {
           element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } else if (attempts < 6) {
+          attempts++;
+          setTimeout(attemptScroll, 150);
         }
-        const clearTimer = setTimeout(() => {
-          if (onClearInitialSelectedQuest) {
-            onClearInitialSelectedQuest();
-          }
-        }, 3500);
-        return () => clearTimeout(clearTimer);
-      }, 350);
-      return () => clearTimeout(timer);
+      };
+
+      const timer = setTimeout(attemptScroll, 200);
+
+      const clearTimer = setTimeout(() => {
+        if (onClearInitialSelectedQuest) {
+          onClearInitialSelectedQuest();
+        }
+      }, 4000);
+
+      return () => {
+        clearTimeout(timer);
+        clearTimeout(clearTimer);
+      };
     }
-  }, [activeTab, initialSelectedQuestId, onClearInitialSelectedQuest]);
+  }, [activeTab, initialSelectedQuestId, onClearInitialSelectedQuest, quests, showHistory]);
 
   // Local state for UI feedback toast notifications
   const [localToast, setLocalToast] = useState<string | null>(null);

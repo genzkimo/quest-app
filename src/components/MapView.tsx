@@ -13,7 +13,8 @@ import {
   Shield,
   Award,
   MessageSquare,
-  Lock
+  Lock,
+  RefreshCw
 } from 'lucide-react';
 import { Quest, UserProfile } from '../types';
 import { calculateBookingFee } from '../utils/fee';
@@ -66,8 +67,28 @@ export default function MapView({
   setQuests
 }: MapViewProps) {
   const [gpsActive, setGpsActive] = useState(false);
-  const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(null); 
+  const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(() => {
+    return Geolocator.getCachedLocation();
+  }); 
   const [selectedQuest, setSelectedQuest] = useState<Quest | null>(null);
+  const [pinnedQuest, setPinnedQuest] = useState<Quest | null>(null);
+  const [userLocAccuracy, setUserLocAccuracy] = useState<number | null>(null);
+  const [isGpsLost, setIsGpsLost] = useState<boolean>(false);
+  const accuracyCircleRef = useRef<L.Circle | null>(null);
+  const watchIdRef = useRef<number | null>(null);
+  const lastLocUpdateTimeRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (selectedQuest) {
+      setPinnedQuest(selectedQuest);
+    }
+  }, [selectedQuest]);
+
+  useEffect(() => {
+    if (navigatingQuest) {
+      setPinnedQuest(navigatingQuest);
+    }
+  }, [navigatingQuest]);
 
   const handleRefresh = async () => {
     try {
@@ -338,9 +359,9 @@ export default function MapView({
     }
   }, [userLoc?.lat, userLoc?.lng, navigatingQuest?.id, travelMode, lockedRoutePoints.length, gpsActive, getQuestCoords]);
 
-  // Synchronize dynamic position mapping closer to target along the locked route
+  // Synchronize dynamic position mapping closer to target along the locked route (only in simulation when GPS is inactive)
   useEffect(() => {
-    if (navigatingQuest) {
+    if (navigatingQuest && !gpsActive) {
       if (lockedRoutePoints.length > 0) {
         const totalPoints = lockedRoutePoints.length;
         const indexFloat = (totalPoints - 1) * navProgress;
@@ -364,7 +385,7 @@ export default function MapView({
         setUserLoc({ lat: currentLat, lng: currentLng });
       }
     }
-  }, [navProgress, navigatingQuest, navStartLoc, lockedRoutePoints, getQuestCoords]);
+  }, [navProgress, navigatingQuest, navStartLoc, lockedRoutePoints, getQuestCoords, gpsActive]);
 
   // Auto-resize trigger for Leaflet when toggling full-screen mode
   useEffect(() => {
@@ -379,56 +400,133 @@ export default function MapView({
   const dict = translations[lang];
   const isRtl = lang === 'ar';
 
-  const activeQuests = useMemo(() => {
-    return quests.filter(q => 
-      (q.status === 'booked' || q.status === 'active') && 
-      (q.helperId === userProfile.id || q.creatorId === userProfile.id)
-    );
+  // Visible quests: include open & pending quests for public discovery + booked/active quests for involved users
+  const visibleQuests = useMemo(() => {
+    return quests.filter(q => {
+      if (q.status === 'completed' || q.status === 'cancelled') return false;
+      if (q.status === 'open' || q.status === 'pending_verification') return true;
+      const isUserInvolved = q.creatorId === userProfile.id || 
+                             q.helperId === userProfile.id || 
+                             q.assignedRunnerId === userProfile.id || 
+                             q.assignedRunnerIds?.includes(userProfile.id);
+      return isUserInvolved;
+    });
   }, [quests, userProfile.id]);
+
+  const startGpsWatch = useCallback(() => {
+    if (!navigator.geolocation) return;
+
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+
+    setIsLocating(true);
+
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      (position) => {
+        const now = Date.now();
+        // Throttle updates strictly to once every 5 seconds (5000ms) to prevent excessive re-renders and network requests
+        if (lastLocUpdateTimeRef.current > 0 && now - lastLocUpdateTimeRef.current < 5000) {
+          return;
+        }
+        lastLocUpdateTimeRef.current = now;
+
+        const fetchedLoc = { 
+          lat: position.coords.latitude, 
+          lng: position.coords.longitude 
+        };
+        const accuracy = position.coords.accuracy ? Math.round(position.coords.accuracy) : 25;
+        setUserLoc(fetchedLoc);
+        setUserLocAccuracy(accuracy);
+        setGpsActive(true);
+        setIsLocating(false);
+        setHasCenteredGPS(true);
+        setGpsDenied(false);
+        setIsGpsServiceEnabled(true);
+        setIsGpsLost(false);
+        Geolocator.saveCachedLocation(fetchedLoc.lat, fetchedLoc.lng);
+      },
+      (error) => {
+        console.warn("Geolocation watch update error:", error);
+        setIsLocating(false);
+        if (error.code === error.POSITION_UNAVAILABLE || error.code === error.TIMEOUT) {
+          setIsGpsLost(true);
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 5000
+      }
+    );
+  }, []);
 
   const triggerGPSGet = (isManualReset = false) => {
     setIsLocating(true);
-    setGpsActive(false);
+    if (isManualReset) {
+      lastLocUpdateTimeRef.current = Date.now();
+    }
+    startGpsWatch();
 
     if (navigator.geolocation) {
-      // Enforce physical satellite sensor directly using maximum high-accuracy setting & zero caching
       navigator.geolocation.getCurrentPosition(
         (position) => {
+          const now = Date.now();
+          if (!isManualReset && lastLocUpdateTimeRef.current > 0 && now - lastLocUpdateTimeRef.current < 5000) {
+            setIsLocating(false);
+            return;
+          }
+          lastLocUpdateTimeRef.current = now;
+
           const fetchedLoc = { lat: position.coords.latitude, lng: position.coords.longitude };
+          const accuracy = position.coords.accuracy ? Math.round(position.coords.accuracy) : 25;
           setUserLoc(fetchedLoc);
+          setUserLocAccuracy(accuracy);
           setGpsActive(true);
           setIsLocating(false);
           setHasCenteredGPS(true);
           setGpsDenied(false);
+          setIsGpsServiceEnabled(true);
+          setIsGpsLost(false);
+          Geolocator.saveCachedLocation(fetchedLoc.lat, fetchedLoc.lng);
 
           if (isManualReset) {
             userHasMovedCameraRef.current = false;
             setIsUserInteracting(false);
             isUserInteractingRef.current = false;
             if (mapInstanceRef.current) {
-              mapInstanceRef.current.setView([fetchedLoc.lat, fetchedLoc.lng], 13);
+              mapInstanceRef.current.flyTo([fetchedLoc.lat, fetchedLoc.lng], 15, { animate: true, duration: 1 });
             }
-            showToast(lang === 'ar' ? '📍 تم تحديث موقعك الفعلي بنجاح عبر تتبع GPS!' : '📍 Real-time GPS location synced successfully!');
+            showToast(lang === 'ar' ? '📍 تم تحديد موقعك الفعلي بدقة عالية وتوسيط الخريطة!' : '📍 Live high-accuracy GPS position synced & centered!');
           }
         },
         (error) => {
-          console.warn("Geolocation failed or blocked", error);
+          console.warn("Geolocation single acquisition failed:", error);
           setIsLocating(false);
-          setGpsActive(false);
-          setGpsDenied(true);
-          showToast(lang === 'ar' ? '⚠️ شغل gps وفقك' : '⚠️ Please turn on your GPS');
+          setIsGpsLost(true);
+          if (error.code === error.PERMISSION_DENIED) {
+            setGpsActive(false);
+            setGpsDenied(true);
+            setIsGpsServiceEnabled(false);
+            showToast(lang === 'ar' ? '⚠️ تم رفض إذن الـ GPS' : '⚠️ GPS permission denied');
+          } else {
+            setIsGpsServiceEnabled(true);
+            setGpsDenied(false);
+            showToast(lang === 'ar' ? '⚠️ جاري البحث عن إشارة الـ GPS، يمكنك تصفح الخريطة بحرية' : '⚠️ Acquiring GPS signal, feel free to browse the map');
+          }
         },
         {
           enableHighAccuracy: true,
           timeout: 10000,
-          maximumAge: 5000 // Throttled bypass of stale proxies without slamming the GPS receiver repeatedly
+          maximumAge: 5000
         }
       );
     } else {
       setIsLocating(false);
       setGpsActive(false);
       setGpsDenied(true);
-      showToast(lang === 'ar' ? '⚠️ شغل gps وفقك' : '⚠️ GPS is not supported on this device');
+      showToast(lang === 'ar' ? '⚠️ الـ GPS غير مدعوم في هذا المتصفح' : '⚠️ GPS is not supported in this browser');
     }
   };
 
@@ -462,7 +560,7 @@ export default function MapView({
   }, [userLoc?.lat, userLoc?.lng]);
 
   const filteredMapQuests = useMemo(() => {
-    return activeQuests.filter(quest => {
+    return visibleQuests.filter(quest => {
       const coords = getQuestCoords(quest);
       const km = calculateDistanceKm(coords.lat, coords.lng);
       const matchesDistance = maxDistance >= 1200 ? true : km <= maxDistance;
@@ -471,7 +569,8 @@ export default function MapView({
                             quest.location.toLowerCase().includes(searchQuery.toLowerCase());
       return matchesDistance && matchesSearch;
     });
-  }, [activeQuests, getQuestCoords, calculateDistanceKm, maxDistance, searchQuery]);
+  }, [visibleQuests, getQuestCoords, calculateDistanceKm, maxDistance, searchQuery]);
+
 
   useEffect(() => {
     if (selectedQuest && gpsActive) {
@@ -519,20 +618,53 @@ export default function MapView({
     triggerHaptic('sharp', hapticEnabled);
   };
 
-  // Request GPS location ONCE upon entering MapView, and repeat ONCE EVERY 10 SECONDS while MapView is open
+  // Permission-aware GPS initialization & online/offline recovery
   useEffect(() => {
-    // Initial fetch on opening map
-    triggerGPSGet(true);
+    Geolocator.getPermissionState().then((perm) => {
+      if (perm === 'granted' || userLoc) {
+        setIsGpsServiceEnabled(true);
+        setGpsDenied(false);
+        triggerGPSGet(true);
+      } else if (perm === 'denied') {
+        setIsGpsServiceEnabled(false);
+        setGpsDenied(true);
+      } else {
+        // 'prompt' mode: allow map interaction freely and attempt silent GPS request
+        setIsGpsServiceEnabled(true);
+        setGpsDenied(false);
+        triggerGPSGet(true);
+      }
+    });
 
-    // Fetch once every 10 seconds while MapView is active
     const gpsIntervalId = setInterval(() => {
+      Geolocator.getPermissionState().then((perm) => {
+        if (perm === 'granted') {
+          triggerGPSGet(false);
+        }
+      });
+    }, 5000);
+
+    const handleOffline = () => {
+      setIsGpsLost(true);
+      showToast(lang === 'ar' ? '⚠️ انقطع الاتصال بالشبكة والـ GPS' : '⚠️ Network / GPS signal lost');
+    };
+
+    const handleOnline = () => {
+      setIsGpsLost(false);
+      startGpsWatch();
       triggerGPSGet(false);
-    }, 10000);
+      showToast(lang === 'ar' ? '🟢 تم استعادة اتصال الـ GPS بنجاح!' : '🟢 GPS signal recovered successfully!');
+    };
+
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
 
     return () => {
       clearInterval(gpsIntervalId);
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
     };
-  }, []);
+  }, [startGpsWatch, lang]);
 
   // Initialize map container once
   useEffect(() => {
@@ -540,13 +672,22 @@ export default function MapView({
       const map = L.map(mapContainerRef.current, {
         center: [34.0, 3.5], // Centered beautifully at macro national level over Algeria
         zoom: 6, // View the entire national map at startup
-        zoomControl: false
+        zoomControl: false,
+        zoomAnimation: true,
+        fadeAnimation: true,
+        markerZoomAnimation: true
       });
 
       setMapZoom(map.getZoom());
 
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors'
+        attribution: '&copy; OpenStreetMap contributors',
+        maxZoom: 19,
+        maxNativeZoom: 19,
+        keepBuffer: 10,
+        updateWhenZooming: false,
+        updateWhenIdle: true,
+        crossOrigin: true
       }).addTo(map);
 
       // Listen to user map interactions to set flags and prevent snapping
@@ -590,6 +731,14 @@ export default function MapView({
     return () => {
       if (interactionTimeoutRef.current !== null) {
         window.clearTimeout(interactionTimeoutRef.current);
+      }
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+      if (accuracyCircleRef.current) {
+        accuracyCircleRef.current.remove();
+        accuracyCircleRef.current = null;
       }
       if (mapInstanceRef.current) {
         mapInstanceRef.current.off('dragstart');
@@ -671,6 +820,7 @@ export default function MapView({
 
     // Add Active Destination Target pin
     if (navigatingQuest) {
+      const navCoords = getQuestCoords(navigatingQuest);
       const destinationIcon = L.divIcon({
         className: 'destination-marker-glow',
         html: `
@@ -689,7 +839,7 @@ export default function MapView({
         iconAnchor: [30, 30]
       });
       desiredMarkers.set('nav_dest', {
-        latlng: [navigatingQuest.lat, navigatingQuest.lng],
+        latlng: [navCoords.lat, navCoords.lng],
         icon: destinationIcon,
         onClick: () => {
           setSelectedQuest(navigatingQuest);
@@ -699,10 +849,12 @@ export default function MapView({
       });
     }
 
-    // Add Selected Quest pin with an ultra-glorious pulsing ring and high-contrast styling (never clustered)
-    if (selectedQuest && (!navigatingQuest || selectedQuest.id !== navigatingQuest.id)) {
+    // Add Selected or Pinned Quest pin with pulsing ring and high-contrast styling (never disappears when details sheet closes)
+    const targetQuest = selectedQuest || pinnedQuest;
+    if (targetQuest && (!navigatingQuest || targetQuest.id !== navigatingQuest.id)) {
+      const selCoords = getQuestCoords(targetQuest);
       const selectedIcon = L.divIcon({
-        className: `custom-selected-pin-${selectedQuest.id}`,
+        className: `custom-selected-pin-${targetQuest.id}`,
         html: `
           <div class="relative flex flex-col items-center">
             <div class="absolute -inset-1.5 bg-gradient-to-r from-[#FFD34D] to-[#FF3B7C] opacity-60 rounded-full animate-ping"></div>
@@ -710,7 +862,7 @@ export default function MapView({
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FFD34D" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>
             </div>
             <span class="bg-[#FFD34D] text-slate-950 text-[9px] font-black px-2 py-0.5 rounded-full mt-1 shadow-lg whitespace-nowrap border border-white">
-              ${selectedQuest.cashReward} DA
+              ${targetQuest.cashReward} DA
             </span>
           </div>
         `,
@@ -718,20 +870,21 @@ export default function MapView({
         iconAnchor: [19, 44]
       });
 
-      desiredMarkers.set(`selected_quest_${selectedQuest.id}`, {
-        latlng: [selectedQuest.lat, selectedQuest.lng],
+      desiredMarkers.set(`selected_quest_${targetQuest.id}`, {
+        latlng: [selCoords.lat, selCoords.lng],
         icon: selectedIcon,
         onClick: () => {
+          setSelectedQuest(targetQuest);
           const hapticEnabled = userProfile.hapticFeedbackEnabled !== false;
           triggerHaptic('soft', hapticEnabled);
         }
       });
     }
 
-    // Filter quests that aren't actively navigated or selected
+    // Filter quests that aren't actively navigated, selected, or pinned
     const questsToPlot = filteredMapQuests.filter(quest => 
       !(navigatingQuest && navigatingQuest.id === quest.id) &&
-      !(selectedQuest && selectedQuest.id === quest.id)
+      !(targetQuest && targetQuest.id === quest.id)
     );
 
     // Calculate dynamic distance threshold for clustering based on zoom level
@@ -904,12 +1057,32 @@ export default function MapView({
       }
     }
 
+    // Update GPS Accuracy Circle on Map
+    if (gpsActive && userLoc && userLocAccuracy && userLocAccuracy > 0) {
+      if (accuracyCircleRef.current) {
+        accuracyCircleRef.current.setLatLng([userLoc.lat, userLoc.lng]);
+        accuracyCircleRef.current.setRadius(userLocAccuracy);
+      } else {
+        accuracyCircleRef.current = L.circle([userLoc.lat, userLoc.lng], {
+          radius: userLocAccuracy,
+          color: '#4FC3F7',
+          fillColor: '#4FC3F7',
+          fillOpacity: 0.15,
+          weight: 1.5,
+          dashArray: '4, 4'
+        }).addTo(map);
+      }
+    } else if (accuracyCircleRef.current) {
+      accuracyCircleRef.current.remove();
+      accuracyCircleRef.current = null;
+    }
+
     // Update Polyline
     const navCoords = navigatingQuest ? getQuestCoords(navigatingQuest) : null;
     const shouldShowPolyline = !!(navigatingQuest && gpsActive && userLoc && navCoords);
     const plinePoints: L.LatLngExpression[] = shouldShowPolyline
       ? (lockedRoutePoints.length > 0
-          ? lockedRoutePoints as L.LatLngExpression[]
+          ? [[userLoc!.lat, userLoc!.lng], ...lockedRoutePoints] as L.LatLngExpression[]
           : [
               [userLoc!.lat, userLoc!.lng],
               [navCoords!.lat, navCoords!.lng]
@@ -937,7 +1110,7 @@ export default function MapView({
         polylineRef.current = null;
       }
     }
-  }, [filteredMapQuests, gpsActive, userLoc, lang, navigatingQuest, selectedQuest, lockedRoutePoints, travelMode, mapZoom, userProfile.hapticFeedbackEnabled, getQuestCoords]);
+  }, [filteredMapQuests, gpsActive, userLoc, userLocAccuracy, lang, navigatingQuest, selectedQuest, lockedRoutePoints, travelMode, mapZoom, userProfile.hapticFeedbackEnabled, getQuestCoords]);
 
   const remainingDistance = useMemo(() => {
     if (!navigatingQuest) return 0;
@@ -1044,37 +1217,40 @@ export default function MapView({
         {/* Leaflet interactive Map container element */}
         <div 
           ref={mapContainerRef} 
-          className={`absolute inset-0 w-full h-full z-10 transition-all duration-300 ${!isGpsServiceEnabled ? 'blur-md pointer-events-none' : ''}`} 
+          className="absolute inset-0 w-full h-full z-10 transition-all duration-300" 
         />
 
-        {/* Placeholder overlay stating Location Services Disabled */}
-        {(gpsDenied || !isGpsServiceEnabled) && (
-          <div className="absolute inset-0 bg-slate-950/95 flex flex-col items-center justify-center p-6 text-center z-[10000] animate-in fade-in duration-300 gap-4">
-            <div className="w-12 h-12 rounded-full bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-500 text-xl font-bold">
-              📍
+        {/* GPS Signal Loss Recovery Notification Banner - Positioned cleanly below top header bar (z-[10020]) */}
+        {isGpsLost && (
+          <div className="absolute top-20 md:top-24 left-1/2 -translate-x-1/2 z-[10020] w-[90%] max-w-md bg-amber-500 text-slate-950 px-4 py-2.5 rounded-2xl text-xs font-black shadow-2xl flex items-center justify-center gap-2 border-2 border-amber-300 animate-bounce">
+            <RefreshCw className="w-4 h-4 animate-spin text-slate-950 shrink-0" />
+            <span className="text-center leading-tight">
+              {lang === 'ar'
+                ? '⚠️ انقطع اتصال الـ GPS — جاري المحاولة واستعادة الإشارة تلقائياً...'
+                : '⚠️ GPS Signal Lost — Auto-reconnecting continuously...'}
+            </span>
+          </div>
+        )}
+
+        {/* Floating card stating Location Services Disabled (non-blocking over live map) */}
+        {(gpsDenied || !isGpsServiceEnabled) && !userLoc && (
+          <div className="absolute top-20 md:top-24 left-1/2 -translate-x-1/2 z-[10015] w-[92%] max-w-md bg-slate-900/95 backdrop-blur-xl border border-rose-500/40 p-4 rounded-2xl shadow-2xl flex flex-col items-center text-center gap-3 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-2 text-rose-400 font-black text-xs">
+              <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping"></span>
+              <span>{lang === 'ar' ? 'تحديد الموقع (GPS) غير مفعّل' : 'GPS Location Disabled'}</span>
             </div>
-            <div className="space-y-2 max-w-sm">
-              <h3 className="text-sm font-black text-white">
-                {lang === 'ar' ? 'تحديد الموقع (GPS) غير مفعّل' : 'Location Services (GPS) Disabled'}
-              </h3>
-              <p className="text-xs font-bold text-slate-300 leading-relaxed">
-                {lang === 'ar'
-                  ? 'يرجى تشغيل خدمة تحديد الموقع (GPS) لتحديد موقعك واستعراض المهام القريبة منك.'
-                  : 'Please turn on GPS location services to pinpoint your location and display nearby tasks.'}
-              </p>
-              <p className="text-[11px] font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 p-2.5 rounded-xl">
-                {lang === 'ar'
-                  ? 'تنبيه: لن تظهر المهام القريبة منك أو موقع المؤشر الخاص بك على الخريطة إلا بعد تفعيل الـ GPS والتصريح به.'
-                  : 'Notice: Nearby tasks and your location marker will not appear on the map unless GPS is enabled.'}
-              </p>
-            </div>
+            <p className="text-[11px] font-bold text-slate-300 leading-snug">
+              {lang === 'ar'
+                ? 'يرجى تفعيل خدمة تحديد الموقع (GPS) لتحديد موقعك واستعراض المهام القريبة منك على الخريطة.'
+                : 'Please enable GPS location services to pinpoint your position and view nearby tasks.'}
+            </p>
             <button
               onClick={() => {
                 setGpsDenied(false);
                 setIsGpsServiceEnabled(true);
                 triggerGPSGet(true);
               }}
-              className="px-6 py-3 bg-[#FF3B7C] hover:bg-[#FF3B7C]/90 active:scale-95 text-white rounded-xl text-xs font-black shadow-lg cursor-pointer transition-transform hover:scale-105 flex items-center gap-2 mt-1"
+              className="w-full py-2.5 bg-[#FF3B7C] hover:bg-[#FF3B7C]/90 active:scale-95 text-white rounded-xl text-xs font-black shadow-lg cursor-pointer transition-transform flex items-center justify-center gap-2"
             >
               <span>{lang === 'ar' ? 'تفعيل الـ GPS وتحديد موقعي على الخريطة 📍' : 'Enable GPS & Center My Location 📍'}</span>
             </button>

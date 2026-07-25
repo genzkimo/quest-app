@@ -20,6 +20,7 @@ import { auth, db, cleanData } from '../utils/firebase';
 import { UserProfile } from '../types';
 import QuestLogo from './QuestLogo';
 
+
 interface AuthScreenProps {
   showToast: (msg: string) => void;
   lang?: 'ar' | 'fr' | 'en';
@@ -53,7 +54,7 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
   // UI labels based on Arabic language
   const isAr = lang === 'ar';
 
-const handleGoogleSignIn = async () => {
+  const handleGoogleSignIn = async () => {
   if (loading) return;
 
   setLoading(true);
@@ -80,7 +81,6 @@ const handleGoogleSignIn = async () => {
 };
 
   const handleCreateAccount = async (e: React.FormEvent) => {
-    console.log("Google button clicked");
     e.preventDefault();
     if (loading) return;
 
@@ -98,7 +98,7 @@ const handleGoogleSignIn = async () => {
 
     try {
       const normEmail = email.toLowerCase().trim();
-      const userCredential = await AuthService.register(normEmail, password.trim());
+      const userCredential = await createUserWithEmailAndPassword(auth, normEmail, password.trim());
       const uid = userCredential.user.uid;
 
       // Seed newUser document in Firestore
@@ -138,6 +138,10 @@ const handleGoogleSignIn = async () => {
         showToast(isAr ? 'ℹ️ هذا الحساب موجود بالفعل! جاري تحويلك لصفحة تسجيل الدخول.' : 'ℹ️ This account already exists! Redirecting to login.');
         // Autofill email to login and flip screen
         setMode('login');
+      } else if (err.code === 'auth/operation-not-allowed') {
+        showToast(isAr ? '⚠️ التسجيل بالبريد الإلكتروني غير مفعّل في Firebase. يرجى استخدام الدخول بـ Google أو تفعيل Email/Password في Firebase Console.' : '⚠️ Email sign-up is disabled in Firebase. Use Google Sign-In or enable Email/Password provider in Firebase Console.');
+      } else if (err.code === 'auth/network-request-failed') {
+        showToast(isAr ? '⚠️ تعذر الاتصال بالسيرفر. يرجى التحقق من اتصال الإنترنت.' : '⚠️ Network request failed. Check your internet connection.');
       } else {
         showToast(isAr ? `⚠️ فشل التسجيل: ${err.message}` : `⚠️ Registration failed: ${err.message}`);
       }
@@ -146,34 +150,37 @@ const handleGoogleSignIn = async () => {
     }
   };
 
- const handleLogin = async (e: React.FormEvent) => {
-  e.preventDefault();
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (loading) return;
 
-  console.log("1- دخلت handleLogin");
+    if (!email.trim() || !password.trim()) {
+      showToast(isAr ? '⚠️ يرجى إدخال البريد الإلكتروني وكلمة المرور!' : '⚠️ Please enter both email and password!');
+      return;
+    }
 
-  if (loading) return;
+    setLoading(true);
 
-  if (!email.trim() || !password.trim()) {
-    return;
-  }
+    try {
+      const normEmail = email.toLowerCase().trim();
+      await signInWithEmailAndPassword(auth, normEmail, password.trim());
+      showToast(isAr ? '🎉 تم تسجيل الدخول واسترجاع بياناتك بنجاح!' : '🎉 Logged in and restored all cloud data!');
+    } catch (err: any) {
+      console.error("Login error:", err);
+      let errMsg = err.message;
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        errMsg = isAr ? 'البريد الإلكتروني أو كلمة المرور غير صحيحة!' : 'Incorrect email or password!';
+      } else if (err.code === 'auth/operation-not-allowed') {
+        errMsg = isAr ? 'طريقة الدخول بالبريد غير مفعّلة في Firebase Console.' : 'Email login is disabled in Firebase Console.';
+      } else if (err.code === 'auth/network-request-failed') {
+        errMsg = isAr ? 'تعذر الاتصال بالسيرفر. يرجى التحقق من اتصال الإنترنت.' : 'Network request failed. Check your internet connection.';
+      }
+      showToast(isAr ? `⚠️ فشل الدخول: ${errMsg}` : `⚠️ Login failed: ${errMsg}`);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  setLoading(true);
-
-  try {
-    const normEmail = email.toLowerCase().trim();
-
-    console.log("2- قبل AuthService.login");
-
-    await AuthService.login(normEmail, password.trim());
-
-    console.log("3- نجح تسجيل الدخول");
-
-  } catch (err) {
-    console.error("4- الخطأ:", err);
-  } finally {
-    setLoading(false);
-  }
-};
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (loading) return;
@@ -186,17 +193,22 @@ const handleGoogleSignIn = async () => {
     setLoading(true);
 
     try {
-      await AuthService.resetPassword(email.toLowerCase().trim());
+      await sendPasswordResetEmail(auth, email.toLowerCase().trim());
       showToast(isAr ? '📧 تم إرسال رابط استعادة كلمة المرور لبريدك الإلكتروني!' : '📧 Reset password link sent to your email!');
       setMode('login');
     } catch (err: any) {
       console.error("Reset password error:", err);
-      showToast(isAr ? `⚠️ فشل إرسال الرابط: ${err.message}` : `⚠️ Error sending reset link: ${err.message}`);
+      let errMsg = err.message;
+      if (err.code === 'auth/operation-not-allowed') {
+        errMsg = isAr ? 'خدمة إرسال البريد غير مفعّلة في Firebase Console.' : 'Email service disabled in Firebase Console.';
+      } else if (err.code === 'auth/network-request-failed') {
+        errMsg = isAr ? 'تعذر الاتصال بالسيرفر. يرجى التحقق من اتصال الإنترنت.' : 'Network request failed.';
+      }
+      showToast(isAr ? `⚠️ فشل إرسال الرابط: ${errMsg}` : `⚠️ Error sending reset link: ${errMsg}`);
     } finally {
       setLoading(false);
     }
   };
-  
 
   return (
     <div className="min-h-screen bg-[#FC0D82] text-white flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans select-none">
@@ -271,6 +283,12 @@ const handleGoogleSignIn = async () => {
                   </svg>
                   <span>{isAr ? 'الدخول بحساب Google' : 'Continue with Google'}</span>
                 </button>
+
+                <p className="text-[10px] text-white/80 font-bold text-center mt-3 leading-snug px-2">
+                  {isAr 
+                    ? 'بمجرد تسجيل الدخول فإنك توافق على شروط الاستخدام وسياسة الخصوصية التي تطلبها غوغل.' 
+                    : 'By signing in, you agree to the Terms of Service and Privacy Policy required by Google.'}
+                </p>
               </div>
             </motion.div>
           )}
@@ -645,4 +663,4 @@ const handleGoogleSignIn = async () => {
       </div>
     </div>
   );
-};
+}

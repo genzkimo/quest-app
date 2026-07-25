@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Wrench, 
   Truck, 
@@ -30,9 +30,11 @@ import {
   Trash,
   Eye,
   Plus,
-  Lock
+  Lock,
+  ChevronDown
 } from 'lucide-react';
 import { Quest, QuestCategory, UserProfile, QuestStory } from '../types';
+import { Geolocator } from '../utils/geolocator';
 import { calculateBookingFee } from '../utils/fee';
 import { db } from '../utils/firebase';
 import { doc, updateDoc, arrayUnion, setDoc, collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
@@ -335,10 +337,14 @@ export default function HomeView({
   const [newCommentTexts, setNewCommentTexts] = useState<Record<string, string>>({});
   const [storyReactMsg, setStoryReactMsg] = useState('');
 
-  // Hardware GPS Coordinate Syncing
-  const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(null);
+  // Hardware GPS Coordinate Syncing & Cached Location Initialization
+  const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(() => {
+    return Geolocator.getCachedLocation();
+  });
   const [gpsDenied, setGpsDenied] = useState<boolean>(false);
   const [isGpsRequesting, setIsGpsRequesting] = useState<boolean>(false);
+  const [visibleCount, setVisibleCount] = useState<number>(30);
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
 
   const requestHomeLocation = () => {
     if (!navigator.geolocation) {
@@ -348,7 +354,9 @@ export default function HomeView({
     setIsGpsRequesting(true);
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        setUserLoc({ lat: position.coords.latitude, lng: position.coords.longitude });
+        const newLoc = { lat: position.coords.latitude, lng: position.coords.longitude };
+        setUserLoc(newLoc);
+        Geolocator.saveCachedLocation(newLoc.lat, newLoc.lng);
         setGpsDenied(false);
         setIsGpsRequesting(false);
       },
@@ -365,10 +373,23 @@ export default function HomeView({
     );
   };
 
-  // Run GPS EXACTLY ONCE upon opening the home page
+  // Only auto-trigger GPS on mount if permission was ALREADY explicitly granted in browser
   useEffect(() => {
-    requestHomeLocation();
+    Geolocator.getPermissionState().then((perm) => {
+      if (perm === 'granted') {
+        requestHomeLocation();
+      } else {
+        if (!userLoc) {
+          setGpsDenied(true);
+        }
+      }
+    });
   }, []);
+
+  // Reset infinite scroll pagination when search query, category, or userLoc changes
+  useEffect(() => {
+    setVisibleCount(30);
+  }, [searchQuery, selectedCategory, userLoc]);
 
   const calculateDistanceKm = (qLat?: number, qLng?: number) => {
     if (!userLoc || typeof userLoc.lat !== 'number' || typeof userLoc.lng !== 'number') return -1;
@@ -721,10 +742,50 @@ export default function HomeView({
     // If userLoc is null, distanceKm will be -1, we want all quests to be visible
     const inRange = questsWithDistance.filter(q => q.distanceKm === -1 || q.distanceKm <= 50);
     const outOfRange = questsWithDistance.filter(q => q.distanceKm !== -1 && q.distanceKm > 50);
-    inRange.sort((a, b) => b.cashReward - a.cashReward);
-    outOfRange.sort((a, b) => b.cashReward - a.cashReward);
+
+    // Sort in-range quests: nearest distance first when distance is calculated
+    inRange.sort((a, b) => {
+      if (a.distanceKm !== -1 && b.distanceKm !== -1) {
+        if (a.distanceKm !== b.distanceKm) {
+          return a.distanceKm - b.distanceKm; // Nearest first
+        }
+      }
+      return b.cashReward - a.cashReward;
+    });
+
+    outOfRange.sort((a, b) => {
+      if (a.distanceKm !== -1 && b.distanceKm !== -1) {
+        return a.distanceKm - b.distanceKm;
+      }
+      return b.cashReward - a.cashReward;
+    });
+
     return { inRangeQuests: inRange, outOfRangeQuests: outOfRange };
   }, [questsWithDistance]);
+
+  const paginatedInRangeQuests = useMemo(() => {
+    return inRangeQuests.slice(0, visibleCount);
+  }, [inRangeQuests, visibleCount]);
+
+  // Setup IntersectionObserver for smooth smart infinite scrolling
+  useEffect(() => {
+    const el = loadMoreSentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) {
+        setVisibleCount((prev) => {
+          if (prev < inRangeQuests.length) {
+            return prev + 30;
+          }
+          return prev;
+        });
+      }
+    }, { threshold: 0.1 });
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+    };
+  }, [inRangeQuests.length]);
 
   const activeQuestCount = userProfile?.hasActiveQuest === false ? 0 : quests.filter(q => q.creatorId === userProfile?.id && q.status !== 'completed' && q.status !== 'cancelled' && q.status !== 'cancelled_by_timeout' && q.status !== 'stale_cleared').length;
 
@@ -1420,7 +1481,33 @@ export default function HomeView({
                     </p>
                   </div>
                 ) : (
-                  inRangeQuests.map((quest) => renderQuestCard(quest, false))
+                  <>
+                    {paginatedInRangeQuests.map((quest) => renderQuestCard(quest, false))}
+                    
+                    {/* Infinite Scroll Load More Sentinel */}
+                    <div ref={loadMoreSentinelRef} className="pt-4 pb-2 text-center">
+                      {visibleCount < inRangeQuests.length ? (
+                        <button
+                          type="button"
+                          onClick={() => setVisibleCount((prev) => prev + 30)}
+                          className="px-6 py-3 bg-[#1F2A44] hover:bg-[#1F2A44]/90 text-white rounded-2xl text-xs font-black shadow-md cursor-pointer transition-all active:scale-95 flex items-center justify-center gap-2 mx-auto"
+                        >
+                          <span>
+                            {lang === 'ar'
+                              ? `تحميل 30 كويست إضافية (${paginatedInRangeQuests.length} من ${inRangeQuests.length})`
+                              : `Load 30 More Quests (${paginatedInRangeQuests.length} of ${inRangeQuests.length})`}
+                          </span>
+                          <ChevronDown className="w-4 h-4 animate-bounce" />
+                        </button>
+                      ) : (
+                        inRangeQuests.length > 30 && (
+                          <span className="text-[10px] font-bold text-slate-400">
+                            {lang === 'ar' ? '✅ تم عرض جميع الكويستات القريبة المتوفرة بالكامل' : '✅ All available nearby quests loaded'}
+                          </span>
+                        )
+                      )}
+                    </div>
+                  </>
                 )}
 
                 {/* Tier 2 (Out-of-Range Quests) */}

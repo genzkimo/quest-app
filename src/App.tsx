@@ -36,6 +36,7 @@ import InboxScreen from './components/InboxScreen';
 import UnifiedQuestCard from './components/UnifiedQuestCard';
 import QuestDetailScreen from './components/QuestDetailScreen';
 import GlobalCreateQuestModal from './components/GlobalCreateQuestModal';
+import TermsConsentModal from './components/TermsConsentModal';
 import { motion, AnimatePresence } from 'motion/react';
 import { Geolocator } from './utils/geolocator';
 import { calculateBookingFee } from './utils/fee';
@@ -108,6 +109,7 @@ export default function App() {
   const [profileSubmenu, setProfileSubmenu] = useState<'main' | 'account' | 'verification' | 'wallet' | 'general' | 'support_chat' | null>(null);
   const [showGlobalCreateQuest, setShowGlobalCreateQuest] = useState<boolean>(false);
   const [globalQuestDetailId, setGlobalQuestDetailId] = useState<string | null>(null);
+  const [showTermsConsentModal, setShowTermsConsentModal] = useState<boolean>(false);
   const [navigationHistory, setNavigationHistory] = useState<{ view: ViewState; questDetailId: string | null; selectedPublicProfileId: string | null }[]>([]);
 
   // State variables for the instant payment-before-evaluation safety/lock system
@@ -143,6 +145,35 @@ export default function App() {
       document.documentElement.classList.remove('low-perf');
     }
   }, [userProfile?.lowPerformanceModeEnabled]);
+
+  // First time login Terms & Privacy consent check
+  useEffect(() => {
+    if (userProfile && authenticatedUser) {
+      const acceptedLocal = localStorage.getItem('terms_accepted_' + userProfile.id);
+      const acceptedCloud = (userProfile as any).termsAccepted;
+      if (!acceptedLocal && !acceptedCloud) {
+        setShowTermsConsentModal(true);
+      }
+    }
+  }, [userProfile, authenticatedUser]);
+
+  const handleAcceptTerms = async () => {
+    if (userProfile) {
+      try {
+        localStorage.setItem('terms_accepted_' + userProfile.id, 'true');
+        if (auth.currentUser) {
+          await updateDoc(doc(db, 'users', auth.currentUser.uid), {
+            termsAccepted: true,
+            termsAcceptedAt: new Date().toISOString()
+          });
+        }
+      } catch (e) {
+        console.warn("Could not save terms consent state:", e);
+      }
+    }
+    setShowTermsConsentModal(false);
+    showToast(userProfile?.language === 'ar' ? '✅ تم قبول شروط الاستخدام وسياسة الخصوصية بنجاح!' : '✅ Terms & Privacy Policy accepted!');
+  };
 
   // Register Capacitor Push Notifications and define FCM listener handlers
   useEffect(() => {
@@ -514,7 +545,13 @@ export default function App() {
       showToast('🎉 تم تسجيل الدخول بنجاح عبر حساب Google!');
     } catch (e: any) {
       console.error('Google Sign In Error', e);
-      showToast('⚠️ فشل تسجيل الدخول: ' + e.message);
+      let errMsg = e.message;
+      if (e.code === 'auth/operation-not-allowed') {
+        errMsg = 'تسجيل الدخول عبر Google غير مفعّل في لوحة تحكم Firebase Console.';
+      } else if (e.code === 'auth/network-request-failed') {
+        errMsg = 'تعذر الاتصال بالشبكة، يرجى التحقق من اتصال الإنترنت.';
+      }
+      showToast('⚠️ فشل تسجيل الدخول: ' + errMsg);
     }
   };
 
@@ -1416,8 +1453,11 @@ export default function App() {
       if (detail && detail.questId) {
         setMyQuestsActiveTab('created');
         setInitialSelectedQuestId(detail.questId);
-        setCurrentView('my-quests');
+        setNavigationHistory([]);
         setGlobalQuestDetailId(null);
+        setMapSelectedQuest(null);
+        setSelectedPublicProfileId(null);
+        setCurrentView('my-quests');
       }
     };
     window.addEventListener('manage-quest', handleManageQuestGlobal);
@@ -1660,8 +1700,7 @@ export default function App() {
         (position) => {
           const coords = { lat: position.coords.latitude, lng: position.coords.longitude };
           setUserLoc(coords);
-          localStorage.setItem('last_user_lat', coords.lat.toString());
-          localStorage.setItem('last_user_lng', coords.lng.toString());
+          Geolocator.saveCachedLocation(coords.lat, coords.lng);
           onPassed(coords);
         },
         (error) => {
@@ -3574,8 +3613,11 @@ export default function App() {
                 onManageQuest={(questId) => {
                   setMyQuestsActiveTab('created');
                   setInitialSelectedQuestId(questId);
-                  setCurrentView('my-quests');
+                  setNavigationHistory([]);
                   setGlobalQuestDetailId(null);
+                  setMapSelectedQuest(null);
+                  setSelectedPublicProfileId(null);
+                  setCurrentView('my-quests');
                 }}
                 onViewPublicProfile={(userId) => setSelectedPublicProfileId(userId)}
                 onExtendPendingQuest={handleExtendPendingQuest}
@@ -3691,8 +3733,11 @@ export default function App() {
                         onManageQuest={(questId) => {
                           setMyQuestsActiveTab('created');
                           setInitialSelectedQuestId(questId);
-                          setCurrentView('my-quests');
+                          setNavigationHistory([]);
                           setGlobalQuestDetailId(null);
+                          setMapSelectedQuest(null);
+                          setSelectedPublicProfileId(null);
+                          setCurrentView('my-quests');
                         }}
                         onExtendPendingQuest={handleExtendPendingQuest}
                         onExtendActiveContract={handleExtendActiveContract}
@@ -4039,6 +4084,13 @@ export default function App() {
         lang={userProfile?.language || 'ar'}
         userProfile={userProfile}
         audioEnabled={userProfile?.audioEffectsEnabled !== false}
+      />
+
+      {/* 🛡️ Terms of Use & Privacy Policy First-Time Consent Modal */}
+      <TermsConsentModal
+        isOpen={showTermsConsentModal}
+        onAccept={handleAcceptTerms}
+        lang={userProfile?.language || 'ar'}
       />
 
     </div>

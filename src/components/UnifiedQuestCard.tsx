@@ -619,11 +619,10 @@ export default function UnifiedQuestCard({
                       const event = new CustomEvent('manage-quest', { detail: { questId: quest.id } });
                       window.dispatchEvent(event);
                     }
-                    if (onClose) onClose();
                   }}
-                  className="w-full bg-[#FF3B7C] hover:bg-[#FF3B7C]/95 text-white py-3.5 rounded-2xl font-black text-xs shadow-lg shadow-[#FF3B7C]/25 transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95 text-center"
+                  className="w-full bg-[#FF3B7C] hover:bg-[#FF3B7C]/95 text-white px-4 py-3.5 rounded-2xl font-black text-xs shadow-lg shadow-[#FF3B7C]/25 transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95 text-center leading-relaxed whitespace-normal break-words"
                 >
-                  <span>
+                  <span className="block w-full text-center leading-relaxed whitespace-normal break-words">
                     {lang === 'ar'
                       ? 'إدارة هذا المنشور ومتابعة المتقدمين 📋'
                       : lang === 'fr'
@@ -644,9 +643,9 @@ export default function UnifiedQuestCard({
                         onClick={() => {
                           if (onExtendPendingQuest) onExtendPendingQuest(quest.id);
                         }}
-                        className="w-full bg-amber-500 hover:bg-amber-400 text-slate-900 py-3.5 rounded-2xl font-black text-xs shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95 text-center leading-none border border-amber-605"
+                        className="w-full bg-amber-500 hover:bg-amber-400 text-slate-900 px-4 py-3.5 rounded-2xl font-black text-xs shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95 text-center leading-relaxed whitespace-normal break-words border border-amber-600"
                       >
-                        <span>
+                        <span className="block w-full text-center leading-relaxed whitespace-normal break-words">
                           {lang === 'ar' 
                             ? '⏰ تمديد صلاحية النشر (8 ساعات إضافية)' 
                             : '⏰ Extend Post Validity (8 Additional Hours)'}
@@ -671,7 +670,7 @@ export default function UnifiedQuestCard({
 
                     if (isMyRequest) {
                       return (
-                        <div className="w-full bg-slate-50 border border-slate-200 text-slate-500 py-3 rounded-2xl font-black text-xs text-center">
+                        <div className="w-full bg-slate-50 border border-slate-200 text-slate-500 px-4 py-3 rounded-2xl font-black text-xs text-center leading-relaxed whitespace-normal break-words">
                           {lang === 'ar' ? '⏳ في انتظار موافقة الطرف الآخر على التمديد...' : '⏳ Awaiting secondary party approval...'}
                         </div>
                       );
@@ -681,9 +680,9 @@ export default function UnifiedQuestCard({
                           onClick={() => {
                             if (onExtendActiveContract) onExtendActiveContract(quest.id);
                           }}
-                          className="w-full bg-emerald-500 hover:bg-emerald-400 text-white py-3.5 rounded-2xl font-black text-xs shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95 text-center border border-emerald-600"
+                          className="w-full bg-emerald-500 hover:bg-emerald-400 text-white px-4 py-3.5 rounded-2xl font-black text-xs shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95 text-center leading-relaxed whitespace-normal break-words border border-emerald-600"
                         >
-                          <span>
+                          <span className="block w-full text-center leading-relaxed whitespace-normal break-words">
                             {lang === 'ar' 
                               ? '🤝 موافقة على طلب تمديد عقد العمل (24 ساعة إضافية)' 
                               : '🤝 Approve Contract Extension (24h Extra)'}
@@ -696,9 +695,9 @@ export default function UnifiedQuestCard({
                           onClick={() => {
                             if (onExtendActiveContract) onExtendActiveContract(quest.id);
                           }}
-                          className="w-full bg-blue-600 hover:bg-blue-500 text-white py-3.5 rounded-2xl font-black text-xs shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95 text-center border border-blue-700"
+                          className="w-full bg-blue-600 hover:bg-blue-500 text-white px-4 py-3.5 rounded-2xl font-black text-xs shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95 text-center leading-relaxed whitespace-normal break-words border border-blue-700"
                         >
-                          <span>
+                          <span className="block w-full text-center leading-relaxed whitespace-normal break-words">
                             {lang === 'ar'
                               ? '🤝 طلب تمديد عقد العمل (24 ساعة إضافية)'
                               : '🤝 Request Contract Extension (24h Extra)'}

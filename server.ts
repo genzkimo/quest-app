@@ -170,9 +170,7 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-
-  app.use(express.json({ limit: '15mb' }));
-    // ✅ السماح لتطبيق الموبايل بالاتصال بالخادم بأمان
+  // ✅ السماح لتطبيق الموبايل (Capacitor / https://localhost) بالاتصال بالخادم بأمان
   app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -183,9 +181,11 @@ async function startServer() {
     next();
   });
 
+  app.use(express.json({ limit: '15mb' }));
+
   // Server-side initialized Gemini client
   const apiKey = process.env.GEMINI_API_KEY;
-    const ai = new GoogleGenAI({
+  const ai = new GoogleGenAI({
     apiKey: apiKey,
     httpOptions: {
       headers: {
@@ -193,48 +193,6 @@ async function startServer() {
       }
     }
   });
-
-  // ✅ طبقة متانة نهائية: إعادة محاولة عند الازدحام (503) + تجاوز النماذج المهملة (404).
-  const _origGenerateContent = (ai.models.generateContent as any).bind(ai.models);
-  // نبدأ بالأحدث (مقاوم للإهمال)، ثم بدائل أقدم — مع تجاهل أي نموذج مزدحم/مهمل.
-  const GEMINI_FALLBACK_MODELS = ['gemini-flash-latest', 'gemini-2.0-flash', 'gemini-1.5-flash'];
-
-  (ai.models as any).generateContent = async function (params: any) {
-    // ضع النماذج المضمونة أولاً، ثم المطلوب (إن كان مختلفاً)
-    const modelsToTry = [...GEMINI_FALLBACK_MODELS, params?.model]
-      .filter((m: any, i: number, a: any[]) => m && a.indexOf(m) === i);
-    let lastErr: any;
-    for (const model of modelsToTry) {
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        try {
-          return await _origGenerateContent({ ...params, model });
-        } catch (err: any) {
-          lastErr = err;
-          const status = err?.status ?? err?.code;
-          const msg = String(err?.message ?? err ?? '');
-          const isOverloaded = status === 503 || status === 429 || status === 500 ||
-            /UNAVAILABLE|high demand|overloaded|quota|try again/i.test(msg);
-          const isModelGone = status === 404 || /no longer available|not found|NOT_FOUND/i.test(msg);
-
-          if (isModelGone) {
-            console.warn(`[Gemini] ${model} مهمل/غير متاح (404) — التبديل إلى نموذج بديل...`);
-            break; // النموذج غير موجود → انتقل للتالي فوراً (لا تستسلم)
-          }
-          if (isOverloaded) {
-            console.warn(`[Gemini] ${model} مزدحم — محاولة ${attempt} فشلت (503)`);
-            if (attempt < 3) {
-              await new Promise(r => setTimeout(r, 1200 * attempt));
-              continue;
-            }
-            console.warn(`[Gemini] ${model} استنفد المحاولات — التبديل إلى نموذج بديل...`);
-            break;
-          }
-          throw err; // خطأ حقيقي آخر (صيغة/مفتاح) → ارمِه
-        }
-      }
-    }
-    throw lastErr;
-  };
 
   // Endpoint for Manual Refill validation
   app.post("/api/wallet/refill-manual", async (req, res) => {
@@ -358,7 +316,7 @@ Provide your output in strict JSON format. Do not combine or nest it in any mark
 `;
 
         const response = await ai.models.generateContent({
-          model: "gemini-flash-latest",
+          model: "gemini-3.6-flash",
           contents: [imagePart, { text: promptText }],
           config: {
             responseMimeType: "application/json",
@@ -992,7 +950,7 @@ Provide your output in strict JSON format. Do not combine or nest it in any mark
 `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-flash-latest",
+        model: "gemini-3.6-flash",
         contents: [frontImagePart, backImagePart, { text: promptText }],
         config: {
           responseMimeType: "application/json",

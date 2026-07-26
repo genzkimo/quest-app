@@ -20,6 +20,7 @@ import {
   CreditCard,
   CheckCircle2,
   FileCheck2,
+  FileText,
   RefreshCcw,
   Sparkles,
   Info,
@@ -50,6 +51,7 @@ import { compressImage } from '../utils/imageCompressor';
 import LeaderboardView from './LeaderboardView';
 // رابط الخادم الوسيط (غيّره إلى رابط Render الخاص بك بعد الرفع)
 const API_BASE_URL = 'https://quest-app-jne8.onrender.com';
+
 
 interface ProfileViewProps {
   userProfile: UserProfile;
@@ -757,7 +759,6 @@ export default function ProfileView({
 
   const handleKycSubmission = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("1");
     if (!kycFullName || !kycNid || !uploadedFront || !uploadedBack || !kycFrontBase64 || !kycBackBase64) {
       showToast(lang === 'ar' ? '⚠️ يرجى تعبئة كافة الحقول وبصمات الصور!' : '⚠️ Fill all fields and upload physical screenshots.');
       return;
@@ -765,9 +766,8 @@ export default function ProfileView({
 
     setKycAiLoading(true);
     setKycAiResult(null);
-      console.log("BEFORE FETCH");
+
     try {
-      console.log("2");
       const response = await fetch(`${API_BASE_URL}/api/kyc/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -778,29 +778,17 @@ export default function ProfileView({
           backBase64: kycBackBase64,
           userId: authenticatedUser?.uid || 'user-current'
         })
-        
       });
-        console.log("3");
+
       if (!response.ok) {
         throw new Error("Server-side verification failed");
       }
 
       const data = await response.json();
-      console.log("4");
       setKycAiResult(data);
-      console.log("5", data);
 
       if (data.status === 'APPROVED') {
         onSubmitKYC(kycFullName, kycNid, 'verified', data.extracted_name || kycFullName, data.extracted_nid || kycNid, kycFrontBase64, kycBackBase64);
-        onUpdateProfile({
-          idVerificationStatus: 'verified',
-          idDocumentUrl: kycFrontBase64 || kycBackBase64 || '',
-          idCardUrl: kycFrontBase64 || kycBackBase64 || '',
-          idFrontUrl: kycFrontBase64 || '',
-          idBackUrl: kycBackBase64 || '',
-          verifiedName: data.extracted_name || kycFullName,
-          verifiedNid: data.extracted_nid || kycNid
-        });
 
         const uId = userProfile?.id || authenticatedUser?.uid;
         if (uId) {
@@ -821,8 +809,8 @@ export default function ProfileView({
             id: notifRef.id,
             userId: uId,
             text: lang === 'ar' 
-              ? '🎉 تم قبول وتوثيق هويتك بنجاح بواسطة الذكاء الاصطناعي وترقية حسابك إلى حساب موثق!'
-              : '🎉 AI identity verification successful! Your account is now fully verified.',
+              ? '🎉 تم قبول وتوثيق هويتك بنجاح بواسطة الذكاء الاصطناعي وترقية حسابك إلى حساب موثق وإضافة +700 توكن إضافية!'
+              : '🎉 AI identity verification successful! Your account is now fully verified with +700 bonus tokens!',
             questId: '',
             createdAt: new Date().toISOString(),
             read: false,
@@ -830,18 +818,9 @@ export default function ProfileView({
           }).catch(console.error);
         }
 
-        showToast(lang === 'ar' ? '🎉 تم التحقق من هويتك بنجاح بواسطة الذكاء الاصطناعي وترقية حسابك!' : '🎉 AI identity verification successful! Your account is now fully verified.');
+        showToast(lang === 'ar' ? '🎉 تم التحقق من هويتك بنجاح بواسطة الذكاء الاصطناعي وترقية حسابك وإضافة 700 توكن!' : '🎉 AI identity verification successful! +700 tokens added & verified!');
       } else if (data.status === 'SUSPICIOUS') {
         onSubmitKYC(kycFullName, kycNid, 'pending', data.extracted_name || kycFullName, data.extracted_nid || kycNid, kycFrontBase64, kycBackBase64);
-        onUpdateProfile({
-          idVerificationStatus: 'pending',
-          idDocumentUrl: kycFrontBase64 || kycBackBase64 || '',
-          idCardUrl: kycFrontBase64 || kycBackBase64 || '',
-          idFrontUrl: kycFrontBase64 || '',
-          idBackUrl: kycBackBase64 || '',
-          verifiedName: data.extracted_name || kycFullName,
-          verifiedNid: data.extracted_nid || kycNid
-        });
 
         const uId = userProfile?.id || authenticatedUser?.uid;
         if (uId) {
@@ -897,15 +876,6 @@ export default function ProfileView({
     } catch (err) {
       console.error("AI KYC Verification Error:", err);
       onSubmitKYC(kycFullName, kycNid, 'pending', kycFullName, kycNid, kycFrontBase64, kycBackBase64);
-      onUpdateProfile({
-        idVerificationStatus: 'pending',
-        idDocumentUrl: kycFrontBase64 || kycBackBase64 || '',
-        idCardUrl: kycFrontBase64 || kycBackBase64 || '',
-        idFrontUrl: kycFrontBase64 || '',
-        idBackUrl: kycBackBase64 || '',
-        verifiedName: kycFullName,
-        verifiedNid: kycNid
-      });
 
       const uId = userProfile?.id || authenticatedUser?.uid;
       if (uId) {
@@ -2898,6 +2868,38 @@ export default function ProfileView({
                 </h5>
                 <p className="text-[9px] text-gray-400 font-semibold">
                   {lang === 'ar' ? 'واجهتك مشكلة؟ تواصل فوراً مع طاقم الإشراف والتحقق.' : lang === 'fr' ? 'Un problème ? Contactez notre équipe de modération.' : 'Encountered an issue? Open a direct ticket with our support admins.'}
+                </p>
+              </div>
+            </div>
+
+            {/* Legal Policies & Terms Links */}
+            <div className="p-4 bg-slate-100/60 rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-3 border border-slate-200/80">
+              <div className="flex gap-2 w-full sm:w-auto">
+                <a
+                  href="https://kimo.hakerzoldyck.workers.dev/terms%20of%20use"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 sm:flex-none px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-[#1F2A44] font-black text-[10px] rounded-lg transition-all text-center flex items-center justify-center gap-1 shadow-2xs"
+                >
+                  <FileText className="w-3 h-3 text-[#FF3B7C]" />
+                  <span>{lang === 'ar' ? 'شروط الاستخدام' : lang === 'fr' ? "Conditions d'utilisation" : 'Terms of Use'}</span>
+                </a>
+                <a
+                  href="https://kimo.hakerzoldyck.workers.dev/privacy%20policy"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 sm:flex-none px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-[#1F2A44] font-black text-[10px] rounded-lg transition-all text-center flex items-center justify-center gap-1 shadow-2xs"
+                >
+                  <ShieldCheck className="w-3 h-3 text-[#0288D1]" />
+                  <span>{lang === 'ar' ? 'سياسة الخصوصية' : lang === 'fr' ? 'Politique de confidentialité' : 'Privacy Policy'}</span>
+                </a>
+              </div>
+              <div className={`space-y-0.5 ${isRtl ? 'text-right' : 'text-left'}`}>
+                <h5 className="font-extrabold text-xs text-[#1F2A44]">
+                  {lang === 'ar' ? 'الشروط والسياسات القانونية ⚖️' : 'Legal Policies & Terms ⚖️'}
+                </h5>
+                <p className="text-[9px] text-gray-400 font-semibold">
+                  {lang === 'ar' ? 'اطّلع على سياسات الخصوصية وحماية البيانات وشروط الخدمة المعتمَدة.' : 'Read our official Privacy Policy and Terms of Use.'}
                 </p>
               </div>
             </div>

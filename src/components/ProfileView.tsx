@@ -49,9 +49,9 @@ import { translations } from '../data/translations';
 import { playCoinSound, triggerHaptic, playCameraShutter } from '../utils/audio';
 import { compressImage } from '../utils/imageCompressor';
 import LeaderboardView from './LeaderboardView';
+
 // رابط الخادم الوسيط (غيّره إلى رابط Render الخاص بك بعد الرفع)
 const API_BASE_URL = 'https://quest-app-jne8.onrender.com';
-
 
 interface ProfileViewProps {
   userProfile: UserProfile;
@@ -792,6 +792,14 @@ export default function ProfileView({
 
         const uId = userProfile?.id || authenticatedUser?.uid;
         if (uId) {
+          const currentClaimed = userProfile?.kycRewardClaimed === true;
+          const currentBal = userProfile?.tokenBalance || 0;
+          const newBalance = currentClaimed ? currentBal : (currentBal + 700);
+          const currentBadges = userProfile?.unlockedBadgeIds || [];
+          const updatedBadges = currentBadges.includes('badge-certified-runner')
+            ? currentBadges
+            : [...currentBadges, 'badge-certified-runner'];
+
           updateDoc(doc(db, 'users', uId), {
             idVerificationStatus: 'verified',
             idDocumentUrl: kycFrontBase64 || kycBackBase64 || '',
@@ -801,7 +809,10 @@ export default function ProfileView({
             verifiedName: data.extracted_name || kycFullName,
             verifiedNid: data.extracted_nid || kycNid,
             kycFullName: kycFullName.trim(),
-            kycNid: kycNid.trim()
+            kycNid: kycNid.trim(),
+            kycRewardClaimed: true,
+            tokenBalance: newBalance,
+            unlockedBadgeIds: updatedBadges
           }).catch(console.error);
 
           const notifRef = doc(collection(db, 'notifications'));

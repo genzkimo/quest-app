@@ -1,4 +1,5 @@
 import { Quest, Leader, Challenge, Badge, UserProfile, WalletTransaction, HunterReview, GodfatherReview } from '../types';
+import { getDeviceLanguage } from '../utils/language';
 
 export const INITIAL_USER_PROFILE: UserProfile = {
   id: 'user-current',
@@ -17,7 +18,7 @@ export const INITIAL_USER_PROFILE: UserProfile = {
   completedQuestsIds: ['q-comp-1'],
   createdQuestsIds: ['q-created-1'],
   unlockedBadgeIds: ['badge-welcome'],
-  language: 'ar',
+  language: getDeviceLanguage(),
   enableNotifications: true,
   privacyEnabled: false,
   audioEffectsEnabled: true,

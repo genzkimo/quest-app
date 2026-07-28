@@ -20,7 +20,6 @@ import { auth, db, cleanData } from '../utils/firebase';
 import { UserProfile } from '../types';
 import QuestLogo from './QuestLogo';
 
-
 interface AuthScreenProps {
   showToast: (msg: string) => void;
   lang?: 'ar' | 'fr' | 'en';
@@ -51,10 +50,11 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
   const [stateName, setStateName] = useState('');
   const [municipality, setMunicipality] = useState('');
 
-  // UI labels based on Arabic language
+  // UI labels based on language
   const isAr = lang === 'ar';
+  const isFr = lang === 'fr';
 
-  const handleGoogleSignIn = async () => {
+const handleGoogleSignIn = async () => {
   if (loading) return;
 
   setLoading(true);
@@ -119,7 +119,7 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
         completedQuestsIds: [],
         createdQuestsIds: [],
         unlockedBadgeIds: ['badge-welcome'],
-        language: 'ar',
+        language: getDeviceLanguage(),
         enableNotifications: true,
         privacyEnabled: false,
         audioEffectsEnabled: true,
@@ -284,10 +284,30 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
                   <span>{isAr ? 'الدخول بحساب Google' : 'Continue with Google'}</span>
                 </button>
 
-                <p className="text-[10px] text-white/80 font-bold text-center mt-3 leading-snug px-2">
-                  {isAr 
-                    ? 'بمجرد تسجيل الدخول فإنك توافق على شروط الاستخدام وسياسة الخصوصية التي تطلبها غوغل.' 
-                    : 'By signing in, you agree to the Terms of Service and Privacy Policy required by Google.'}
+                <p className="text-[10px] text-white/90 font-bold text-center mt-3 leading-snug px-2">
+                  {isAr ? (
+                    <span>
+                      بمجرد تسجيل الدخول فإنك توافق على{' '}
+                      <a href="https://kimo.hakerzoldyck.workers.dev/terms%20of%20use" target="_blank" rel="noopener noreferrer" className="underline text-pink-300 hover:text-white transition">
+                        شروط الاستخدام
+                      </a>{' '}
+                      و{' '}
+                      <a href="https://kimo.hakerzoldyck.workers.dev/privacy%20policy" target="_blank" rel="noopener noreferrer" className="underline text-sky-300 hover:text-white transition">
+                        سياسة الخصوصية
+                      </a>.
+                    </span>
+                  ) : (
+                    <span>
+                      By signing in, you agree to the{' '}
+                      <a href="https://kimo.hakerzoldyck.workers.dev/terms%20of%20use" target="_blank" rel="noopener noreferrer" className="underline text-pink-300 hover:text-white transition">
+                        Terms of Service
+                      </a>{' '}
+                      and{' '}
+                      <a href="https://kimo.hakerzoldyck.workers.dev/privacy%20policy" target="_blank" rel="noopener noreferrer" className="underline text-sky-300 hover:text-white transition">
+                        Privacy Policy
+                      </a>.
+                    </span>
+                  )}
                 </p>
               </div>
             </motion.div>

@@ -14,6 +14,7 @@ export default function TermsConsentModal({ isOpen, onAccept, lang = 'ar' }: Ter
   if (!isOpen) return null;
 
   const isAr = lang === 'ar';
+  const isFr = lang === 'fr';
 
   return (
     <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-xl animate-in fade-in duration-300">
@@ -22,7 +23,7 @@ export default function TermsConsentModal({ isOpen, onAccept, lang = 'ar' }: Ter
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.9, y: 20 }}
         transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-        className="w-full max-w-lg bg-slate-900 border border-slate-700/80 rounded-3xl p-6 sm:p-8 shadow-2xl relative text-right overflow-hidden dir-rtl"
+        className={`w-full max-w-lg bg-slate-900 border border-slate-700/80 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden ${isAr ? 'text-right dir-rtl' : 'text-left dir-ltr'}`}
         dir={isAr ? 'rtl' : 'ltr'}
       >
         {/* Glow ambient background element */}
@@ -37,10 +38,10 @@ export default function TermsConsentModal({ isOpen, onAccept, lang = 'ar' }: Ter
           <div>
             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-blue-500/10 text-blue-400 border border-blue-500/20 mb-1">
               <Lock className="w-3 h-3" />
-              {isAr ? 'شروط Google وسياسة الخصوصية' : 'Google Terms & Privacy Standards'}
+              {isAr ? 'شروط  وسياسة الخصوصية' : isFr ? 'Normes de confidentialité ' : ' Terms & Privacy Standards'}
             </span>
             <h2 className="text-lg font-black text-white leading-tight">
-              {isAr ? 'موافقة شروط الاستخدام وسياسة الخصوصية' : 'Terms of Use & Privacy Consent'}
+              {isAr ? 'موافقة شروط الاستخدام وسياسة الخصوصية' : isFr ? "Conditions d'utilisation et politique de confidentialité" : 'Terms of Use & Privacy Consent'}
             </h2>
           </div>
         </div>
@@ -49,43 +50,43 @@ export default function TermsConsentModal({ isOpen, onAccept, lang = 'ar' }: Ter
         <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-4 sm:p-5 text-slate-300 text-xs font-semibold leading-relaxed space-y-3 mb-5">
           <p className="text-slate-200 font-bold">
             {isAr
-              ? 'أهلاً بك! بمجرد تسجيل الدخول واستخدام التطبيق، فإنك توافق على شروط الاستخدام وسياسة الخصوصية المطلوبة وفقًا لمعايير Google لحماية بياناتك وشخصيتك.'
-              : 'Welcome! By logging in and using the app, you agree to the Terms of Use and Privacy Policy required under Google standards to protect your data.'}
+              ? 'أهلاً بك! بمجرد تسجيل الدخول واستخدام التطبيق، فإنك توافق على شروط الاستخدام وسياسة الخصوصية المطلوبة وفقًا لمعايير   لحماية بياناتك وشخصيتك.'
+              : isFr
+              ? 'Bienvenue ! En vous connectant et en utilisant l\'application, vous acceptez les conditions d\'utilisation et la politique de confidentialité requises par les normes   pour protéger vos données.'
+              : 'Welcome! By logging in and using the app, you agree to the Terms of Use and Privacy Policy required under   standards to protect your data.'}
           </p>
           <p className="text-[11px] text-slate-400 leading-normal">
             {isAr
               ? 'نحن نلتزم بحماية خصوصيتك وعدم مشاركة بياناتك مع أي طرف ثالث دون إذنك الصريح.'
+              : isFr
+              ? 'Nous nous engageons à protéger votre vie privée et à ne jamais partager vos données sans votre consentement explicite.'
               : 'We are committed to protecting your privacy and never sharing your data with third parties without explicit consent.'}
           </p>
 
           {/* Links Section */}
           <div className="pt-2 border-t border-slate-800/80 flex flex-col sm:flex-row gap-2">
             <a
-              href="#"
-              onClick={(e) => {
-                e.preventDefault();
-                alert(isAr ? 'سيتم ربط صفحة شروط الاستخدام قريباً' : 'Terms of Use link will be attached soon');
-              }}
+              href="https://kimo.hakerzoldyck.workers.dev/terms%20of%20use"
+              target="_blank"
+              rel="noopener noreferrer"
               className="flex-1 py-2 px-3 bg-slate-900 hover:bg-slate-800 border border-slate-700/60 rounded-xl text-[11px] font-bold text-[#FC0D82] flex items-center justify-between transition group cursor-pointer"
             >
               <span className="flex items-center gap-1.5">
                 <FileText className="w-3.5 h-3.5 text-pink-400" />
-                {isAr ? 'شروط الاستخدام' : 'Terms of Use'}
+                {isAr ? 'شروط الاستخدام' : isFr ? "Conditions d'utilisation" : 'Terms of Use'}
               </span>
               <ExternalLink className="w-3 h-3 text-slate-400 group-hover:text-white transition" />
             </a>
 
             <a
-              href="#"
-              onClick={(e) => {
-                e.preventDefault();
-                alert(isAr ? 'سيتم ربط صفحة سياسة الخصوصية قريباً' : 'Privacy Policy link will be attached soon');
-              }}
+              href="https://kimo.hakerzoldyck.workers.dev/privacy%20policy"
+              target="_blank"
+              rel="noopener noreferrer"
               className="flex-1 py-2 px-3 bg-slate-900 hover:bg-slate-800 border border-slate-700/60 rounded-xl text-[11px] font-bold text-blue-400 flex items-center justify-between transition group cursor-pointer"
             >
               <span className="flex items-center gap-1.5">
                 <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
-                {isAr ? 'سياسة الخصوصية' : 'Privacy Policy'}
+                {isAr ? 'سياسة الخصوصية' : isFr ? 'Politique de confidentialité' : 'Privacy Policy'}
               </span>
               <ExternalLink className="w-3 h-3 text-slate-400 group-hover:text-white transition" />
             </a>
@@ -109,6 +110,8 @@ export default function TermsConsentModal({ isOpen, onAccept, lang = 'ar' }: Ter
           <span className="text-[11px] font-bold text-slate-300 leading-snug">
             {isAr
               ? 'قرأت وفهمت جميع شروط الاستخدام وسياسة الخصوصية المذكورة وأوافق عليها للبدء.'
+              : isFr
+              ? 'J\'ai lu, compris et j\'accepte toutes les conditions d\'utilisation et la politique de confidentialité pour commencer.'
               : 'I have read, understood and agree to all the Terms of Use and Privacy Policy.'}
           </span>
         </label>
@@ -123,7 +126,7 @@ export default function TermsConsentModal({ isOpen, onAccept, lang = 'ar' }: Ter
               : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
           }`}
         >
-          <span>{isAr ? 'أوافق وأتابع إلى التطبيق 🚀' : 'Agree & Continue to App 🚀'}</span>
+          <span>{isAr ? 'أوافق وأتابع إلى التطبيق 🚀' : isFr ? 'J\'accepte et continuer vers l\'application 🚀' : 'Agree & Continue to App 🚀'}</span>
         </button>
       </motion.div>
     </div>

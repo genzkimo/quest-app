@@ -14,7 +14,7 @@ import {
   INITIAL_GODFATHER_REVIEWS
 } from './data/mockData';
 import { Quest, UserProfile, UserModel, Leader, Challenge, Badge, ViewState, HunterReview, GodfatherReview, QuestStory } from './types';
-import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
+import { onAuthStateChanged, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut } from 'firebase/auth';
 import { onSnapshot, doc, setDoc, updateDoc, deleteDoc, collection, getDoc, query, where, orderBy, limit, getDocs, increment } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType, cleanData } from './utils/firebase';
 import { Capacitor } from '@capacitor/core';
@@ -28,7 +28,6 @@ import MapView from './components/MapView';
 import LeaderboardView from './components/LeaderboardView';
 import MyQuestsView from './components/MyQuestsView';
 import ProfileView from './components/ProfileView';
-import AdminView from './components/AdminView';
 import PublicProfileView from './components/PublicProfileView';
 import ReciprocalRatingModal from './components/ReciprocalRatingModal';
 import NotificationScreen, { NotificationDoc } from './components/NotificationScreen';
@@ -41,6 +40,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Geolocator } from './utils/geolocator';
 import { calculateBookingFee } from './utils/fee';
 import AuthScreen from './components/AuthScreen';
+import { getDeviceLanguage } from './utils/language';
 import { Lock, CheckCircle2, Star, X, Coins, ShieldX, MessageSquare, Users } from 'lucide-react';
 
 const generateShortId = () => {
@@ -156,6 +156,41 @@ export default function App() {
       }
     }
   }, [userProfile, authenticatedUser]);
+
+  // Auto-heal / Auto-claim +700 KYC reward tokens if account is verified but reward not marked claimed
+  useEffect(() => {
+    if (userProfile && userProfile.idVerificationStatus === 'verified' && !userProfile.kycRewardClaimed) {
+      const isAr = userProfile.language === 'ar';
+      const updatedBadges = !userProfile.unlockedBadgeIds.includes('badge-certified-runner')
+        ? [...userProfile.unlockedBadgeIds, 'badge-certified-runner']
+        : userProfile.unlockedBadgeIds;
+
+      syncProfile({
+        ...userProfile,
+        kycRewardClaimed: true,
+        tokenBalance: (userProfile.tokenBalance || 0) + 700,
+        unlockedBadgeIds: updatedBadges
+      });
+
+      showToast(isAr 
+        ? '🎉 تم إضافة +700 توكن لمكافأة توثيق الهوية إلى رصيدك بنجاح!' 
+        : '🎉 +700 Bonus tokens credited to your wallet for ID verification!');
+    }
+  }, [userProfile?.idVerificationStatus, userProfile?.kycRewardClaimed]);
+
+  // Auto-adapt interface language to device/browser language if user hasn't explicitly overridden it
+  useEffect(() => {
+    if (userProfile) {
+      const explicitChoice = localStorage.getItem('quest_app_language_explicit');
+      const devLang = getDeviceLanguage();
+      if (!explicitChoice && devLang && userProfile.language !== devLang) {
+        syncProfile({
+          ...userProfile,
+          language: devLang
+        });
+      }
+    }
+  }, [userProfile?.id]);
 
   const handleAcceptTerms = async () => {
     if (userProfile) {
@@ -540,18 +575,34 @@ export default function App() {
   // Google / Firebase Authentication functions
   const handleSignInWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
     try {
       await signInWithPopup(auth, provider);
       showToast('🎉 تم تسجيل الدخول بنجاح عبر حساب Google!');
     } catch (e: any) {
       console.error('Google Sign In Error', e);
-      let errMsg = e.message;
-      if (e.code === 'auth/operation-not-allowed') {
-        errMsg = 'تسجيل الدخول عبر Google غير مفعّل في لوحة تحكم Firebase Console.';
-      } else if (e.code === 'auth/network-request-failed') {
-        errMsg = 'تعذر الاتصال بالشبكة، يرجى التحقق من اتصال الإنترنت.';
+      if (
+        e.code === 'auth/popup-blocked' || 
+        e.code === 'auth/popup-closed-by-user' || 
+        e.code === 'auth/cancelled-popup-request' || 
+        (e.message && e.message.includes('popup-blocked'))
+      ) {
+        try {
+          await signInWithRedirect(auth, provider);
+          return;
+        } catch (redirectErr: any) {
+          console.error('Google Redirect Sign In Error', redirectErr);
+          showToast('⚠️ تم حظر النافذة المنبثقة بواسطة المتصفح. يرجى فتح التطبيق في تبويب جديد أو السماح بالنوافذ المنبثقة.');
+        }
+      } else {
+        let errMsg = e.message || e.code;
+        if (e.code === 'auth/operation-not-allowed') {
+          errMsg = 'تسجيل الدخول عبر Google غير مفعّل في لوحة تحكم Firebase Console.';
+        } else if (e.code === 'auth/network-request-failed') {
+          errMsg = 'تعذر الاتصال بالشبكة، يرجى التحقق من اتصال الإنترنت.';
+        }
+        showToast('⚠️ فشل تسجيل الدخول: ' + errMsg);
       }
-      showToast('⚠️ فشل تسجيل الدخول: ' + errMsg);
     }
   };
 
@@ -566,6 +617,17 @@ export default function App() {
 
   // 1. Initial State bootstrapping and Firebase Authentication/Firestore sync
   useEffect(() => {
+    // Process Google OAuth redirect result if present
+    getRedirectResult(auth)
+      .then((result) => {
+        if (result?.user) {
+          showToast('🎉 تم تسجيل الدخول بنجاح عبر حساب Google!');
+        }
+      })
+      .catch((err) => {
+        console.error("Error processing Google redirect login:", err);
+      });
+
     // A. Setup local storage caching fallback loaders
     try {
       const storedFlags = localStorage.getItem('quest_app_user_flags');
@@ -694,7 +756,7 @@ export default function App() {
             completedQuestsIds: [],
             createdQuestsIds: [],
             unlockedBadgeIds: ['badge-welcome'],
-            language: 'ar',
+            language: getDeviceLanguage(),
             enableNotifications: true,
             privacyEnabled: false,
             audioEffectsEnabled: true,
@@ -1659,7 +1721,7 @@ export default function App() {
   }
 
   if (!userProfile) {
-    return <AuthScreen showToast={showToast} lang="ar" />;
+    return <AuthScreen showToast={showToast} lang={getDeviceLanguage()} />;
   }
 
   // Helper action: Recalculate level up based on points (each 600 points raises a level)
@@ -2336,6 +2398,7 @@ export default function App() {
     syncProfile({
       ...userProfile,
       totalPoints: updatedPoints,
+      tokenBalance: userProfile.tokenBalance + (targetQuest.cashReward || 1000),
       questsCompleted: updatedCompletedQuestsCount,
       level: calculatedLevel,
       completedQuestsIds: storedCompletedIds,
@@ -2492,8 +2555,9 @@ export default function App() {
     // Generate Hunter Review
     const finalRating = rating || 5;
     const finalComment = comment || (userProfile && userProfile.lang === 'ar' ? 'عمل ممتاز وسريع للغاية! شكراً جزيلاً.' : 'Excellent work, fast and professional! Highly recommended.');
-    const helperId = targetQuest.helperId || 'leader-1';
+    const helperId = targetQuest.helperId || targetQuest.assignedRunnerId || (targetQuest.assignedRunnerIds && targetQuest.assignedRunnerIds[0]) || 'leader-1';
     const helperName = targetQuest.helperName || 'رشيد بن علي';
+    const rewardTokens = targetQuest.cashReward || 1000;
 
     const newReview: HunterReview = {
       reviewId: `rev-${questId}`,
@@ -2539,6 +2603,7 @@ export default function App() {
         ...userProfile,
         rating: Number(averageRating.toFixed(1)),
         totalPoints: updatedPoints,
+        tokenBalance: userProfile.tokenBalance + rewardTokens,
         questsCompleted: updatedCompletedQuestsCount,
         level: calculatedLevel,
         completedQuestsIds: storedCompletedIds,
@@ -2553,6 +2618,7 @@ export default function App() {
           return {
             ...leader,
             points: leader.points + targetQuest.pointsReward,
+            tokenBalance: (leader.tokenBalance || 0) + rewardTokens,
             questsCompleted: leader.questsCompleted + 1,
             rating: Number(averageRating.toFixed(1))
           };
@@ -2570,11 +2636,14 @@ export default function App() {
         if (targetLeader) {
           const currentPts = targetLeader.points || 0;
           const currentCount = targetLeader.questsCompleted || 0;
+          const currentTokens = targetLeader.tokenBalance || 0;
           const newPts = currentPts + addedPts;
           const newCount = currentCount + 1;
+          const newTokens = currentTokens + rewardTokens;
           
           setDoc(helperRef, {
             totalPoints: newPts,
+            tokenBalance: newTokens,
             questsCompleted: newCount,
             level: calculateLevelForPoints(newPts)
           }, { merge: true }).catch(err => {
@@ -2760,6 +2829,9 @@ export default function App() {
 
   // Profile Edit updates
   const handleUpdateProfile = (updatedFields: Partial<UserProfile>) => {
+    if (updatedFields.language) {
+      localStorage.setItem('quest_app_language_explicit', 'true');
+    }
     const isAr = (updatedFields.language || userProfile?.language) === 'ar';
     syncProfile({
       ...userProfile,
@@ -2781,8 +2853,13 @@ export default function App() {
   const handleSubmitKyc = (fullName: string, nidNum: string, customStatus?: 'verified' | 'pending', verifiedName?: string, verifiedNid?: string, idFrontUrl?: string, idBackUrl?: string) => {
     if (!userProfile) return;
     const isApproved = customStatus === 'verified';
-    const rewardAmount = isApproved ? 700 : 0;
+    const alreadyClaimed = userProfile.kycRewardClaimed === true;
+    const rewardAmount = (isApproved && !alreadyClaimed) ? 700 : 0;
     
+    const updatedBadges = isApproved && !userProfile.unlockedBadgeIds.includes('badge-certified-runner')
+      ? [...userProfile.unlockedBadgeIds, 'badge-certified-runner']
+      : userProfile.unlockedBadgeIds;
+
     syncProfile({
       ...userProfile,
       idVerificationStatus: customStatus || 'pending',
@@ -2792,6 +2869,7 @@ export default function App() {
       idCardUrl: idFrontUrl || idBackUrl || userProfile.idCardUrl || '',
       kycRewardClaimed: isApproved ? true : userProfile.kycRewardClaimed,
       tokenBalance: userProfile.tokenBalance + rewardAmount,
+      unlockedBadgeIds: updatedBadges,
       verifiedName: verifiedName || fullName,
       verifiedNid: verifiedNid || nidNum
     });
@@ -3039,13 +3117,7 @@ export default function App() {
   };
 
   const getCleanEmail = (emailStr?: string) => (emailStr || '').trim().toLowerCase();
-  const isAdminUser = !!(
-    getCleanEmail(authenticatedUser?.email) === 'hakerzoldyck@gmail.com' ||
-    authenticatedUser?.role === 'admin' ||
-    getCleanEmail(userProfile?.email) === 'hakerzoldyck@gmail.com' ||
-    userProfile?.role === 'admin' ||
-    userProfile?.isAdmin === true
-  );
+  
 
   const handleOpenArrivalChat = async () => {
     if (!activeArrivalAlert) return;
@@ -3501,7 +3573,7 @@ export default function App() {
         unreadTasksCount={myQuestsBadgeDismissed ? 0 : unreadTasksCount}
         tokenBalance={userProfile.tokenBalance}
         lang={userProfile.language}
-        isAdmin={isAdminUser}
+        
         audioEnabled={userProfile.audioEffectsEnabled !== false}
         unreadNotificationsCount={showNotifications ? 0 : unreadNotificationsCount}
         unreadChatsCount={messagesBadgeDismissed ? 0 : unreadChatsCount}
@@ -3829,33 +3901,7 @@ export default function App() {
                   />
                 )}
 
-                {currentView === 'admin' && (
-                  isAdminUser ? (
-                    <AdminView 
-                      userProfile={userProfile}
-                      quests={quests}
-                      leaders={leaders}
-                      lang={userProfile.language}
-                      onApproveKYC={handleApproveKYC}
-                      onRejectKYC={handleRejectKYC}
-                      onBanUser={handleBanUser}
-                      onDeleteQuest={handleDeleteQuest}
-                      onBroadcastMessage={handleBroadcastMessage}
-                      showToast={showToast}
-                      onInspectQuest={(questId) => setGlobalQuestDetailId(questId)}
-                    />
-                  ) : (
-                    <div className="bg-white border-2 border-red-500 rounded-3xl p-8 text-center space-y-4 shadow-md max-w-md mx-auto my-12 font-sans" style={{ direction: userProfile.language === 'ar' ? 'rtl' : 'ltr' }}>
-                      <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto">
-                        <span className="text-red-600 text-3xl">⚠️</span>
-                      </div>
-                      <h3 className="text-lg font-black text-red-600">غير مصرح بالدخول | Access Denied</h3>
-                      <p className="text-xs text-slate-500 font-semibold leading-relaxed">
-                        هذه الصفحة مخصصة للمشرفين فقط. يرجى تسجيل الدخول بحساب مشرف معتمد للوصول للميزات الإدارية.
-                      </p>
-                    </div>
-                  )
-                )}
+                
               </>
             )}
           </motion.div>
@@ -4081,7 +4127,7 @@ export default function App() {
         isOpen={showGlobalCreateQuest}
         onClose={() => setShowGlobalCreateQuest(false)}
         onPostQuest={handlePostNewQuest}
-        lang={userProfile?.language || 'ar'}
+        lang={userProfile?.language || getDeviceLanguage()}
         userProfile={userProfile}
         audioEnabled={userProfile?.audioEffectsEnabled !== false}
       />
@@ -4090,7 +4136,7 @@ export default function App() {
       <TermsConsentModal
         isOpen={showTermsConsentModal}
         onAccept={handleAcceptTerms}
-        lang={userProfile?.language || 'ar'}
+        lang={userProfile?.language || getDeviceLanguage()}
       />
 
     </div>

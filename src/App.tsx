@@ -28,6 +28,7 @@ import MapView from './components/MapView';
 import LeaderboardView from './components/LeaderboardView';
 import MyQuestsView from './components/MyQuestsView';
 import ProfileView from './components/ProfileView';
+import AdminView from './components/AdminView';
 import PublicProfileView from './components/PublicProfileView';
 import ReciprocalRatingModal from './components/ReciprocalRatingModal';
 import NotificationScreen, { NotificationDoc } from './components/NotificationScreen';
@@ -3117,7 +3118,13 @@ export default function App() {
   };
 
   const getCleanEmail = (emailStr?: string) => (emailStr || '').trim().toLowerCase();
-  
+  const isAdminUser = !!(
+    getCleanEmail(authenticatedUser?.email) === 'hakerzoldyck@gmail.com' ||
+    authenticatedUser?.role === 'admin' ||
+    getCleanEmail(userProfile?.email) === 'hakerzoldyck@gmail.com' ||
+    userProfile?.role === 'admin' ||
+    userProfile?.isAdmin === true
+  );
 
   const handleOpenArrivalChat = async () => {
     if (!activeArrivalAlert) return;
@@ -3573,7 +3580,7 @@ export default function App() {
         unreadTasksCount={myQuestsBadgeDismissed ? 0 : unreadTasksCount}
         tokenBalance={userProfile.tokenBalance}
         lang={userProfile.language}
-        
+        isAdmin={isAdminUser}
         audioEnabled={userProfile.audioEffectsEnabled !== false}
         unreadNotificationsCount={showNotifications ? 0 : unreadNotificationsCount}
         unreadChatsCount={messagesBadgeDismissed ? 0 : unreadChatsCount}
@@ -3901,7 +3908,33 @@ export default function App() {
                   />
                 )}
 
-                
+                {currentView === 'admin' && (
+                  isAdminUser ? (
+                    <AdminView 
+                      userProfile={userProfile}
+                      quests={quests}
+                      leaders={leaders}
+                      lang={userProfile.language}
+                      onApproveKYC={handleApproveKYC}
+                      onRejectKYC={handleRejectKYC}
+                      onBanUser={handleBanUser}
+                      onDeleteQuest={handleDeleteQuest}
+                      onBroadcastMessage={handleBroadcastMessage}
+                      showToast={showToast}
+                      onInspectQuest={(questId) => setGlobalQuestDetailId(questId)}
+                    />
+                  ) : (
+                    <div className="bg-white border-2 border-red-500 rounded-3xl p-8 text-center space-y-4 shadow-md max-w-md mx-auto my-12 font-sans" style={{ direction: userProfile.language === 'ar' ? 'rtl' : 'ltr' }}>
+                      <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto">
+                        <span className="text-red-600 text-3xl">⚠️</span>
+                      </div>
+                      <h3 className="text-lg font-black text-red-600">غير مصرح بالدخول | Access Denied</h3>
+                      <p className="text-xs text-slate-500 font-semibold leading-relaxed">
+                        هذه الصفحة مخصصة للمشرفين فقط. يرجى تسجيل الدخول بحساب مشرف معتمد للوصول للميزات الإدارية.
+                      </p>
+                    </div>
+                  )
+                )}
               </>
             )}
           </motion.div>

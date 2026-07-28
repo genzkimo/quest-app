@@ -442,7 +442,13 @@ export default function ProfileView({
   );
 
   const getCleanEmail = (emailStr?: string) => (emailStr || '').trim().toLowerCase();
-  
+  const isAdminUser = !!(
+    getCleanEmail(authenticatedUser?.email) === 'hakerzoldyck@gmail.com' ||
+    authenticatedUser?.role === 'admin' ||
+    getCleanEmail(userProfile?.email) === 'hakerzoldyck@gmail.com' ||
+    userProfile?.role === 'admin' ||
+    userProfile?.isAdmin === true
+  );
 
   const handleSaveProfile = () => {
     onUpdateProfile({
@@ -3826,7 +3832,25 @@ export default function ProfileView({
       </div>
 
       {/* 🔐 Admin secure command tile */}
-      
+      {isAdminUser && (
+        <div className="bg-[#1F2A44] border-2 border-[#FFD34D] rounded-3xl p-5 shadow-lg flex items-center justify-between text-white animate-pulse">
+          <div className="space-y-1 text-right">
+            <h4 className="font-black text-xs text-[#FFD34D] tracking-wider uppercase flex items-center gap-2">
+              <span>🛡️ {lang === 'ar' ? 'بوابة الإدارة المركزية' : 'Central Admin Gate'}</span>
+            </h4>
+            <p className="text-[10px] text-gray-300 font-semibold leading-relaxed">
+              {lang === 'ar' ? 'لديك صلاحيات كاملة لمراجعة تفعيلات الهوية (KYC) وإثباتات العمل مباشرة.' : 'Full supervisory authorization detected. Review KYC requests and operator verifications.'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => onViewChange?.('admin')}
+            className="px-4 py-2.5 bg-[#FFD34D] hover:bg-yellow-400 text-[#1F2A44] font-black text-xs rounded-xl shadow-md transition-all duration-200 active:scale-95 cursor-pointer shrink-0"
+          >
+            {lang === 'ar' ? 'لوحة الإدارة ⚙️' : 'Admin Board ⚙️'}
+          </button>
+        </div>
+      )}
 
       {/* 🎛️ Premium 3-Tab Segmented Controller */}
       <div className="bg-slate-50 p-1.5 rounded-2xl border border-gray-150 grid grid-cols-3 gap-1 mx-auto max-w-lg mb-6 text-right">

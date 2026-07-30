@@ -103,6 +103,7 @@ export interface UserProfile {
   referralRewardClaimed?: boolean; // Whether the user claimed their +100 tokens as an invitee
   preBanTokenBalance?: number; // Banned user's tokens preserved before ban
   createdAt?: string; // Account registration / joined date
+  termsAccepted?: boolean; // Whether terms of service and privacy consent was accepted
 }
 
 export class UserModel {
@@ -149,6 +150,7 @@ export class UserModel {
       referralRewardClaimed: !!profile.referralRewardClaimed,
       preBanTokenBalance: profile.preBanTokenBalance !== undefined ? Number(profile.preBanTokenBalance) : 0,
       createdAt: profile.createdAt || new Date().toISOString(),
+      termsAccepted: profile.termsAccepted !== undefined ? !!profile.termsAccepted : true,
     };
   }
 
@@ -195,6 +197,7 @@ export class UserModel {
       referralRewardClaimed: !!data.referralRewardClaimed,
       preBanTokenBalance: data.preBanTokenBalance !== undefined ? Number(data.preBanTokenBalance) : 0,
       createdAt: data.createdAt || data.joinedAt || '2025-01-15T00:00:00.000Z',
+      termsAccepted: data.termsAccepted !== undefined ? !!data.termsAccepted : true,
     };
   }
 }

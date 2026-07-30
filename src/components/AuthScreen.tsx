@@ -19,6 +19,7 @@ import {
 import { auth, db, cleanData } from '../utils/firebase';
 import { UserProfile } from '../types';
 import QuestLogo from './QuestLogo';
+import { getDeviceLanguage } from '../utils/language';
 
 interface AuthScreenProps {
   showToast: (msg: string) => void;
@@ -54,7 +55,7 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
   const isAr = lang === 'ar';
   const isFr = lang === 'fr';
 
-const handleGoogleSignIn = async () => {
+  const handleGoogleSignIn = async () => {
   if (loading) return;
 
   setLoading(true);
@@ -128,6 +129,7 @@ const handleGoogleSignIn = async () => {
         role: normEmail === 'hakerzoldyck@gmail.com' ? 'admin' : 'user',
         email: normEmail,
         shortId: generateShortId(),
+        termsAccepted: false,
       };
 
       await setDoc(doc(db, 'users', uid), cleanData(newUserProfile));

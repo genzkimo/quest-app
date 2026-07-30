@@ -99,28 +99,6 @@ export default function MyQuestsView({
     return activeQuestCount > 0 ? 'created' : 'obligations';
   });
 
-  const [hiddenArrivedQuestIds, setHiddenArrivedQuestIds] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem('hidden_arrived_quest_ids');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  const handleHideArrivedQuest = (questId: string) => {
-    setHiddenArrivedQuestIds(prev => {
-      const updated = [...prev, questId];
-      try {
-        localStorage.setItem('hidden_arrived_quest_ids', JSON.stringify(updated));
-      } catch (e) {
-        console.warn("Error saving hidden arrived quest:", e);
-      }
-      return updated;
-    });
-    showToast(lang === 'ar' ? '👁️‍🗨️ تم إخفاء المهمة المكتملة الوصول بنجاح!' : '👁️‍🗨️ Arrived quest hidden successfully!');
-  };
-
   const handleRefresh = async () => {
     try {
       const questsQuery = query(collection(db, 'quests'), orderBy('createdAt', 'desc'), limit(300));
@@ -502,8 +480,7 @@ export default function MyQuestsView({
 
   const obligations = quests.filter(q => 
     (q.helperId === currentUserId || q.assignedRunnerId === currentUserId || q.assignedRunnerIds?.includes(currentUserId)) && 
-    (showHistory ? isHistoryStatus(q.status) : isActiveStatus(q.status)) &&
-    !hiddenArrivedQuestIds.includes(q.id)
+    (showHistory ? isHistoryStatus(q.status) : isActiveStatus(q.status))
   );
 
   const createdQuests = quests.filter(q => 
@@ -726,20 +703,10 @@ export default function MyQuestsView({
                           </span>
                         )}
                         {isArrived && (
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-black px-3 py-1 rounded-full bg-[#FFB300]/10 text-[#B78103] border border-[#FFB300]/20 animate-pulse flex items-center gap-1">
-                              <span className="w-1.5 h-1.5 rounded-full bg-[#FFB300]"></span>
-                              {lang === 'ar' ? 'وصلت للموقع 🏁' : 'Arrived 🏁'}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleHideArrivedQuest(quest.id)}
-                              className="text-[10px] font-black px-2.5 py-1 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 transition-all cursor-pointer flex items-center gap-1"
-                              title={lang === 'ar' ? 'إخفاء هذه المهمة بعد وصولك' : 'Hide this task after arrival'}
-                            >
-                              👁️‍🗨️ {lang === 'ar' ? 'إخفاء المهمة' : 'Hide Task'}
-                            </button>
-                          </div>
+                          <span className="text-[10px] font-black px-3 py-1 rounded-full bg-[#FFB300]/10 text-[#B78103] border border-[#FFB300]/20 animate-pulse flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#FFB300]"></span>
+                            {lang === 'ar' ? 'وصلت للموقع 🏁' : 'Arrived 🏁'}
+                          </span>
                         )}
                         {isUnderReview && (
                           <span className="text-[10px] font-black px-3 py-1 rounded-full bg-[#FF9800]/10 text-[#E65100] border border-[#FF9800]/20 flex items-center gap-1">

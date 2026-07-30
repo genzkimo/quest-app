@@ -147,16 +147,16 @@ export default function App() {
     }
   }, [userProfile?.lowPerformanceModeEnabled]);
 
-  // First time login Terms & Privacy consent check
+  // First time login Terms & Privacy consent check (ONLY for new accounts)
   useEffect(() => {
     if (userProfile && authenticatedUser) {
       const acceptedLocal = localStorage.getItem('terms_accepted_' + userProfile.id);
-      const acceptedCloud = (userProfile as any).termsAccepted;
-      if (!acceptedLocal && !acceptedCloud) {
+      const acceptedCloud = userProfile.termsAccepted;
+      if (acceptedLocal !== 'true' && acceptedCloud === false) {
         setShowTermsConsentModal(true);
       }
     }
-  }, [userProfile, authenticatedUser]);
+  }, [userProfile?.id, userProfile?.termsAccepted, authenticatedUser]);
 
   // Auto-heal / Auto-claim +700 KYC reward tokens if account is verified but reward not marked claimed
   useEffect(() => {
@@ -206,6 +206,7 @@ export default function App() {
       } catch (e) {
         console.warn("Could not save terms consent state:", e);
       }
+      setUserProfile(prev => prev ? { ...prev, termsAccepted: true } : prev);
     }
     setShowTermsConsentModal(false);
     showToast(userProfile?.language === 'ar' ? '✅ تم قبول شروط الاستخدام وسياسة الخصوصية بنجاح!' : '✅ Terms & Privacy Policy accepted!');
@@ -768,6 +769,7 @@ export default function App() {
             email: normEmail,
             shortId: generateShortId(),
             bio: '',
+            termsAccepted: false,
           };
           try {
             await setDoc(userRef, cleanData(UserModel.toFirestore(profileToUse)));

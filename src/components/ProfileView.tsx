@@ -51,6 +51,7 @@ import { playCoinSound, triggerHaptic, playCameraShutter } from '../utils/audio'
 import { compressImage } from '../utils/imageCompressor';
 import LeaderboardView from './LeaderboardView';
 import { formatJoinedDate, formatReviewDate } from '../utils/dateFormatter';
+
 // رابط الخادم الوسيط (غيّره إلى رابط Render الخاص بك بعد الرفع)
 const API_BASE_URL = 'https://quest-app-jne8.onrender.com';
 
@@ -471,7 +472,7 @@ export default function ProfileView({
   };
 
   // Top up gateway states with Manual Proof-of-Payment Verification
-  const [refillPaymentMethod, setRefillPaymentMethod] = useState<'baridimob' | 'ccp' | 'googleplay'>('baridimob');
+  const [refillPaymentMethod, setRefillPaymentMethod] = useState<'baridimob' | 'ccp'>('baridimob');
   const [refillAmount, setRefillAmount] = useState<number>(3000);
   const [refillReference, setRefillReference] = useState('');
   const [refillDate, setRefillDate] = useState(new Date().toISOString().split('T')[0]);
@@ -497,15 +498,7 @@ export default function ProfileView({
   const [paypalApprovalUrl, setPaypalApprovalUrl] = useState('');
   const [otpError, setOtpError] = useState('');
 
-  // Google Play Billing simulation states
-  const [selectedGooglePackage, setSelectedGooglePackage] = useState<{ id: string; tokens: number; price: string; priceUSD: number } | null>({
-    id: 'tokens_1000',
-    tokens: 1000,
-    price: '9.99$',
-    priceUSD: 9.99
-  });
-  const [showGooglePlaySheet, setShowGooglePlaySheet] = useState(false);
-  const [googlePlayStatus, setGooglePlayStatus] = useState<'idle' | 'purchasing' | 'success'>('idle');
+
   const [verificationResult, setVerificationResult] = useState<{
     status: 'APPROVED' | 'SUSPICIOUS' | 'REJECTED' | null;
     confidence_score?: number;
@@ -1138,15 +1131,7 @@ export default function ProfileView({
   const executeRefill = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (refillPaymentMethod === 'googleplay') {
-      if (!selectedGooglePackage) {
-        showToast(lang === 'ar' ? '⚠️ يرجى تحديد الحزمة المراد شحنها!' : '⚠️ Please select a package to purchase!');
-        return;
-      }
-      setGooglePlayStatus('idle');
-      setShowGooglePlaySheet(true);
-      return;
-    }
+
 
     if (refillPaymentMethod === 'paypal') {
       if (paypalCheckoutMode === 'card') {
@@ -1490,53 +1475,7 @@ export default function ProfileView({
     }
   };
 
-  const executeGooglePlayPurchase = async () => {
-    if (!selectedGooglePackage) return;
-    setGooglePlayStatus('purchasing');
-    triggerHaptic(hapticFeedbackEnabled);
-    
-    setTimeout(() => {
-      setGooglePlayStatus('success');
-      playCoinSound(audioEffectsEnabled);
-      triggerHaptic(hapticFeedbackEnabled);
-      
-      const tokensToCredit = selectedGooglePackage.tokens;
-      onTopUpTokens(tokensToCredit);
-      
-      showToast(lang === 'ar' 
-        ? `🤖 تم الشراء بنجاح! شحن المحفظة بـ ${tokensToCredit} توكن عبر Google Play Billing.` 
-        : `🤖 Purchase Successful! Credited ${tokensToCredit} Tokens via Google Play Billing.`
-      );
-      
-      // Auto-write a success transaction to Firestore so that Admin dashboard records Google Play sales!
-      const generatedTxId = 'GPA.' + Array.from({length: 4}, () => Math.floor(Math.random() * 10)).join('') + '-' +
-                            Array.from({length: 4}, () => Math.floor(Math.random() * 10)).join('') + '-' +
-                            Array.from({length: 4}, () => Math.floor(Math.random() * 10)).join('') + '-' +
-                            Array.from({length: 5}, () => Math.floor(Math.random() * 10)).join('');
-      
-      const requestRef = doc(db, 'refill_requests', generatedTxId);
-      setDoc(requestRef, {
-        userId: userProfile?.id || authenticatedUser?.uid || 'user-current',
-        userEmail: userProfile?.email || authenticatedUser?.email || '',
-        paymentMethod: 'googleplay',
-        amount: tokensToCredit,
-        amountUSD: selectedGooglePackage.priceUSD,
-        referenceNumber: generatedTxId,
-        date: new Date().toISOString().split('T')[0],
-        status: 'approved',
-        createdAt: new Date().toISOString(),
-        verifiedBy: 'Google Play Billing SDK (Store)',
-        reason: lang === 'ar' 
-          ? `تم شحن الرصيد تلقائياً وبشكل آمن وفوري عبر فوترة غوغل بلاي SDK المتجر (رقم الطلب ${generatedTxId}).`
-          : `Balance credited instantly and securely via Google Play Billing SDK Store integration (Order ID ${generatedTxId}).`
-      }).catch(e => console.error("Failed to write GP request to DB:", e));
 
-      setTimeout(() => {
-        setShowGooglePlaySheet(false);
-        setGooglePlayStatus('idle');
-      }, 1000);
-    }, 2000);
-  };
 
   // Progress math
   const progressPercent = Math.min(100, (userProfile.totalPoints % 500) * 0.2);
@@ -2488,66 +2427,61 @@ export default function ProfileView({
 
               <div className="text-[10px] font-black text-gray-500 uppercase tracking-wide flex items-center gap-1.5 justify-end">
                 <span>
-                  {refillPaymentMethod === 'googleplay'
-                    ? (lang === 'ar' ? 'شحن آمن وفوري عبر متجر Google Play Billing SDK' : 'Instant In-App Recharge via Google Play Billing SDK')
-                    : (lang === 'ar' ? 'شحن رصيد المحفظة عبر بريد الجزائر / بريديموب' : 'Algeria Post / BaridiMob Escrow Recharge')
-                  }
+                  {lang === 'ar' ? 'شحن رصيد المحفظة عبر بريد الجزائر / بريديموب' : 'Algeria Post / BaridiMob Escrow Recharge'}
                 </span>
                 <CreditCard className="w-4 h-4 text-slate-400" />
               </div>
 
-              {/* Target Transfer Escrow Details - HIDE if Google Play is active */}
-              {refillPaymentMethod !== 'googleplay' && (
-                <div className="bg-[#1F2A44] border border-gray-700/40 rounded-2xl p-4 text-white text-right space-y-2 mb-3 shadow-inner animate-in fade-in duration-200">
-                  <div className="flex justify-between items-center border-b border-gray-700/50 pb-2">
-                    <span className="text-[9.5px] text-sky-200 font-extrabold">{lang === 'ar' ? 'معلومات الدفع لاستكمال التحويل' : 'Escrow Payment Information'}</span>
-                    <span className="inline-block px-1.5 py-0.5 bg-yellow-500/10 text-[#FFD34D] text-[8px] font-black rounded uppercase tracking-wider">{lang === 'ar' ? 'حسابات الشحن المعتمدة' : 'Escrow Address'}</span>
+              {/* Target Transfer Escrow Details */}
+              <div className="bg-[#1F2A44] border border-gray-700/40 rounded-2xl p-4 text-white text-right space-y-2 mb-3 shadow-inner animate-in fade-in duration-200">
+                <div className="flex justify-between items-center border-b border-gray-700/50 pb-2">
+                  <span className="text-[9.5px] text-sky-200 font-extrabold">{lang === 'ar' ? 'معلومات الدفع لاستكمال التحويل' : 'Escrow Payment Information'}</span>
+                  <span className="inline-block px-1.5 py-0.5 bg-yellow-500/10 text-[#FFD34D] text-[8px] font-black rounded uppercase tracking-wider">{lang === 'ar' ? 'حسابات الشحن المعتمدة' : 'Escrow Address'}</span>
+                </div>
+                <div className="space-y-3 text-[11px] text-slate-200">
+                  {/* Beneficiary Name Row */}
+                  <div className="flex justify-between items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleCopyToClipboard('عمراني اكرم حسام الدين', 'اسم المستفيد', 'Beneficiary Name')}
+                      className="font-sans font-black text-[11px] text-[#FFD34D] uppercase hover:underline cursor-pointer text-left"
+                    >
+                      عمراني اكرم حسام الدين
+                    </button>
+                    <span className="text-gray-400 font-bold text-[9.5px] whitespace-nowrap">{lang === 'ar' ? 'اسم المستفيد:' : 'Beneficiary Name:'}</span>
                   </div>
-                  <div className="space-y-3 text-[11px] text-slate-200">
-                    {/* Beneficiary Name Row */}
-                    <div className="flex justify-between items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleCopyToClipboard('عمراني اكرم حسام الدين', 'اسم المستفيد', 'Beneficiary Name')}
-                        className="font-sans font-black text-[11px] text-[#FFD34D] uppercase hover:underline cursor-pointer text-left"
-                      >
-                        عمراني اكرم حسام الدين
-                      </button>
-                      <span className="text-gray-400 font-bold text-[9.5px] whitespace-nowrap">{lang === 'ar' ? 'اسم المستفيد:' : 'Beneficiary Name:'}</span>
-                    </div>
 
-                    {/* CCP Number Row */}
-                    <div className="flex justify-between items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleCopyToClipboard('004154012014', 'رقم الجاري CCP', 'CCP Account Number')}
-                        className="font-mono bg-slate-800 hover:bg-slate-700 text-[10.5px] px-2 py-1 rounded text-sky-200 select-all font-black transition-all"
-                      >
-                        0041540120 | Clé: 14
-                      </button>
-                      <span className="text-gray-400 font-bold text-[9.5px] whitespace-nowrap">{lang === 'ar' ? 'رقم الحساب الجاري (CCP ID):' : 'CCP Account ID:'}</span>
-                    </div>
+                  {/* CCP Number Row */}
+                  <div className="flex justify-between items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleCopyToClipboard('004154012047', 'رقم الجاري CCP', 'CCP Account Number')}
+                      className="font-mono bg-slate-800 hover:bg-slate-700 text-[10.5px] px-2 py-1 rounded text-sky-200 select-all font-black transition-all"
+                    >
+                      0041540120 | Clé: 47
+                    </button>
+                    <span className="text-gray-400 font-bold text-[9.5px] whitespace-nowrap">{lang === 'ar' ? 'رقم الحساب الجاري (CCP ID):' : 'CCP Account ID:'}</span>
+                  </div>
 
-                    {/* RIP Number Row */}
-                    <div className="flex justify-between items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleCopyToClipboard('00799999004154012014', 'رقم الـ RIP', 'RIP Number')}
-                        className="font-mono bg-slate-800 hover:bg-slate-700 text-[10.5px] px-2 py-1 rounded text-sky-200 select-all font-black transition-all text-[9.5px]"
-                      >
-                        00799999004154012014
-                      </button>
-                      <span className="text-gray-400 font-bold text-[9.5px] whitespace-nowrap">{lang === 'ar' ? 'رقم الـ RIP لبريديموب:' : 'RIP (BaridiMob):'}</span>
-                    </div>
+                  {/* RIP Number Row */}
+                  <div className="flex justify-between items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleCopyToClipboard('00799999004154012047', 'رقم الـ RIP', 'RIP Number')}
+                      className="font-mono bg-slate-800 hover:bg-slate-700 text-[10.5px] px-2 py-1 rounded text-sky-200 select-all font-black transition-all text-[9.5px]"
+                    >
+                      00799999004154012047
+                    </button>
+                    <span className="text-gray-400 font-bold text-[9.5px] whitespace-nowrap">{lang === 'ar' ? 'رقم الـ RIP لبريديموب:' : 'RIP (BaridiMob):'}</span>
                   </div>
                 </div>
-              )}
+              </div>
 
               <div className="space-y-3">
                 {/* Payment Gateway Method Choice */}
                 <div className="text-right space-y-1">
                   <label className="text-[9.5px] font-extrabold text-gray-400 uppercase block">{lang === 'ar' ? 'طريقة التحويل المالية المستخدمة' : 'Recharge Gateway Channel'}</label>
-                  <div className="grid grid-cols-3 gap-1.5 bg-gray-55/70 p-1 rounded-xl border border-gray-150">
+                  <div className="grid grid-cols-2 gap-1.5 bg-gray-55/70 p-1 rounded-xl border border-gray-150">
                     <button
                       type="button"
                       onClick={() => setRefillPaymentMethod('baridimob')}
@@ -2566,69 +2500,11 @@ export default function ProfileView({
                     >
                       📄 Chèque
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setRefillPaymentMethod('googleplay')}
-                      className={`py-2 rounded-lg text-[9px] font-black cursor-pointer transition-all ${
-                        refillPaymentMethod === 'googleplay' ? 'bg-[#1F2A44] text-[#FFD34D] shadow-xs' : 'text-gray-500 hover:text-gray-800'
-                      }`}
-                    >
-                      🤖 Google Play
-                    </button>
                   </div>
                 </div>
 
-                {/* Conditional Form Fields */}
-                {refillPaymentMethod === 'googleplay' ? (
-                  <div className="space-y-4 border border-[#4FC3F7]/30 bg-[#F4FBFF] p-4 rounded-2xl text-right animate-in fade-in duration-200">
-                    <div className="flex justify-between items-center border-b border-[#4FC3F7]/20 pb-2 mb-2">
-                      <span className="text-[10px] text-sky-800 font-extrabold">
-                        {lang === 'ar' ? 'بوابة شحن متجر غوغل بلاي الرسمية (SDK)' : 'Official Google Play Billing SDK Gateway'}
-                      </span>
-                      <span className="inline-block px-1.5 py-0.5 bg-[#E1F5FE] text-[#0288D1] text-[8px] font-black rounded uppercase">
-                        {lang === 'ar' ? 'مرفوع في المتجر' : 'In-App Integrated'}
-                      </span>
-                    </div>
-
-                    <p className="text-[9.5px] text-gray-500 leading-normal mb-3 font-semibold">
-                      {lang === 'ar' 
-                        ? 'هذا الشحن متكامل تماماً مع نظام الفوترة الرسمي لغوغل بلاي للتطبيقات. حدد الحزمة المراد شراؤها ثم اضغط على زر التأكيد للشراء الآمن بنقرة واحدة ببطاقتك المسجلة بالمتجر أو رصيد بلاي.' 
-                        : 'Fully integrated with official Google Play In-App Billing APIs. Select your preferred package, then tap "Confirm & Request Recharge" below to initiate Google Play payment.'
-                      }
-                    </p>
-
-                    <div className="grid grid-cols-2 gap-2.5">
-                      {[
-                        { id: 'tokens_500', tokens: 500, price: '4.99$', priceUSD: 4.99 },
-                        { id: 'tokens_1000', tokens: 1000, price: '9.99$', priceUSD: 9.99 },
-                        { id: 'tokens_2500', tokens: 2500, price: '24.99$', priceUSD: 24.99 },
-                        { id: 'tokens_5000', tokens: 5000, price: '49.99$', priceUSD: 49.99 },
-                      ].map((pkg) => {
-                        const isSelected = selectedGooglePackage?.id === pkg.id;
-                        return (
-                          <button
-                            key={pkg.id}
-                            type="button"
-                            onClick={() => setSelectedGooglePackage(pkg)}
-                            className={`p-3.5 rounded-2xl border-2 text-right transition-all flex flex-col justify-between h-20 relative cursor-pointer ${
-                              isSelected 
-                                ? 'bg-[#E1F5FE]/60 border-[#0288D1] shadow-xs scale-[1.02]' 
-                                : 'bg-white border-gray-150 hover:border-gray-300'
-                            }`}
-                          >
-                            <span className="text-[12px] font-black text-slate-800 block">💎 {pkg.tokens} {lang === 'ar' ? 'توكن ذهبي' : 'Gold Tokens'}</span>
-                            <span className="text-[10px] font-extrabold text-[#0288D1] block mt-1">{pkg.price}</span>
-                            {isSelected && (
-                              <span className="absolute left-2.5 top-2.5 w-2 h-2 bg-[#0288D1] rounded-full animate-ping"></span>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : (
-                  // ORIGINAL BaridiMob/CCP Inputs wrapped
-                  <div className="space-y-3 animate-in fade-in duration-200">
+                {/* BaridiMob/CCP Inputs */}
+                <div className="space-y-3 animate-in fade-in duration-200">
                     {/* Amount field */}
                     <div className="text-right">
                       <label className="text-[9.5px] font-extrabold text-gray-400 uppercase block mb-1">{lang === 'ar' ? 'المبلغ المحوّل الفعلي بالدينار الجزائري (DZD)' : 'Exact Dinar Amount (DZD)'}</label>
@@ -2746,11 +2622,10 @@ export default function ProfileView({
                       )}
                     </div>
                   </div>
-                )}
               </div>
 
               {/* Refill AI Cooldown / Rate Limit Banner */}
-              {refillPaymentMethod !== 'googleplay' && refillCooldownSecs > 0 && (
+              {refillCooldownSecs > 0 && (
                 <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 text-right space-y-1.5 shadow-xs mb-3">
                   <div className="flex items-center justify-between text-amber-900 font-black text-xs">
                     <span className="font-mono bg-amber-200/80 px-2.5 py-0.5 rounded-full text-amber-950 font-black tracking-wider text-[11px] animate-pulse">
@@ -2780,13 +2655,13 @@ export default function ProfileView({
                 type="submit"
                 disabled={
                   refillLoading || 
-                  (refillPaymentMethod !== 'googleplay' && (refillCooldownSecs > 0 || !refillAmount || !refillReference || !refillReceiptBase64))
+                  refillCooldownSecs > 0 || !refillAmount || !refillReference || !refillReceiptBase64
                 }
                 className="w-full py-3 bg-[#FF3B7C] hover:bg-[#E0245E] text-white font-black text-xs rounded-xl shadow-md transition-all active:scale-95 cursor-pointer disabled:opacity-50 flex justify-center items-center gap-2"
               >
                 {refillLoading ? (
                   <span className="animate-pulse">{lang === 'ar' ? 'جاري إرسال الطلب للمراجعة...' : 'Submitting for review...'}</span>
-                ) : (refillPaymentMethod !== 'googleplay' && refillCooldownSecs > 0) ? (
+                ) : refillCooldownSecs > 0 ? (
                   <>
                     <Clock className="w-3.5 h-3.5 text-amber-200" />
                     <span>{lang === 'ar' ? `⏳ يرجى الانتظار (${formatTimerMinSec(refillCooldownSecs)}) دقيقة` : `⏳ Please Wait (${formatTimerMinSec(refillCooldownSecs)})`}</span>

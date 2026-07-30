@@ -253,7 +253,29 @@ export default function ProfileView({
   // Live timer tick timestamp (updated every second)
   const [nowTimestamp, setNowTimestamp] = useState(() => Date.now());
 
-  // KYC AI Rate Limit state (Max 3 attempts, 15-min cooldown on fail or after 3 attempts)
+  // Progressive Anti-Fraud Rate Limiting Helper:
+  // - 3 quick attempts allowed initially
+  // - Failed attempt 3 -> 15 minutes lock
+  // - Failed attempt 4 -> 30 minutes lock (doubled)
+  // - Failed attempt 5 -> 60 minutes / 1 hour lock (doubled)
+  // - Failed attempt 6+ -> 24 hours lock
+  // - Successful attempt -> Counter completely reset to 0!
+  const getAntiFraudCooldownMs = (failedAttempts: number): number => {
+    if (failedAttempts < 3) return 0; // 3 quick attempts allowed with no lock
+    if (failedAttempts === 3) return 15 * 60 * 1000; // 15 minutes
+    if (failedAttempts === 4) return 30 * 60 * 1000; // 30 minutes
+    if (failedAttempts === 5) return 60 * 60 * 1000; // 1 hour (60 minutes)
+    return 24 * 60 * 60 * 1000; // 24 hours
+  };
+
+  const getCooldownTextLabel = (failedAttempts: number, isAr: boolean) => {
+    if (failedAttempts <= 3) return isAr ? '15 دقيقة' : '15 Min';
+    if (failedAttempts === 4) return isAr ? '30 دقيقة' : '30 Min';
+    if (failedAttempts === 5) return isAr ? 'ساعة واحدة' : '1 Hour';
+    return isAr ? '24 ساعة' : '24 Hours';
+  };
+
+  // KYC AI Rate Limit state
   const [kycAiAttempts, setKycAiAttempts] = useState<number>(() => {
     const val = localStorage.getItem(`kyc_ai_attempts_${currentUserId}`);
     return val ? parseInt(val, 10) : 0;
@@ -263,7 +285,7 @@ export default function ProfileView({
     return val ? parseInt(val, 10) : 0;
   });
 
-  // Refill AI Rate Limit state (Max 3 attempts, 15-min cooldown on fail or after 3 attempts)
+  // Refill AI Rate Limit state
   const [refillAiAttempts, setRefillAiAttempts] = useState<number>(() => {
     const val = localStorage.getItem(`refill_ai_attempts_${currentUserId}`);
     return val ? parseInt(val, 10) : 0;
@@ -302,8 +324,12 @@ export default function ProfileView({
   const refillCooldownSecs = Math.max(0, Math.ceil((refillCooldownUntil - nowTimestamp) / 1000));
 
   const formatTimerMinSec = (totalSeconds: number) => {
-    const mins = Math.floor(totalSeconds / 60);
+    const hours = Math.floor(totalSeconds / 3600);
+    const mins = Math.floor((totalSeconds % 3600) / 60);
     const secs = totalSeconds % 60;
+    if (hours > 0) {
+      return `${hours}:${mins < 10 ? '0' : ''}${mins}:${secs < 10 ? '0' : ''}${secs}`;
+    }
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
@@ -569,7 +595,9 @@ export default function ProfileView({
   const nidFrontInputRef = useRef<HTMLInputElement>(null);
   const nidBackInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+  const avatarCameraInputRef = useRef<HTMLInputElement>(null);
   const portfolioInputRef = useRef<HTMLInputElement>(null);
+  const portfolioCameraInputRef = useRef<HTMLInputElement>(null);
   const receiptInputRef = useRef<HTMLInputElement>(null);
 
   // Runner portfolio state (starts empty and allows custom native phone file uploads)
@@ -826,19 +854,18 @@ export default function ProfileView({
       return;
     }
 
-    // Rate-limiting check: 15-minute cooldown enforcement
+    // Rate-limiting check: Anti-fraud cooldown enforcement
     if (nowTimestamp < kycCooldownUntil) {
       const remainingSecs = Math.ceil((kycCooldownUntil - nowTimestamp) / 1000);
       showToast(
         lang === 'ar'
-          ? `⏳ يرجى الانتظار ${formatTimerMinSec(remainingSecs)} دقيقة حتى انتهاء فترة التوقف المؤقت لفحص الهوية بالذكاء الاصطناعي.`
-          : `⏳ Please wait ${formatTimerMinSec(remainingSecs)} minutes before trying AI identity verification again.`
+          ? `⏳ يرجى الانتظار ${formatTimerMinSec(remainingSecs)} حتى انتهاء التوقيف المؤقت لزر التحقق بالذكاء الاصطناعي.`
+          : `⏳ Please wait ${formatTimerMinSec(remainingSecs)} before trying AI identity verification again.`
       );
       return;
     }
 
     const nextKycAttempts = kycAiAttempts + 1;
-    setKycAiAttempts(nextKycAttempts);
 
     setKycAiLoading(true);
     setKycAiResult(null);
@@ -864,7 +891,7 @@ export default function ProfileView({
       setKycAiResult(data);
 
       if (data.status === 'APPROVED') {
-        // Success: Clear attempts & cooldown
+        // Success: Reset failed attempts counter & cooldown
         setKycAiAttempts(0);
         setKycCooldownUntil(0);
 
@@ -911,9 +938,14 @@ export default function ProfileView({
 
         showToast(lang === 'ar' ? '🎉 تم التحقق من هويتك بنجاح بواسطة الذكاء الاصطناعي وترقية حسابك وإضافة 700 توكن!' : '🎉 AI identity verification successful! +700 tokens added & verified!');
       } else {
-        // Any failure (SUSPICIOUS / REJECTED / error) -> Trigger 15-minute cooldown
-        const cdTime = Date.now() + 15 * 60 * 1000;
-        setKycCooldownUntil(cdTime);
+        // Any failure (SUSPICIOUS / REJECTED) -> Increment failed attempts & set anti-fraud cooldown
+        setKycAiAttempts(nextKycAttempts);
+        const cdMs = getAntiFraudCooldownMs(nextKycAttempts);
+        if (cdMs > 0) {
+          setKycCooldownUntil(Date.now() + cdMs);
+        }
+
+        const cdLabel = getCooldownTextLabel(nextKycAttempts, lang === 'ar');
 
         if (data.status === 'SUSPICIOUS') {
           onSubmitKYC(kycFullName, kycNid, 'pending', data.extracted_name || kycFullName, data.extracted_nid || kycNid, kycFrontBase64, kycBackBase64);
@@ -947,7 +979,11 @@ export default function ProfileView({
             }).catch(console.error);
           }
 
-          showToast(lang === 'ar' ? '🕒 تم إرسال الملف للتدقيق اليدوي. تم بدء فترة انتظار 15 دقيقة للفحص التالي.' : '🕒 File routed to manual review. 15-minute cooldown triggered.');
+          showToast(
+            cdMs > 0
+              ? (lang === 'ar' ? `🕒 تم إرسال الملف للمراجعة اليدوية. تم توقيف الزر مؤقتاً لمدة (${cdLabel}) لمكافحة الاحتيال.` : `🕒 File routed to manual review. Button locked for (${cdLabel}).`)
+              : (lang === 'ar' ? `🕒 تم إرسال الملف للمراجعة اليدوية. (محاولة ${nextKycAttempts} من 3)` : `🕒 File routed to manual review. (Attempt ${nextKycAttempts} of 3)`)
+          );
         } else {
           const uId = userProfile?.id || authenticatedUser?.uid;
           if (uId) {
@@ -966,15 +1002,21 @@ export default function ProfileView({
             }).catch(console.error);
           }
 
-          showToast(lang === 'ar' ? '❌ تم رفض وثائق الهوية من قبل الذكاء الاصطناعي. تم تفعيل فترة الانتظار (15 دقيقة).' : '❌ AI identity verification rejected. 15-minute cooldown triggered.');
+          showToast(
+            cdMs > 0
+              ? (lang === 'ar' ? `❌ تم رفض الوثائق. تم توقيف الزر مؤقتاً لمدة (${cdLabel}) لمكافحة الاحتيال.` : `❌ Documents rejected. Button locked for (${cdLabel}).`)
+              : (lang === 'ar' ? `❌ تم رفض وثائق الهوية من الذكاء الاصطناعي. (محاولة ${nextKycAttempts} من 3)` : `❌ Documents rejected. (Attempt ${nextKycAttempts} of 3)`)
+          );
         }
       }
 
     } catch (err) {
       console.error("AI KYC Verification Error:", err);
-      // Trigger 15-minute cooldown on exception
-      const cdTime = Date.now() + 15 * 60 * 1000;
-      setKycCooldownUntil(cdTime);
+      setKycAiAttempts(nextKycAttempts);
+      const cdMs = getAntiFraudCooldownMs(nextKycAttempts);
+      if (cdMs > 0) {
+        setKycCooldownUntil(Date.now() + cdMs);
+      }
 
       onSubmitKYC(kycFullName, kycNid, 'pending', kycFullName, kycNid, kycFrontBase64, kycBackBase64);
 
@@ -1214,19 +1256,18 @@ export default function ProfileView({
       return;
     }
 
-    // Rate-limiting check: 15-minute cooldown enforcement for AI receipt verification
+    // Rate-limiting check: Anti-fraud cooldown enforcement for AI receipt verification
     if (nowTimestamp < refillCooldownUntil) {
       const remainingSecs = Math.ceil((refillCooldownUntil - nowTimestamp) / 1000);
       showToast(
         lang === 'ar'
-          ? `⏳ يرجى الانتظار ${formatTimerMinSec(remainingSecs)} دقيقة حتى انتهاء فترة التوقف المؤقت لفحص الإيصال بالذكاء الاصطناعي.`
-          : `⏳ Please wait ${formatTimerMinSec(remainingSecs)} minutes before re-submitting payment receipt to AI.`
+          ? `⏳ يرجى الانتظار ${formatTimerMinSec(remainingSecs)} حتى انتهاء التوقيف المؤقت لفحص الإيصال بالذكاء الاصطناعي.`
+          : `⏳ Please wait ${formatTimerMinSec(remainingSecs)} before re-submitting payment receipt.`
       );
       return;
     }
 
     const nextRefillAttempts = refillAiAttempts + 1;
-    setRefillAiAttempts(nextRefillAttempts);
 
     setRefillLoading(true);
     setVerificationResult(null);
@@ -1284,11 +1325,19 @@ export default function ProfileView({
         setRefillReceiptBase64(null);
         setRefillReceiptUploaded(false);
       } else {
-        // Any non-approval / failure -> Trigger 15-minute cooldown
-        const cdTime = Date.now() + 15 * 60 * 1000;
-        setRefillCooldownUntil(cdTime);
+        // Any non-approval / failure -> Increment failed attempts & set anti-fraud progressive cooldown
+        setRefillAiAttempts(nextRefillAttempts);
+        const cdMs = getAntiFraudCooldownMs(nextRefillAttempts);
+        if (cdMs > 0) {
+          setRefillCooldownUntil(Date.now() + cdMs);
+        }
 
-        const errMsg = data.reason_arabic || (lang === 'ar' ? '⚠️ تم رفض عملية الشحن التلقائية من قِبل مدقق مكافحة الاحتيال الذكي.' : '⚠️ Verification failed! Anti-fraud auditor rejected your receipt.');
+        const cdLabel = getCooldownTextLabel(nextRefillAttempts, lang === 'ar');
+        const errMsg = data.reason_arabic || (
+          cdMs > 0
+            ? (lang === 'ar' ? `⚠️ تم رفض عملية الشحن التلقائية. تم توقيف الزر مؤقتاً لمدة (${cdLabel}) لمكافحة الاحتيال.` : `⚠️ Verification failed! Button locked for (${cdLabel}).`)
+            : (lang === 'ar' ? `⚠️ تم رفض عملية الشحن التلقائية. (محاولة ${nextRefillAttempts} من 3)` : `⚠️ Verification failed. (Attempt ${nextRefillAttempts} of 3)`)
+        );
         showToast(errMsg);
 
         const uId = userProfile?.id || authenticatedUser?.uid;
@@ -1314,9 +1363,11 @@ export default function ProfileView({
       }
     } catch (err: any) {
       console.error("Payment verification failure, routing to manual review:", err);
-      // Trigger 15-minute cooldown on exception
-      const cdTime = Date.now() + 15 * 60 * 1000;
-      setRefillCooldownUntil(cdTime);
+      setRefillAiAttempts(nextRefillAttempts);
+      const cdMs = getAntiFraudCooldownMs(nextRefillAttempts);
+      if (cdMs > 0) {
+        setRefillCooldownUntil(Date.now() + cdMs);
+      }
       try {
         const refId = refillReference.trim();
         const requestRef = doc(db, 'refill_requests', refId);
@@ -1897,11 +1948,32 @@ export default function ProfileView({
                     className="hidden"
                     onChange={handleAvatarFileChange}
                   />
+                  <input 
+                    type="file" 
+                    id="avatar-camera-input"
+                    ref={avatarCameraInputRef}
+                    accept="image/*"
+                    capture="user"
+                    className="hidden"
+                    onChange={handleAvatarFileChange}
+                  />
+
+                  {/* Selfie Camera Direct Capture */}
+                  <label
+                    htmlFor="avatar-camera-input"
+                    onClick={() => playCameraShutter(audioEffectsEnabled)}
+                    className="w-10 h-10 rounded-full border border-dashed border-pink-400 bg-pink-50 hover:bg-pink-100 flex items-center justify-center cursor-pointer transition-colors shadow-xs"
+                    title={lang === 'ar' ? 'التقاط صورة سيلفي مباشرة بالكاميرا' : 'Take selfie with camera'}
+                  >
+                    <Camera className="w-4 h-4 text-pink-500" />
+                  </label>
+
+                  {/* Gallery Upload */}
                   <label
                     htmlFor="avatar-file-input"
                     onClick={() => playCameraShutter(audioEffectsEnabled)}
-                    className="w-10 h-10 rounded-full border border-dashed border-[#4FC3F7] bg-sky-50 hover:bg-sky-100 flex items-center justify-center cursor-pointer transition-colors"
-                    title="Upload custom photograph from Gallery"
+                    className="w-10 h-10 rounded-full border border-dashed border-[#4FC3F7] bg-sky-50 hover:bg-sky-100 flex items-center justify-center cursor-pointer transition-colors shadow-xs"
+                    title={lang === 'ar' ? 'اختيار صورة من معرض الصور' : 'Choose photo from gallery'}
                   >
                     <ImageIcon className="w-4 h-4 text-[#4FC3F7]" />
                   </label>
@@ -2127,9 +2199,25 @@ export default function ProfileView({
                   />
                   <input 
                     type="file" 
+                    id="kyc-front-camera-file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={handleNIDFrontFileChange}
+                  />
+                  <input 
+                    type="file" 
                     id="kyc-back-file"
                     ref={nidBackInputRef}
                     accept="image/*"
+                    className="hidden"
+                    onChange={handleNIDBackFileChange}
+                  />
+                  <input 
+                    type="file" 
+                    id="kyc-back-camera-file"
+                    accept="image/*"
+                    capture="environment"
                     className="hidden"
                     onChange={handleNIDBackFileChange}
                   />
@@ -2138,7 +2226,7 @@ export default function ProfileView({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
                     
                     {/* NID FRONT */}
-                    <div className="bg-[#1F2A44] rounded-2xl p-4 border border-gray-700 space-y-3 relative overflow-hidden flex flex-col justify-between h-44 shadow-lg text-white">
+                    <div className="bg-[#1F2A44] rounded-2xl p-4 border border-gray-700 space-y-3 relative overflow-hidden flex flex-col justify-between min-h-[180px] shadow-lg text-white">
                       <div className="flex justify-between items-start">
                         <span className="text-[10px] font-black uppercase text-sky-200 tracking-wider">
                           {lang === 'ar' ? 'الوجه الأمامي للبطاقة' : 'National ID Front'}
@@ -2174,21 +2262,28 @@ export default function ProfileView({
                         </p>
                       )}
 
-                      <label
-                        htmlFor="kyc-front-file"
-                        onClick={() => playCameraShutter(audioEffectsEnabled)}
-                        className={`w-full py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer text-center block ${
-                          uploadedFront 
-                            ? 'bg-[#4FC3F7] text-white hover:bg-sky-500' 
-                            : 'bg-[#4FC3F7]/10 text-[#4FC3F7] border border-[#4FC3F7]/20 hover:bg-[#4FC3F7]/20'
-                        } ${kycUploadingFront ? 'pointer-events-none opacity-50' : ''}`}
-                      >
-                        {uploadedFront ? (lang === 'ar' ? 'إعادة اختيار الوجه الأمامي' : 'Re-select NID Front') : (lang === 'ar' ? 'اختر الوجه الأمامي من الهاتف' : 'Choose Front ID from Gallery')}
-                      </label>
+                      <div className={`grid grid-cols-2 gap-1.5 pt-1 ${kycUploadingFront ? 'pointer-events-none opacity-50' : ''}`}>
+                        <label
+                          htmlFor="kyc-front-camera-file"
+                          onClick={() => playCameraShutter(audioEffectsEnabled)}
+                          className="py-2 px-1 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer text-center bg-[#4FC3F7] text-white hover:bg-sky-500 flex items-center justify-center gap-1 shadow-xs"
+                        >
+                          <Camera className="w-3 h-3" />
+                          <span>{lang === 'ar' ? '📷 الكاميرا' : 'Camera'}</span>
+                        </label>
+                        <label
+                          htmlFor="kyc-front-file"
+                          onClick={() => playCameraShutter(audioEffectsEnabled)}
+                          className="py-2 px-1 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer text-center bg-[#4FC3F7]/15 text-[#4FC3F7] border border-[#4FC3F7]/30 hover:bg-[#4FC3F7]/25 flex items-center justify-center gap-1"
+                        >
+                          <ImageIcon className="w-3 h-3" />
+                          <span>{lang === 'ar' ? '🖼️ المعرض' : 'Gallery'}</span>
+                        </label>
+                      </div>
                     </div>
 
                     {/* NID BACK */}
-                    <div className="bg-[#1F2A44] rounded-2xl p-4 border border-gray-700 space-y-3 relative overflow-hidden flex flex-col justify-between h-44 shadow-lg text-white">
+                    <div className="bg-[#1F2A44] rounded-2xl p-4 border border-gray-700 space-y-3 relative overflow-hidden flex flex-col justify-between min-h-[180px] shadow-lg text-white">
                       <div className="flex justify-between items-start">
                         <span className="text-[10px] font-black uppercase text-sky-200 tracking-wider">
                           {lang === 'ar' ? 'الوجه الخلفي للبطاقة' : 'National ID Back'}
@@ -2224,17 +2319,24 @@ export default function ProfileView({
                         </p>
                       )}
 
-                      <label
-                        htmlFor="kyc-back-file"
-                        onClick={() => playCameraShutter(audioEffectsEnabled)}
-                        className={`w-full py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer text-center block ${
-                          uploadedBack 
-                            ? 'bg-[#4FC3F7] text-white hover:bg-sky-500' 
-                            : 'bg-[#4FC3F7]/10 text-[#4FC3F7] border border-[#4FC3F7]/20 hover:bg-[#4FC3F7]/20'
-                        } ${kycUploadingBack ? 'pointer-events-none opacity-50' : ''}`}
-                      >
-                        {uploadedBack ? (lang === 'ar' ? 'إعادة اختيار الوجه الخلفي' : 'Re-select NID Back') : (lang === 'ar' ? 'اختر الوجه الخلفي من الهاتف' : 'Choose Back ID from Gallery')}
-                      </label>
+                      <div className={`grid grid-cols-2 gap-1.5 pt-1 ${kycUploadingBack ? 'pointer-events-none opacity-50' : ''}`}>
+                        <label
+                          htmlFor="kyc-back-camera-file"
+                          onClick={() => playCameraShutter(audioEffectsEnabled)}
+                          className="py-2 px-1 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer text-center bg-[#4FC3F7] text-white hover:bg-sky-500 flex items-center justify-center gap-1 shadow-xs"
+                        >
+                          <Camera className="w-3 h-3" />
+                          <span>{lang === 'ar' ? '📷 الكاميرا' : 'Camera'}</span>
+                        </label>
+                        <label
+                          htmlFor="kyc-back-file"
+                          onClick={() => playCameraShutter(audioEffectsEnabled)}
+                          className="py-2 px-1 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer text-center bg-[#4FC3F7]/15 text-[#4FC3F7] border border-[#4FC3F7]/30 hover:bg-[#4FC3F7]/25 flex items-center justify-center gap-1"
+                        >
+                          <ImageIcon className="w-3 h-3" />
+                          <span>{lang === 'ar' ? '🖼️ المعرض' : 'Gallery'}</span>
+                        </label>
+                      </div>
                     </div>
 
                   </div>
@@ -2302,20 +2404,20 @@ export default function ProfileView({
                           ⏱ {formatTimerMinSec(kycCooldownSecs)}
                         </span>
                         <span className="flex items-center gap-1.5 text-amber-300">
-                          <span>{lang === 'ar' ? 'فترة انتظار مؤقتة للتحقق بالذكاء الاصطناعي' : 'AI Verification Cooldown'}</span>
+                          <span>{lang === 'ar' ? 'توقيف مؤقت لمكافحة الاحتيال بفحص الذكاء الاصطناعي' : 'Anti-Fraud AI Verification Lock'}</span>
                           <Clock className="w-4 h-4 text-amber-400" />
                         </span>
                       </div>
                       <p className="text-[10.5px] text-amber-200/90 font-bold leading-relaxed">
                         {lang === 'ar'
-                          ? 'تم إيقاف الفحص بالذكاء الاصطناعي مؤقتاً لمدة 15 دقيقة لحماية الحساب ومكافحة التكرار. يمكنك إعادة المحاولة فور انتهاء العداد.'
-                          : 'AI verification is temporarily paused for 15 minutes for security & rate limiting. Try again after timer expires.'}
+                          ? `تم إعطاؤك 3 محاولات سريعة. تم توقيف الزر مؤقتاً لمكافحة الاحتيال بعد ${kycAiAttempts} محاولات فاشلة. تتضاعف مدة التوقيف مع تكرار الفشل لتصل إلى 24 ساعة.`
+                          : `Verification locked for anti-fraud protection after ${kycAiAttempts} failed attempts. Penalty doubles on repeated failures up to 24 hours.`}
                       </p>
                       <div className="flex justify-between items-center text-[9.5px] text-amber-300/80 font-extrabold border-t border-amber-500/20 pt-1.5">
                         <span className="font-mono">
-                          {kycAiAttempts} / 3 {lang === 'ar' ? 'محاولات فحص' : 'Scanning attempts'}
+                          {kycAiAttempts} {lang === 'ar' ? 'محاولات فاشلة متتالية' : 'Failed attempts'}
                         </span>
-                        <span>{lang === 'ar' ? 'مدة التوقف: 15 دقيقة' : 'Cooldown: 15 Min'}</span>
+                        <span>{lang === 'ar' ? `مدة الحظر الحالية: ${getCooldownTextLabel(kycAiAttempts, true)}` : `Current penalty: ${getCooldownTextLabel(kycAiAttempts, false)}`}</span>
                       </div>
                     </div>
                   )}
@@ -2374,6 +2476,14 @@ export default function ProfileView({
                 ref={receiptInputRef} 
                 onChange={handleReceiptFileChange} 
                 accept="image/*" 
+                className="hidden" 
+              />
+              <input 
+                type="file" 
+                id="receipt-proof-camera-file"
+                onChange={handleReceiptFileChange} 
+                accept="image/*" 
+                capture="environment"
                 className="hidden" 
               />
 
@@ -2571,12 +2681,8 @@ export default function ProfileView({
                         {lang === 'ar' ? 'لقطة شاشة أو صورة وصل إثبات الدفع المعتمد' : 'Receipt Proof Screen or Photograph'}
                       </label>
                       
-                      <label 
-                        htmlFor="receipt-proof-file"
-                        onClick={() => playCameraShutter(audioEffectsEnabled)}
-                        className="border-2 border-dashed border-gray-200 hover:border-[#4FC3F7] rounded-2xl p-4 text-center transition-all cursor-pointer bg-gray-50/50 hover:bg-sky-50/5 flex flex-col justify-center items-center group h-32 block"
-                      >
-                        {refillReceiptUploading ? (
+                      {refillReceiptUploading ? (
+                        <div className="border-2 border-dashed border-[#4FC3F7] rounded-2xl p-4 text-center bg-sky-50/20 h-28 flex items-center justify-center">
                           <div className="space-y-2 w-full max-w-[200px]">
                             <div className="flex justify-between items-center text-[9px] font-extrabold text-[#4FC3F7]">
                               <span className="animate-pulse">{lang === 'ar' ? 'جاري ضغط ومعالجة الوصل...' : 'Processing receipt...'}</span>
@@ -2586,32 +2692,59 @@ export default function ProfileView({
                               <div className="bg-[#4FC3F7] h-full transition-all duration-150" style={{ width: `${refillReceiptProgress}%` }}></div>
                             </div>
                           </div>
-                        ) : refillReceiptUploaded && refillReceiptBase64 ? (
-                          <div className="flex items-center justify-between gap-3 w-full border border-emerald-500/15 bg-emerald-50/50 p-2 rounded-xl text-right">
-                            <div className="flex items-center gap-2">
-                              <span className="inline-block p-1 bg-emerald-100 rounded text-emerald-600">✔</span>
-                              <div className="text-right">
-                                <span className="text-[9px] font-black text-emerald-800 block leading-tight">
-                                  {lang === 'ar' ? 'تم اختيار وصل الدفع بنجاح!' : 'Receipt selected successfully!'}
-                                </span>
-                                <span className="text-[8px] text-emerald-600 block truncate max-w-[120px] font-mono">
-                                  {refillReceiptFileName}
-                                </span>
-                              </div>
+                        </div>
+                      ) : refillReceiptUploaded && refillReceiptBase64 ? (
+                        <div className="flex items-center justify-between gap-3 w-full border border-emerald-500/20 bg-emerald-50/70 p-3 rounded-2xl text-right">
+                          <div className="flex items-center gap-2">
+                            <span className="inline-block p-1.5 bg-emerald-100 rounded-full text-emerald-600 font-black">✔</span>
+                            <div className="text-right">
+                              <span className="text-[10px] font-black text-emerald-800 block leading-tight">
+                                {lang === 'ar' ? 'تم مرفق وصل الدفع بنجاح!' : 'Receipt attached successfully!'}
+                              </span>
+                              <span className="text-[8px] text-emerald-600 block truncate max-w-[150px] font-mono">
+                                {refillReceiptFileName}
+                              </span>
                             </div>
                           </div>
-                        ) : (
-                          <div className="flex flex-col items-center justify-center gap-2">
-                            <Camera className="w-8 h-8 text-gray-400 group-hover:text-[#4FC3F7] transition-colors" />
-                            <span className="text-[10px] font-extrabold text-gray-500 group-hover:text-gray-700">
-                              {lang === 'ar' ? 'اضغط لرفع لقطة شاشة لوصل التحويل' : 'Tap to upload transaction receipt'}
-                            </span>
-                            <span className="text-[8px] text-gray-400">
-                              {lang === 'ar' ? 'يدعم الصور JPG أو PNG حتى 5 ميجابايت' : 'Supports JPG, PNG up to 5MB'}
-                            </span>
+                          <div className="flex gap-1.5">
+                            <label htmlFor="receipt-proof-camera-file" className="px-2 py-1 bg-emerald-600 text-white text-[9px] font-black rounded-lg cursor-pointer">
+                              📷 {lang === 'ar' ? 'تغيير' : 'Change'}
+                            </label>
                           </div>
-                        )}
-                      </label>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-2.5">
+                          {/* Live Camera Snap */}
+                          <label 
+                            htmlFor="receipt-proof-camera-file"
+                            onClick={() => playCameraShutter(audioEffectsEnabled)}
+                            className="border-2 border-dashed border-[#4FC3F7] hover:border-sky-500 rounded-2xl p-3 text-center transition-all cursor-pointer bg-sky-50/50 hover:bg-sky-100/60 flex flex-col justify-center items-center group h-28 shadow-xs active:scale-98"
+                          >
+                            <Camera className="w-6 h-6 text-[#4FC3F7] mb-1 group-hover:scale-110 transition-transform" />
+                            <span className="text-[10px] font-black text-slate-800 block">
+                              {lang === 'ar' ? '📷 تصوير بالـكاميرا' : '📷 Camera Snap'}
+                            </span>
+                            <span className="text-[8px] text-sky-600 font-extrabold block mt-0.5">
+                              {lang === 'ar' ? 'الوصل الورقي المطبوع' : 'Printed Receipt'}
+                            </span>
+                          </label>
+
+                          {/* Gallery Screenshot */}
+                          <label 
+                            htmlFor="receipt-proof-file"
+                            onClick={() => playCameraShutter(audioEffectsEnabled)}
+                            className="border-2 border-dashed border-slate-300 hover:border-slate-400 rounded-2xl p-3 text-center transition-all cursor-pointer bg-gray-50 hover:bg-gray-100 flex flex-col justify-center items-center group h-28 shadow-xs active:scale-98"
+                          >
+                            <ImageIcon className="w-6 h-6 text-slate-500 mb-1 group-hover:scale-110 transition-transform" />
+                            <span className="text-[10px] font-black text-slate-800 block">
+                              {lang === 'ar' ? '🖼️ لقطة من المعرض' : '🖼️ Gallery Screen'}
+                            </span>
+                            <span className="text-[8px] text-slate-500 font-extrabold block mt-0.5">
+                              {lang === 'ar' ? 'من تطبيق بريديموب' : 'BaridiMob Screenshot'}
+                            </span>
+                          </label>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -2625,20 +2758,20 @@ export default function ProfileView({
                       ⏱ {formatTimerMinSec(refillCooldownSecs)}
                     </span>
                     <span className="flex items-center gap-1.5">
-                      <span>{lang === 'ar' ? 'فترة انتظار مؤقتة لفحص الإيصال بالذكاء الاصطناعي' : 'Receipt Scanning Cooldown'}</span>
+                      <span>{lang === 'ar' ? 'توقيف مؤقت لمكافحة الاحتيال بفحص الذكاء الاصطناعي' : 'Anti-Fraud Receipt Verification Lock'}</span>
                       <Clock className="w-4 h-4 text-amber-600" />
                     </span>
                   </div>
                   <p className="text-[10.5px] text-amber-800 font-bold leading-relaxed">
                     {lang === 'ar'
-                      ? 'تم إيقاف الفحص التلقائي بالذكاء الاصطناعي مؤقتاً لمدة 15 دقيقة لحماية حسابك ومكافحة الاحتيال. يمكنك إعادة إرسال الإيصال فور انتهاء العداد.'
-                      : 'Automatic AI receipt scanning is temporarily paused for 15 minutes for anti-fraud protection. Re-submit after timer finishes.'}
+                      ? `تم إعطاؤك 3 محاولات سريعة. تم توقيف الزر مؤقتاً لمكافحة الاحتيال بعد ${refillAiAttempts} محاولات فاشلة. تتضاعف مدة التوقيف مع تكرار الفشل لتصل إلى 24 ساعة.`
+                      : `Receipt verification locked after ${refillAiAttempts} failed attempts. Penalty doubles on repeated failures up to 24 hours.`}
                   </p>
                   <div className="flex justify-between items-center text-[9.5px] text-amber-700 font-extrabold border-t border-amber-200/60 pt-1.5">
                     <span className="font-mono">
-                      {refillAiAttempts} / 3 {lang === 'ar' ? 'محاولات فحص' : 'Scanning attempts'}
+                      {refillAiAttempts} {lang === 'ar' ? 'محاولات فاشلة متتالية' : 'Failed attempts'}
                     </span>
-                    <span>{lang === 'ar' ? 'مدة التوقف: 15 دقيقة' : 'Cooldown: 15 Min'}</span>
+                    <span>{lang === 'ar' ? `مدة الحظر الحالية: ${getCooldownTextLabel(refillAiAttempts, true)}` : `Current penalty: ${getCooldownTextLabel(refillAiAttempts, false)}`}</span>
                   </div>
                 </div>
               )}
@@ -3812,11 +3945,35 @@ export default function ProfileView({
                 className="hidden"
                 onChange={handleAvatarFileChange}
               />
+              <input 
+                type="file" 
+                ref={avatarCameraInputRef}
+                accept="image/*"
+                capture="user"
+                className="hidden"
+                onChange={handleAvatarFileChange}
+              />
+
+              <button
+                type="button"
+                onClick={() => {
+                  playCameraShutter(audioEffectsEnabled);
+                  if (avatarCameraInputRef.current) {
+                    avatarCameraInputRef.current.value = '';
+                    avatarCameraInputRef.current.click();
+                  }
+                }}
+                className="w-10 h-10 rounded-full border border-dashed border-pink-400 bg-pink-50/70 hover:bg-pink-100 flex items-center justify-center cursor-pointer shadow-xs"
+                title={lang === 'ar' ? 'التقاط سيلفي بالكاميرا' : 'Take selfie with camera'}
+              >
+                <Camera className="w-4 h-4 text-pink-500" />
+              </button>
+
               <button
                 type="button"
                 onClick={triggerAvatarGalleryPicker}
-                className="w-10 h-10 rounded-full border border-dashed border-[#4FC3F7] bg-sky-50/50 hover:bg-sky-50 flex items-center justify-center cursor-pointer"
-                title="Upload custom photograph from Gallery"
+                className="w-10 h-10 rounded-full border border-dashed border-[#4FC3F7] bg-sky-50/50 hover:bg-sky-50 flex items-center justify-center cursor-pointer shadow-xs"
+                title={lang === 'ar' ? 'رفع صورة من المعرض' : 'Upload custom photograph from Gallery'}
               >
                 <ImageIcon className="w-4 h-4 text-[#4FC3F7]" />
               </button>
@@ -4330,18 +4487,37 @@ export default function ProfileView({
                     {lang === 'ar' ? 'صور حقيقية لإنجازاتك ومهاراتك الميدانية موثقة من المعرض مباشرةً' : 'Authentic snapshots of achievements selected directly from your native gallery'}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={triggerAddPortfolioPhoto}
-                  disabled={portfolioUploading}
-                  className="bg-[#4FC3F7]/15 hover:bg-[#4FC3F7]/25 text-[#4FC3F7] font-black text-[10px] uppercase tracking-wider px-3 py-1.5 rounded-xl cursor-pointer transition-all flex items-center gap-1 border-none"
-                >
-                  {portfolioUploading ? (
-                    <span className="animate-pulse">Compressing...</span>
-                  ) : (
-                    <span>+ {lang === 'ar' ? 'أضف صورة للغاليري' : 'Add Gallery Photo'}</span>
-                  )}
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (portfolioPhotos.length >= 10) {
+                        showToast(lang === 'ar' ? '⚠️ لقد وصلت للحد الأقصى المسموح به (10 صور) في معرض الأعمال!' : '⚠️ Max limit reached (10 photos)!');
+                        return;
+                      }
+                      playCameraShutter(audioEffectsEnabled);
+                      if (portfolioCameraInputRef.current) {
+                        portfolioCameraInputRef.current.value = '';
+                        portfolioCameraInputRef.current.click();
+                      }
+                    }}
+                    disabled={portfolioUploading}
+                    className="bg-[#FF3B7C]/10 hover:bg-[#FF3B7C]/20 text-[#FF3B7C] font-black text-[9.5px] uppercase tracking-wider px-2.5 py-1.5 rounded-xl cursor-pointer transition-all flex items-center gap-1 border-none active:scale-95"
+                  >
+                    <Camera className="w-3 h-3 text-[#FF3B7C]" />
+                    <span>{lang === 'ar' ? '📷 كاميرا' : 'Camera'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={triggerAddPortfolioPhoto}
+                    disabled={portfolioUploading}
+                    className="bg-[#4FC3F7]/15 hover:bg-[#4FC3F7]/25 text-[#4FC3F7] font-black text-[9.5px] uppercase tracking-wider px-2.5 py-1.5 rounded-xl cursor-pointer transition-all flex items-center gap-1 border-none active:scale-95"
+                  >
+                    <ImageIcon className="w-3 h-3 text-[#4FC3F7]" />
+                    <span>{lang === 'ar' ? '🖼️ المعرض' : 'Gallery'}</span>
+                  </button>
+                </div>
               </div>
 
               {portfolioPhotos.length >= 10 && (
@@ -4352,11 +4528,19 @@ export default function ProfileView({
                 </div>
               )}
 
-              {/* Hidden File Input for Native Photo Portfolio picker (simulates picker.pickImage) */}
+              {/* Hidden File Inputs for Portfolio (Gallery & Camera) */}
               <input 
                 type="file" 
                 ref={portfolioInputRef}
                 accept="image/*"
+                className="hidden"
+                onChange={handlePortfolioFileChange}
+              />
+              <input 
+                type="file" 
+                ref={portfolioCameraInputRef}
+                accept="image/*"
+                capture="environment"
                 className="hidden"
                 onChange={handlePortfolioFileChange}
               />

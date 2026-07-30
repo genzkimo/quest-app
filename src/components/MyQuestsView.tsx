@@ -1393,7 +1393,7 @@ export default function MyQuestsView({
                   : 'Submit a real-time photograph showing the completed work. The Godfather will view this to release your cash reward.'}
               </p>
 
-              {/* Sky Blue Camera Upload Zone */}
+              {/* Sky Blue Camera & Gallery Upload Zone */}
               <input 
                 type="file" 
                 id="helper-proof-picker"
@@ -1402,45 +1402,84 @@ export default function MyQuestsView({
                 className="hidden"
                 onChange={handleHelperFileChange}
               />
+              <input 
+                type="file" 
+                id="helper-proof-camera-picker"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={handleHelperFileChange}
+              />
 
-              <label
-                htmlFor="helper-proof-picker"
-                className={`w-full h-36 rounded-2xl border-2 border-dashed border-[#4FC3F7] bg-sky-50/30 hover:bg-sky-50/50 flex flex-col items-center justify-center p-4 transition-all active:scale-98 cursor-pointer relative overflow-hidden select-none block ${helperUploading ? 'pointer-events-none opacity-50' : ''}`}
-              >
-                {helperUploading ? (
+              {helperUploading ? (
+                <div className="w-full h-32 rounded-2xl border-2 border-dashed border-[#4FC3F7] bg-sky-50/30 flex flex-col items-center justify-center p-4">
                   <div className="space-y-2 w-full flex flex-col items-center">
                     <div className="w-10 h-10 rounded-full border-2 border-t-[#4FC3F7] border-gray-200 animate-spin flex items-center justify-center">
                       <span className="text-[8px] text-[#4FC3F7] font-black">{helperProgress}%</span>
                     </div>
                     <span className="text-[10px] text-[#4FC3F7] font-extrabold px-3 py-1 bg-white rounded-full shadow-sm">
-                      Compressing gallery image...
+                      {lang === 'ar' ? 'جاري معالجة وضغط الصورة...' : 'Compressing image...'}
                     </span>
                     <div className="w-2/3 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                       <div className="bg-[#4FC3F7] h-full transition-all duration-100" style={{ width: `${helperProgress}%` }}></div>
                     </div>
                   </div>
-                ) : selectedProofFile ? (
-                  <div className="absolute inset-0">
-                    <img src={selectedProofFile} className="w-full h-full object-cover" alt="Selected proof preview" />
-                    <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center text-white">
-                      <Camera className="w-6 h-6 mb-1 text-[#4FC3F7]" />
-                      <span className="text-[10px] font-black uppercase tracking-wider bg-[#4FC3F7] text-white px-2.5 py-1 rounded-full">
-                        {lang === 'ar' ? 'تغيير صورة الإثبات' : 'Change completion photo'}
-                      </span>
-                    </div>
+                </div>
+              ) : selectedProofFile ? (
+                <div className="w-full h-36 rounded-2xl border-2 border-[#4FC3F7] relative overflow-hidden shadow-md">
+                  <img src={selectedProofFile} className="w-full h-full object-cover" alt="Selected proof preview" />
+                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center gap-2">
+                    <label
+                      htmlFor="helper-proof-camera-picker"
+                      className="bg-[#4FC3F7] hover:bg-sky-500 text-white px-3 py-1.5 rounded-xl text-[10px] font-black flex items-center gap-1 cursor-pointer shadow-sm"
+                    >
+                      <Camera className="w-3.5 h-3.5" />
+                      <span>{lang === 'ar' ? 'التقاط بالكاميرا' : 'Retake Camera'}</span>
+                    </label>
+                    <label
+                      htmlFor="helper-proof-picker"
+                      className="bg-white/90 hover:bg-white text-slate-800 px-3 py-1.5 rounded-xl text-[10px] font-black flex items-center gap-1 cursor-pointer shadow-sm"
+                    >
+                      <Image className="w-3.5 h-3.5 text-sky-600" />
+                      <span>{lang === 'ar' ? 'من المعرض' : 'From Gallery'}</span>
+                    </label>
                   </div>
-                ) : (
-                  <div className="space-y-1.5 text-center">
-                    <div className="w-10 h-10 rounded-full bg-[#4FC3F7]/10 text-[#4FC3F7] flex items-center justify-center mx-auto">
-                      <Image className="w-5 h-5 mx-auto" />
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2.5">
+                  {/* Camera Option */}
+                  <label
+                    htmlFor="helper-proof-camera-picker"
+                    className="h-32 rounded-2xl border-2 border-dashed border-[#4FC3F7] bg-sky-50/40 hover:bg-sky-100/60 flex flex-col items-center justify-center p-3 transition-all active:scale-95 cursor-pointer text-center group select-none shadow-xs"
+                  >
+                    <div className="w-10 h-10 rounded-full bg-[#4FC3F7]/15 text-[#4FC3F7] flex items-center justify-center mb-1.5 group-hover:scale-110 transition-transform">
+                      <Camera className="w-5 h-5" />
                     </div>
-                    <span className="text-xs font-black text-[#4FC3F7] block">
-                      {lang === 'ar' ? 'افتح الهاتف لاختيار إثبات العمل' : 'Select Proof from Gallery'}
+                    <span className="text-[11px] font-black text-[#1F2A44] block">
+                      {lang === 'ar' ? '📷 التقاط بالكاميرا' : '📷 Take Photo'}
                     </span>
-                    <span className="text-[9px] text-gray-400 block uppercase font-mono">Native Photo Gallery ONLY</span>
-                  </div>
-                )}
-              </label>
+                    <span className="text-[8.5px] text-sky-600 font-extrabold block mt-0.5">
+                      {lang === 'ar' ? 'صورة مباشرة للعمل' : 'Live Camera Snap'}
+                    </span>
+                  </label>
+
+                  {/* Gallery Option */}
+                  <label
+                    htmlFor="helper-proof-picker"
+                    className="h-32 rounded-2xl border-2 border-dashed border-slate-300 bg-gray-50/60 hover:bg-gray-100/80 flex flex-col items-center justify-center p-3 transition-all active:scale-95 cursor-pointer text-center group select-none shadow-xs"
+                  >
+                    <div className="w-10 h-10 rounded-full bg-slate-200/80 text-slate-600 flex items-center justify-center mb-1.5 group-hover:scale-110 transition-transform">
+                      <Image className="w-5 h-5" />
+                    </div>
+                    <span className="text-[11px] font-black text-slate-700 block">
+                      {lang === 'ar' ? '🖼️ معرض الصور' : '🖼️ Device Gallery'}
+                    </span>
+                    <span className="text-[8.5px] text-gray-500 font-extrabold block mt-0.5">
+                      {lang === 'ar' ? 'اختيار من الاستوديو' : 'Select Saved Photo'}
+                    </span>
+                  </label>
+                </div>
+              )}
 
               <div className="space-y-2 pt-2">
                 <button
@@ -1870,10 +1909,30 @@ export default function MyQuestsView({
                             className="hidden"
                             onChange={handleContractFileChange}
                           />
+                          <input 
+                            type="file" 
+                            id="contract-camera-picker"
+                            accept="image/*"
+                            capture="environment"
+                            className="hidden"
+                            onChange={handleContractFileChange}
+                          />
 
+                          {/* Camera Button */}
+                          <label
+                            htmlFor="contract-camera-picker"
+                            className={`h-16 rounded-xl border-2 border-dashed border-[#4FC3F7] bg-sky-50/50 hover:bg-sky-100 flex flex-col items-center justify-center p-1 cursor-pointer transition-all active:scale-95 text-center group font-black select-none block ${bountyUploading ? 'pointer-events-none opacity-50' : ''}`}
+                          >
+                            <Camera className="w-4 h-4 text-[#4FC3F7] mx-auto" />
+                            <span className="text-[8px] text-[#4FC3F7] font-black mt-1 leading-tight block">
+                              {lang === 'ar' ? '📷 الكاميرا' : '📷 Camera'}
+                            </span>
+                          </label>
+
+                          {/* Gallery Button */}
                           <label
                             htmlFor="contract-image-picker"
-                            className={`h-16 rounded-xl border-2 border-dashed border-[#4FC3F7] bg-sky-50/40 hover:bg-sky-55 flex flex-col items-center justify-center p-1 cursor-pointer transition-all active:scale-95 text-center group font-black select-none block ${bountyUploading ? 'pointer-events-none opacity-50' : ''}`}
+                            className={`h-16 rounded-xl border-2 border-dashed border-slate-300 bg-gray-50/70 hover:bg-gray-100 flex flex-col items-center justify-center p-1 cursor-pointer transition-all active:scale-95 text-center group font-black select-none block ${bountyUploading ? 'pointer-events-none opacity-50' : ''}`}
                           >
                             {bountyUploading ? (
                               <div className="space-y-1">
@@ -1885,9 +1944,9 @@ export default function MyQuestsView({
                               </div>
                             ) : (
                               <>
-                                <Image className="w-4 h-4 text-[#4FC3F7] mx-auto" />
-                                <span className="text-[8px] text-[#4FC3F7] font-black mt-1 leading-tight block">
-                                  {lang === 'ar' ? 'معرض الصور' : 'Device Gallery'}
+                                <Image className="w-4 h-4 text-slate-600 mx-auto" />
+                                <span className="text-[8px] text-slate-700 font-black mt-1 leading-tight block">
+                                  {lang === 'ar' ? '🖼️ المعرض' : '🖼️ Gallery'}
                                 </span>
                               </>
                             )}

@@ -27,6 +27,7 @@ import {
   Send,
   Upload,
   Image as ImageIcon,
+  Camera,
   Trash,
   Eye,
   Plus,
@@ -1900,15 +1901,7 @@ export default function HomeView({
                             </button>
                           </div>
                         ) : (
-                          <label 
-                            htmlFor="story-file-uploader" 
-                            className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-slate-300 hover:border-[#FF3B7C] cursor-pointer p-5 rounded-2xl transition-all hover:bg-[#FF3B7C]/5 text-center group"
-                          >
-                            <div className="bg-[#FF3B7C]/10 p-3 rounded-full group-hover:scale-110 transition-transform">
-                              <Upload className="w-6 h-6 text-[#FF3B7C]" />
-                            </div>
-                            <span className="text-xs font-black text-slate-700">{isRtl ? 'انقر هنا لاختيار أو التقاط صورة من جهازك 📱' : 'Click to select or capture photo 📱'}</span>
-                            <span className="text-[10px] text-gray-400 font-bold">{isRtl ? 'يدعم الصور حتى 1.5 ميغابايت (JPG, PNG, WebP)' : 'Supports up to 1.5MB'}</span>
+                          <div className="space-y-2">
                             <input
                               id="story-file-uploader"
                               type="file"
@@ -1916,7 +1909,49 @@ export default function HomeView({
                               onChange={handleImageFileChange}
                               className="hidden"
                             />
-                          </label>
+                            <input
+                              id="story-camera-uploader"
+                              type="file"
+                              accept="image/*"
+                              capture="environment"
+                              onChange={handleImageFileChange}
+                              className="hidden"
+                            />
+
+                            <div className="grid grid-cols-2 gap-2.5">
+                              {/* Direct Live Camera Capture */}
+                              <label
+                                htmlFor="story-camera-uploader"
+                                className="flex flex-col items-center justify-center gap-1.5 border-2 border-dashed border-[#FF3B7C]/40 hover:border-[#FF3B7C] cursor-pointer p-3.5 rounded-2xl transition-all bg-[#FF3B7C]/5 hover:bg-[#FF3B7C]/10 text-center group active:scale-98"
+                              >
+                                <div className="bg-[#FF3B7C]/15 p-2.5 rounded-full group-hover:scale-110 transition-transform">
+                                  <Camera className="w-5 h-5 text-[#FF3B7C]" />
+                                </div>
+                                <span className="text-[11px] font-black text-slate-800 block">
+                                  {isRtl ? '📷 التقاط بالكاميرا' : '📷 Take Photo'}
+                                </span>
+                                <span className="text-[9px] text-gray-500 font-bold block">
+                                  {isRtl ? 'فتح الكاميرا فوراً' : 'Live Camera'}
+                                </span>
+                              </label>
+
+                              {/* Gallery Picker */}
+                              <label
+                                htmlFor="story-file-uploader"
+                                className="flex flex-col items-center justify-center gap-1.5 border-2 border-dashed border-sky-300 hover:border-sky-500 cursor-pointer p-3.5 rounded-2xl transition-all bg-sky-50/50 hover:bg-sky-50 text-center group active:scale-98"
+                              >
+                                <div className="bg-sky-100 p-2.5 rounded-full group-hover:scale-110 transition-transform">
+                                  <ImageIcon className="w-5 h-5 text-sky-600" />
+                                </div>
+                                <span className="text-[11px] font-black text-slate-800 block">
+                                  {isRtl ? '🖼️ معرض الصور' : '🖼️ Gallery'}
+                                </span>
+                                <span className="text-[9px] text-gray-500 font-bold block">
+                                  {isRtl ? 'من ملفات الهاتف' : 'Stored Files'}
+                                </span>
+                              </label>
+                            </div>
+                          </div>
                         )}
                       </div>
 

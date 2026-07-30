@@ -4,6 +4,7 @@ import {
   Plus,
   Minus,
   Image as ImageIcon,
+  Camera,
   MapPin,
   Sparkles,
   History,
@@ -23,14 +24,12 @@ import {
   Compass
 } from 'lucide-react';
 import { Quest, QuestCategory, UserProfile } from '../types';
+import { calculateBookingFee } from '../utils/fee';
 import { motion, AnimatePresence } from 'motion/react';
 import { translations } from '../data/translations';
 import { compressImage } from '../utils/imageCompressor';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { storage } from '../utils/firebase';
-import { Geolocation } from '@capacitor/geolocation';
-import { Geolocator } from '../utils/geolocator';
-
 
 interface GlobalCreateQuestModalProps {
   isOpen: boolean;
@@ -138,6 +137,7 @@ export default function GlobalCreateQuestModal({
   const [uploadProgress, setUploadProgress] = useState(0);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   // Play audio clicking feed
   const playSound = () => {
@@ -167,31 +167,34 @@ export default function GlobalCreateQuestModal({
 
   if (!isOpen) return null;
 
-  const handleAutoGPS = async () => {
-  playSound();
-  setGpsLoading(true);
-
-  try {
-    const position = await Geolocator.getCurrentPhysicalLocation();
-
-    setGpsCoords({
-      lat: position.lat,
-      lng: position.lng,
-    });
-
-  } catch (err) {
-    console.error("GPS Error:", err);
-
-    alert(
-      lang === 'ar'
-        ? 'تعذر الحصول على موقعك. تأكد من تشغيل GPS ومنح الإذن.'
-        : 'Unable to get your location.'
+  const handleAutoGPS = () => {
+    playSound();
+    if (!navigator.geolocation) {
+      alert(lang === 'ar' ? '⚠️ تحديد الموقع غير مدعوم في متصفحك!' : '⚠️ Geolocation not supported!');
+      return;
+    }
+    setGpsLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setGpsCoords({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude
+        });
+        setGpsLoading(false);
+      },
+      (err) => {
+        console.warn("GPS Warning:", err);
+        setGpsCoords(null);
+        setGpsLoading(false);
+        alert(lang === 'ar' ? '⚠️ شغل gps وفقك' : '⚠️ Please turn on your GPS');
+      },
+      { 
+        enableHighAccuracy: true, // Demands pure physical GPS hardware sensors
+        timeout: 15000, 
+        maximumAge: 0 // Disable cached network IP location entirely (always false caching)
+      }
     );
-
-  } finally {
-    setGpsLoading(false);
-  }
-};
+  };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -221,7 +224,7 @@ export default function GlobalCreateQuestModal({
         try {
           const storageRef = ref(storage, `quests/${Date.now()}_${i}_${Math.random().toString(36).substr(2, 5)}.jpg`);
           
-          // Wrap with a strict 10000ms timeout to avoid hanging at 20%
+          // Wrap with a strict 1500ms timeout to avoid hanging at 20%
           const downloadUrl = await new Promise<string>(async (resolve, reject) => {
             let completed = false;
             const timer = setTimeout(() => {
@@ -229,7 +232,7 @@ export default function GlobalCreateQuestModal({
                 completed = true;
                 reject(new Error("Firebase Storage upload timed out"));
               }
-            }, 10000);
+            }, 1500);
 
             try {
               await uploadString(storageRef, compressedBase64, 'data_url');
@@ -288,7 +291,7 @@ export default function GlobalCreateQuestModal({
     onClose();
   };
 
-  const calculatedFee = Math.max(50, Math.ceil(cashReward * 0.10));
+  const calculatedFee = calculateBookingFee(cashReward);
 
   return (
     <AnimatePresence>
@@ -650,7 +653,7 @@ export default function GlobalCreateQuestModal({
                       {lang === 'ar' ? 'حدد مكافأة المساعد بالدينار 💰' : 'Proposed Payout reward'}
                     </h2>
                     <p className="text-xs text-gray-400 max-w-md mx-auto">
-                      {lang === 'ar' ? 'الحد الأدنى للمهمة هو ٥٠٠ د.ج. يتم احتساب عمولة ١٠٪ للمنصة.' : 'Minimum is 500 DZD. Platform automatically secures 10% insurance.'}
+                      {lang === 'ar' ? 'الحد الأدنى للمهمة هو ٥٠٠ د.ج. يتم احتساب عمولة ٥٪ للمنصة (الحد الأدنى ٣٥ د.ج، الحد الأقصى ٢٠٠٠ د.ج).' : 'Minimum is 500 DZD. Platform automatically secures 5% fee (Min 35 DZD, Max 2000 DZD).'}
                     </p>
                   </div>
 
@@ -768,7 +771,7 @@ export default function GlobalCreateQuestModal({
                     </p>
                   </div>
 
-                  {/* Drag drop gallery upload area */}
+                  {/* Drag drop gallery upload area & direct camera capture */}
                   <div className="space-y-4">
                     <input
                       type="file"
@@ -779,38 +782,67 @@ export default function GlobalCreateQuestModal({
                       className="hidden"
                       onChange={handleFileChange}
                     />
+                    <input
+                      type="file"
+                      id="global-camera-picker"
+                      ref={cameraInputRef}
+                      accept="image/*"
+                      capture="environment"
+                      className="hidden"
+                      onChange={handleFileChange}
+                    />
 
-                    {/* Highly visible, larger, beautiful drag/click to upload area */}
-                    <label
-                      htmlFor="global-image-picker"
-                      className={`w-full py-6 px-4 rounded-2xl border-2 border-dashed border-[#4FC3F7] bg-[#4FC3F7]/5 hover:bg-[#4FC3F7]/15 flex flex-col items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.98] text-center group select-none shadow-lg shadow-sky-950/20 ${imageUploading ? 'pointer-events-none opacity-50' : ''}`}
-                    >
-                      {imageUploading ? (
-                        <div className="flex flex-col items-center justify-center space-y-2">
-                          <Loader2 className="w-8 h-8 text-[#4FC3F7] animate-spin" />
-                          <div className="text-center">
-                            <span className="text-xs text-[#4FC3F7] font-black block">
-                              {lang === 'ar' ? 'جاري رفع الصور الآن...' : 'Uploading Images...'}
-                            </span>
-                            <span className="text-xs text-gray-400 font-bold block mt-1">{uploadProgress}%</span>
-                          </div>
+                    {imageUploading ? (
+                      <div className="w-full py-6 px-4 rounded-2xl border-2 border-dashed border-[#4FC3F7] bg-[#4FC3F7]/5 flex flex-col items-center justify-center space-y-2">
+                        <Loader2 className="w-8 h-8 text-[#4FC3F7] animate-spin" />
+                        <div className="text-center">
+                          <span className="text-xs text-[#4FC3F7] font-black block">
+                            {lang === 'ar' ? 'جاري رفع الصور الآن...' : 'Uploading Images...'}
+                          </span>
+                          <span className="text-xs text-gray-400 font-bold block mt-1">{uploadProgress}%</span>
                         </div>
-                      ) : (
-                        <div className="flex flex-col items-center gap-1.5">
-                          <div className="w-12 h-12 rounded-full bg-[#4FC3F7]/10 flex items-center justify-center group-hover:scale-110 transition-transform">
-                            <ImageIcon className="w-6 h-6 text-[#4FC3F7]" />
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {/* Direct Live Camera Capture */}
+                        <button
+                          type="button"
+                          onClick={() => cameraInputRef.current?.click()}
+                          className="py-5 px-4 rounded-2xl border-2 border-dashed border-[#4FC3F7] bg-[#4FC3F7]/10 hover:bg-[#4FC3F7]/20 flex flex-col items-center justify-center gap-2 transition-all active:scale-[0.98] text-center group shadow-md cursor-pointer"
+                        >
+                          <div className="w-12 h-12 rounded-full bg-[#4FC3F7]/20 flex items-center justify-center group-hover:scale-110 transition-transform">
+                            <Camera className="w-6 h-6 text-[#4FC3F7]" />
                           </div>
                           <div className="space-y-0.5">
-                            <span className="text-sm text-white font-black block">
-                              {lang === 'ar' ? 'اضغط هنا لرفع الصور من المعرض 📸' : 'Click to add photos from gallery 📸'}
+                            <span className="text-xs text-white font-black block">
+                              {lang === 'ar' ? '📷 التقاط صورة بالكاميرا المباشرة' : '📷 Take Photo with Camera'}
                             </span>
-                            <span className="text-[10px] text-gray-400 font-medium block">
-                              {lang === 'ar' ? 'يمكنك اختيار حتى ٣ صور توضيحية لتبسيط العمل' : 'You can select up to 3 descriptive photos'}
+                            <span className="text-[10px] text-gray-400 block">
+                              {lang === 'ar' ? 'انقر لفتح الكاميرا والتقاط صورة للعمل' : 'Open live device camera directly'}
                             </span>
                           </div>
-                        </div>
-                      )}
-                    </label>
+                        </button>
+
+                        {/* Gallery Choice */}
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="py-5 px-4 rounded-2xl border-2 border-dashed border-pink-400/40 bg-pink-500/10 hover:bg-pink-500/20 flex flex-col items-center justify-center gap-2 transition-all active:scale-[0.98] text-center group shadow-md cursor-pointer"
+                        >
+                          <div className="w-12 h-12 rounded-full bg-pink-400/20 flex items-center justify-center group-hover:scale-110 transition-transform">
+                            <ImageIcon className="w-6 h-6 text-pink-400" />
+                          </div>
+                          <div className="space-y-0.5">
+                            <span className="text-xs text-white font-black block">
+                              {lang === 'ar' ? '🖼️ اختيار صور من معرض الهاتف' : '🖼️ Choose from Gallery'}
+                            </span>
+                            <span className="text-[10px] text-gray-400 block">
+                              {lang === 'ar' ? 'تصفح ملفات الصور المخزنة لديك' : 'Browse saved photos on device'}
+                            </span>
+                          </div>
+                        </button>
+                      </div>
+                    )}
 
                     {/* List of uploaded images displayed below in a beautiful grid */}
                     {images.length > 0 && (

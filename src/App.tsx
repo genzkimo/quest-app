@@ -1066,59 +1066,6 @@ export default function App() {
     };
   }, []);
 
-  // Synchronous and Secure Runner Token Deduction:
-  // When the runner sees they have an active quest they are assigned to,
-  // we deduct the booking fee from their own profile client-side and sync it.
-  useEffect(() => {
-    if (!userProfile || !auth.currentUser) return;
-
-    // Find all quests where status is active/arrived/pending_verification/completed
-    // and this user is the assigned runner.
-    const myActiveQuests = quests.filter(q => 
-      (q.status === 'active' || q.status === 'arrived' || q.status === 'pending_verification' || q.status === 'completed') && 
-      q.assignedRunnerId === userProfile.id
-    );
-
-    let profileUpdated = false;
-    let newBalance = userProfile.tokenBalance;
-
-    // Get list of already processed/deducted quest IDs from localStorage
-    let deductedIds: string[] = [];
-    try {
-      const stored = localStorage.getItem('deducted_quest_fees');
-      if (stored) {
-        deductedIds = JSON.parse(stored);
-      }
-    } catch (e) {
-      console.error('Error reading deducted_quest_fees:', e);
-    }
-
-    myActiveQuests.forEach(q => {
-      if (!deductedIds.includes(q.id)) {
-        const fee = q.bookingFeeTokens || calculateBookingFee(q.cashReward);
-        newBalance = Math.max(0, newBalance - fee);
-        deductedIds.push(q.id);
-        profileUpdated = true;
-      }
-    });
-
-    if (profileUpdated) {
-      try {
-        localStorage.setItem('deducted_quest_fees', JSON.stringify(deductedIds));
-        syncProfile({
-          ...userProfile,
-          tokenBalance: newBalance
-        });
-        showToast(userProfile.language === 'ar'
-          ? '⚡ تم خصم عربون ضمان الجدية والحجز بنجاح للمهمات النشطة.'
-          : '⚡ Guarantee booking deposit fee successfully locked for active quests.'
-        );
-      } catch (err) {
-        console.error('Failed to deduct guarantee fee locally: ', err);
-      }
-    }
-  }, [quests, userProfile]);
-
   // Core Functional Notification Hub helper
   const addNotification = async (userId: string, text: string, questId?: string, type: string = 'info') => {
     const notifTitle = userProfile?.language === 'ar' ? 'إشعار جديد 🔔' : 'New Notification 🔔';

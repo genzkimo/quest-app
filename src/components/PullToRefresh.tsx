@@ -151,7 +151,7 @@ export default function PullToRefresh({
         style={{ height: pullDistance }}
         animate={{ height: pullDistance }}
         transition={isPullingRef.current ? { type: 'just' } : { type: 'spring', stiffness: 220, damping: 26 }}
-        className="overflow-hidden flex flex-col items-center justify-center bg-slate-50/80 dark:bg-slate-900/50 border-b border-gray-100 dark:border-slate-800"
+        className="overflow-hidden flex flex-col items-center justify-center bg-transparent"
       >
         <div className="flex flex-col items-center justify-center space-y-1.5 py-3">
           <motion.div

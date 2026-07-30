@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.quest.app',
+  appId: 'com.genz.quest',
   appName: 'Quest',
   webDir: 'dist',
   server: {

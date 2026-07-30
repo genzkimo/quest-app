@@ -891,35 +891,7 @@ export default function InboxScreen({
                 </div>
               </div>
 
-              {/* Quest Contract Mini-Banner */}
-              {activeQuestInfo && (
-                <div className="bg-amber-50 border-b border-amber-100 px-4 py-2 flex items-center justify-between shrink-0">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                    <span className="text-[10px] md:text-xs font-black text-amber-800 truncate">
-                      {t.manageContract}
-                    </span>
-                  </div>
-                  <button 
-                    onClick={() => {
-                      if (onOpenChat) {
-                        onOpenChat(selectedChat.id);
-                      } else {
-                        window.dispatchEvent(new CustomEvent('open-chat', {
-                          detail: {
-                            chatId: selectedChat.id,
-                            questId: selectedChat.id.split('_')[0]
-                          }
-                        }));
-                      }
-                      onClose();
-                    }}
-                    className="bg-amber-100 hover:bg-amber-200 text-amber-800 text-[9px] font-black px-3 py-1 rounded-lg transition-all"
-                  >
-                    ⚙️
-                  </button>
-                </div>
-              )}
+
 
               {/* Chat Messages List Container */}
               <div className="flex-1 overflow-y-auto p-4 md:p-5 bg-slate-50 space-y-3.5 flex flex-col scrollbar-thin select-text">

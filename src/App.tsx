@@ -1174,6 +1174,9 @@ export default function App() {
 
   // 2. Synchronize states with either cloud database (Firestore) or LocalStorage
   const syncQuests = (newQuests: Quest[], deletedId?: string) => {
+    setQuests(newQuests);
+    localStorage.setItem('quest_app_quests', JSON.stringify(newQuests));
+
     if (auth.currentUser) {
       if (deletedId) {
         deleteDoc(doc(db, 'quests', deletedId)).catch(e => handleFirestoreError(e, OperationType.DELETE, `quests/${deletedId}`));
@@ -1201,9 +1204,6 @@ export default function App() {
       changedQuests.forEach((q) => {
         setDoc(doc(db, 'quests', q.id), cleanData(q)).catch(e => handleFirestoreError(e, OperationType.WRITE, `quests/${q.id}`));
       });
-    } else {
-      setQuests(newQuests);
-      localStorage.setItem('quest_app_quests', JSON.stringify(newQuests));
     }
   };
 
@@ -1772,8 +1772,8 @@ export default function App() {
         },
         {
           enableHighAccuracy: true, // Demands pure physical GPS hardware sensors
-          timeout: 15000,
-          maximumAge: 10000 // Reuse recent GPS coordinates if under 10 seconds old to save battery/performance
+          timeout: 20000,
+          maximumAge: 0 // Always fetch fresh, high-accuracy GPS coordinates
         }
       );
     } else {
@@ -2743,19 +2743,20 @@ export default function App() {
     const targetQuest = quests.find(q => q.id === questId);
     if (!targetQuest) return;
 
-    // 1. Change quest status to cancelled
-    const updatedQuests = quests.map(q => {
-      if (q.id === questId) {
-        return {
-          ...q,
-          status: 'cancelled' as const
-        };
-      }
-      return q;
-    });
-    syncQuests(updatedQuests);
+    // Strict Rule: After worker has arrived at the location or task completed, contract CANNOT be cancelled!
+    if (targetQuest.status === 'arrived' || targetQuest.status === 'pending_verification' || targetQuest.status === 'completed') {
+      showToast(userProfile.language === 'ar'
+        ? '❌ لا يمكن إلغاء العقد بعد وصول العامل إلى الموقع الميداني أو إكمال المهمة!'
+        : '❌ Contract cannot be cancelled after the worker has arrived at the location or completed task!'
+      );
+      return;
+    }
 
-    // 2. Unlock the owner's publishing lock on the profile both locally and in Firestore (tokenless!)
+    // 1. Delete quest permanently from database and filter out locally
+    const updatedQuests = quests.filter(q => q.id !== questId);
+    syncQuests(updatedQuests, questId);
+
+    // 2. Unlock the owner's publishing lock on the profile both locally and in Firestore
     if (auth.currentUser) {
       try {
         await setDoc(doc(db, 'users', auth.currentUser.uid), {
@@ -2781,8 +2782,8 @@ export default function App() {
     }
 
     showToast(userProfile.language === 'ar'
-      ? '🚨 تم إلغاء العقد وتحرير حسابك من الحظر بنجاح!'
-      : '🚨 Contract has been force released! Locked state cleared from your account!'
+      ? '🚨 تم إلغاء العقد وحذف الكويست وتحرير حسابك من الحظر بنجاح!'
+      : '🚨 Contract has been cancelled and quest removed from database!'
     );
   };
 
@@ -3922,6 +3923,7 @@ export default function App() {
                       onBroadcastMessage={handleBroadcastMessage}
                       showToast={showToast}
                       onInspectQuest={(questId) => setGlobalQuestDetailId(questId)}
+                      onUpdateProfile={handleUpdateProfile}
                     />
                   ) : (
                     <div className="bg-white border-2 border-red-500 rounded-3xl p-8 text-center space-y-4 shadow-md max-w-md mx-auto my-12 font-sans" style={{ direction: userProfile.language === 'ar' ? 'rtl' : 'ltr' }}>

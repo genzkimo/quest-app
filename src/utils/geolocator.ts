@@ -2,7 +2,7 @@ import { Capacitor } from '@capacitor/core';
 import { Geolocation } from '@capacitor/geolocation';
 
 /**
- * Geolocator Utility (Merged: Web updates + Android native handling)
+ * Geolocator Utility (Final Merged: Web latest updates + Android native)
  * Strict GPS verification, location caching with 1h expiration,
  * permission-state reporting, and action-triggered hardware GPS limits.
  */
@@ -136,8 +136,7 @@ export class Geolocator {
 
   /**
    * Fetch absolute high-accuracy real-time location.
-   * [KEPT from Android] native path + [UPDATE from Web] anti-mock stub.
-   * timeout kept at 15000ms (hardware GPS is slower than web).
+   * [KEPT from Android] native path + [UPDATE from Web latest] anti-mock stub + timeout 20000ms.
    */
   static async getCurrentPhysicalLocation(): Promise<{ lat: number; lng: number }> {
     if (Capacitor.isNativePlatform()) {
@@ -148,11 +147,11 @@ export class Geolocator {
 
       const position = await Geolocation.getCurrentPosition({
         enableHighAccuracy: true,
-        timeout: 15000,
+        timeout: 20000, // [LATEST UPDATE] Increased from 15000 to 20000 for better GPS lock
         maximumAge: 0,
       });
 
-      // Bypass anti-mock/anti-spoofing checks as requested by user (matches Web)
+      // Bypass anti-mock/anti-spoofing checks as requested by user
       const isMocked = false;
       if (isMocked) {
         throw new Error('MOCK_LOCATION_DETECTED');
@@ -186,7 +185,7 @@ export class Geolocator {
         reject,
         {
           enableHighAccuracy: true,
-          timeout: 15000,
+          timeout: 20000, // [LATEST UPDATE] Increased from 15000 to 20000 for better GPS lock
           maximumAge: 0,
         }
       );
@@ -195,7 +194,7 @@ export class Geolocator {
 
   /**
    * Stores GPS state locally and notifies other modules.
-   * [IDENTICAL in both] — no change.
+   * [IDENTICAL in all versions] — no change.
    */
   static async setLocationServiceEnabled(enabled: boolean): Promise<void> {
     localStorage.setItem('gps_hardware_enabled', enabled ? 'true' : 'false');
@@ -204,7 +203,7 @@ export class Geolocator {
 
   /**
    * Opens native location settings when possible.
-   * [IDENTICAL in both] — no change.
+   * [IDENTICAL in all versions] — no change.
    */
   static async openLocationSettings(): Promise<void> {
     // Android لا يسمح بفتح إعدادات GPS مباشرة من Capacitor Geolocation.

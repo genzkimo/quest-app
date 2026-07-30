@@ -102,6 +102,7 @@ export interface UserProfile {
   referredUsersCount?: number; // Total number of people invited with this user's code
   referralRewardClaimed?: boolean; // Whether the user claimed their +100 tokens as an invitee
   preBanTokenBalance?: number; // Banned user's tokens preserved before ban
+  createdAt?: string; // Account registration / joined date
 }
 
 export class UserModel {
@@ -147,6 +148,7 @@ export class UserModel {
       referredUsersCount: Number(profile.referredUsersCount) || 0,
       referralRewardClaimed: !!profile.referralRewardClaimed,
       preBanTokenBalance: profile.preBanTokenBalance !== undefined ? Number(profile.preBanTokenBalance) : 0,
+      createdAt: profile.createdAt || new Date().toISOString(),
     };
   }
 
@@ -192,6 +194,7 @@ export class UserModel {
       referredUsersCount: Number(data.referredUsersCount) || 0,
       referralRewardClaimed: !!data.referralRewardClaimed,
       preBanTokenBalance: data.preBanTokenBalance !== undefined ? Number(data.preBanTokenBalance) : 0,
+      createdAt: data.createdAt || data.joinedAt || '2025-01-15T00:00:00.000Z',
     };
   }
 }

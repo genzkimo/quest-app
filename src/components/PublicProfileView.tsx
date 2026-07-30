@@ -21,6 +21,7 @@ import { Quest, UserProfile, Leader, HunterReview, GodfatherReview, UserModel } 
 import { motion, AnimatePresence } from 'motion/react';
 import { db } from '../utils/firebase';
 import { doc, getDoc } from 'firebase/firestore';
+import { formatJoinedDate, formatReviewDate } from '../utils/dateFormatter';
 
 interface PublicProfileViewProps {
   userId: string;
@@ -401,7 +402,7 @@ export default function PublicProfileView({
             </AnimatePresence>
           </div>
           
-          <div className="flex items-center justify-center gap-2">
+          <div className="flex flex-wrap items-center justify-center gap-2">
             <span className="text-[10px] bg-slate-50 border border-gray-150 text-slate-500 font-extrabold px-2.5 py-1 rounded-full flex items-center gap-1.5">
               <MapPin className="w-3 h-3 text-[#4FC3F7]" />
               {targetUser.city}
@@ -417,6 +418,12 @@ export default function PublicProfileView({
                 {isRtl ? 'هوية غير موثقة ⚠️' : 'Unverified ⚠️'}
               </span>
             )}
+
+            {/* Joined Date Tag */}
+            <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200/80 font-black px-2.5 py-1 rounded-full flex items-center gap-1 shadow-2xs">
+              <Clock className="w-3 h-3 text-emerald-600" />
+              {formatJoinedDate(dbUser?.createdAt || (isSelf ? currentUser?.createdAt : undefined), lang)}
+            </span>
           </div>
         </div>
 
@@ -636,7 +643,7 @@ export default function PublicProfileView({
                               <div className="flex items-center gap-1.5 flex-row-reverse">
                                 <span className="font-extrabold text-[#1F2A44]">{review.godfatherName}</span>
                                 <span className="text-gray-300">|</span>
-                                <span>{review.createdAt || 'منذ يومين'}</span>
+                                <span className="text-emerald-600 font-bold">📅 {formatReviewDate(review.createdAt, lang)}</span>
                               </div>
                               <span className="text-[8px] bg-slate-55 text-slate-500 font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wider font-mono">
                                 VERIFIED COPT 🛡️
@@ -800,7 +807,7 @@ export default function PublicProfileView({
                               <div className="flex items-center gap-1.5 flex-row-reverse">
                                 <span className="font-extrabold text-[#1F2A44]">{review.hunterName}</span>
                                 <span className="text-gray-300">|</span>
-                                <span>{review.createdAt || 'منذ يومين'}</span>
+                                <span className="text-emerald-600 font-bold">📅 {formatReviewDate(review.createdAt, lang)}</span>
                               </div>
                               <span className="text-[8px] bg-amber-50 text-amber-600 font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wider font-mono">
                                 RECIPROCAL TRUST 🤝

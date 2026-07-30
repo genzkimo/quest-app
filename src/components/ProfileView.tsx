@@ -40,7 +40,8 @@ import {
   Gift,
   PartyPopper,
   Share2,
-  Receipt
+  Receipt,
+  Clock
 } from 'lucide-react';
 import { UserProfile, Badge, HunterReview, GodfatherReview, Quest } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
@@ -49,6 +50,7 @@ import { translations } from '../data/translations';
 import { playCoinSound, triggerHaptic, playCameraShutter } from '../utils/audio';
 import { compressImage } from '../utils/imageCompressor';
 import LeaderboardView from './LeaderboardView';
+import { formatJoinedDate, formatReviewDate } from '../utils/dateFormatter';
 
 // رابط الخادم الوسيط (غيّره إلى رابط Render الخاص بك بعد الرفع)
 const API_BASE_URL = 'https://quest-app-jne8.onrender.com';
@@ -244,6 +246,66 @@ export default function ProfileView({
   const [isSubmittingNewTicket, setIsSubmittingNewTicket] = useState(false);
   const [newTicketReplyText, setNewTicketReplyText] = useState('');
   const [isSendingTicketReply, setIsSendingTicketReply] = useState(false);
+
+  // Rate limiting / Cooldown for AI KYC Verification and AI Refill Verification
+  const currentUserId = userProfile?.id || authenticatedUser?.uid || 'guest';
+
+  // Live timer tick timestamp (updated every second)
+  const [nowTimestamp, setNowTimestamp] = useState(() => Date.now());
+
+  // KYC AI Rate Limit state (Max 3 attempts, 15-min cooldown on fail or after 3 attempts)
+  const [kycAiAttempts, setKycAiAttempts] = useState<number>(() => {
+    const val = localStorage.getItem(`kyc_ai_attempts_${currentUserId}`);
+    return val ? parseInt(val, 10) : 0;
+  });
+  const [kycCooldownUntil, setKycCooldownUntil] = useState<number>(() => {
+    const val = localStorage.getItem(`kyc_ai_cooldown_${currentUserId}`);
+    return val ? parseInt(val, 10) : 0;
+  });
+
+  // Refill AI Rate Limit state (Max 3 attempts, 15-min cooldown on fail or after 3 attempts)
+  const [refillAiAttempts, setRefillAiAttempts] = useState<number>(() => {
+    const val = localStorage.getItem(`refill_ai_attempts_${currentUserId}`);
+    return val ? parseInt(val, 10) : 0;
+  });
+  const [refillCooldownUntil, setRefillCooldownUntil] = useState<number>(() => {
+    const val = localStorage.getItem(`refill_ai_cooldown_${currentUserId}`);
+    return val ? parseInt(val, 10) : 0;
+  });
+
+  // Interval ticker for live countdown timers
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNowTimestamp(Date.now());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Sync state changes with localStorage
+  useEffect(() => {
+    localStorage.setItem(`kyc_ai_attempts_${currentUserId}`, kycAiAttempts.toString());
+  }, [kycAiAttempts, currentUserId]);
+
+  useEffect(() => {
+    localStorage.setItem(`kyc_ai_cooldown_${currentUserId}`, kycCooldownUntil.toString());
+  }, [kycCooldownUntil, currentUserId]);
+
+  useEffect(() => {
+    localStorage.setItem(`refill_ai_attempts_${currentUserId}`, refillAiAttempts.toString());
+  }, [refillAiAttempts, currentUserId]);
+
+  useEffect(() => {
+    localStorage.setItem(`refill_ai_cooldown_${currentUserId}`, refillCooldownUntil.toString());
+  }, [refillCooldownUntil, currentUserId]);
+
+  const kycCooldownSecs = Math.max(0, Math.ceil((kycCooldownUntil - nowTimestamp) / 1000));
+  const refillCooldownSecs = Math.max(0, Math.ceil((refillCooldownUntil - nowTimestamp) / 1000));
+
+  const formatTimerMinSec = (totalSeconds: number) => {
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+  };
 
   // Referral and Check-in Matrix States
   const [referralCodeInput, setReferralCodeInput] = useState('');
@@ -764,6 +826,20 @@ export default function ProfileView({
       return;
     }
 
+    // Rate-limiting check: 15-minute cooldown enforcement
+    if (nowTimestamp < kycCooldownUntil) {
+      const remainingSecs = Math.ceil((kycCooldownUntil - nowTimestamp) / 1000);
+      showToast(
+        lang === 'ar'
+          ? `⏳ يرجى الانتظار ${formatTimerMinSec(remainingSecs)} دقيقة حتى انتهاء فترة التوقف المؤقت لفحص الهوية بالذكاء الاصطناعي.`
+          : `⏳ Please wait ${formatTimerMinSec(remainingSecs)} minutes before trying AI identity verification again.`
+      );
+      return;
+    }
+
+    const nextKycAttempts = kycAiAttempts + 1;
+    setKycAiAttempts(nextKycAttempts);
+
     setKycAiLoading(true);
     setKycAiResult(null);
 
@@ -788,6 +864,10 @@ export default function ProfileView({
       setKycAiResult(data);
 
       if (data.status === 'APPROVED') {
+        // Success: Clear attempts & cooldown
+        setKycAiAttempts(0);
+        setKycCooldownUntil(0);
+
         onSubmitKYC(kycFullName, kycNid, 'verified', data.extracted_name || kycFullName, data.extracted_nid || kycNid, kycFrontBase64, kycBackBase64);
 
         const uId = userProfile?.id || authenticatedUser?.uid;
@@ -830,62 +910,72 @@ export default function ProfileView({
         }
 
         showToast(lang === 'ar' ? '🎉 تم التحقق من هويتك بنجاح بواسطة الذكاء الاصطناعي وترقية حسابك وإضافة 700 توكن!' : '🎉 AI identity verification successful! +700 tokens added & verified!');
-      } else if (data.status === 'SUSPICIOUS') {
-        onSubmitKYC(kycFullName, kycNid, 'pending', data.extracted_name || kycFullName, data.extracted_nid || kycNid, kycFrontBase64, kycBackBase64);
-
-        const uId = userProfile?.id || authenticatedUser?.uid;
-        if (uId) {
-          updateDoc(doc(db, 'users', uId), {
-            idVerificationStatus: 'pending',
-            idDocumentUrl: kycFrontBase64 || kycBackBase64 || '',
-            idCardUrl: kycFrontBase64 || kycBackBase64 || '',
-            idFrontUrl: kycFrontBase64 || '',
-            idBackUrl: kycBackBase64 || '',
-            verifiedName: data.extracted_name || kycFullName,
-            verifiedNid: data.extracted_nid || kycNid,
-            kycFullName: kycFullName.trim(),
-            kycNid: kycNid.trim()
-          }).catch(console.error);
-
-          const notifRef = doc(collection(db, 'notifications'));
-          const reasonStr = data.reason_arabic || 'مطلوب التدقيق اليدوي لضمان سلامة بياناتك.';
-          setDoc(notifRef, {
-            id: notifRef.id,
-            userId: uId,
-            text: lang === 'ar' 
-              ? `🕒 تم توجيه ملف هويتك للمراجعة اليدوية من قبل إدارة المنصة. السبب: ${reasonStr}`
-              : `🕒 Identity routed to manual admin review. Reason: ${reasonStr}`,
-            questId: '',
-            createdAt: new Date().toISOString(),
-            read: false,
-            type: 'kyc_pending'
-          }).catch(console.error);
-        }
-
-        showToast(lang === 'ar' ? '🕒 تم إرسال الملف للتدقيق اليدوي للاشتباه ببعض المدخلات.' : '🕒 File routed to manual admin review due to suspicious metadata mismatch.');
       } else {
-        const uId = userProfile?.id || authenticatedUser?.uid;
-        if (uId) {
-          const notifRef = doc(collection(db, 'notifications'));
-          const reasonStr = data.reason_arabic || 'عدم تطابق المعلومات أو عدم وضوح الصور.';
-          setDoc(notifRef, {
-            id: notifRef.id,
-            userId: uId,
-            text: lang === 'ar' 
-              ? `❌ تم رفض توثيق الهوية من قبل الذكاء الاصطناعي. السبب: ${reasonStr}`
-              : `❌ AI identity verification rejected. Reason: ${reasonStr}`,
-            questId: '',
-            createdAt: new Date().toISOString(),
-            read: false,
-            type: 'kyc_rejected'
-          }).catch(console.error);
-        }
+        // Any failure (SUSPICIOUS / REJECTED / error) -> Trigger 15-minute cooldown
+        const cdTime = Date.now() + 15 * 60 * 1000;
+        setKycCooldownUntil(cdTime);
 
-        showToast(lang === 'ar' ? '❌ تم رفض وثائق الهوية من قبل الذكاء الاصطناعي لعدم التطابق.' : '❌ AI identity verification rejected.');
+        if (data.status === 'SUSPICIOUS') {
+          onSubmitKYC(kycFullName, kycNid, 'pending', data.extracted_name || kycFullName, data.extracted_nid || kycNid, kycFrontBase64, kycBackBase64);
+
+          const uId = userProfile?.id || authenticatedUser?.uid;
+          if (uId) {
+            updateDoc(doc(db, 'users', uId), {
+              idVerificationStatus: 'pending',
+              idDocumentUrl: kycFrontBase64 || kycBackBase64 || '',
+              idCardUrl: kycFrontBase64 || kycBackBase64 || '',
+              idFrontUrl: kycFrontBase64 || '',
+              idBackUrl: kycBackBase64 || '',
+              verifiedName: data.extracted_name || kycFullName,
+              verifiedNid: data.extracted_nid || kycNid,
+              kycFullName: kycFullName.trim(),
+              kycNid: kycNid.trim()
+            }).catch(console.error);
+
+            const notifRef = doc(collection(db, 'notifications'));
+            const reasonStr = data.reason_arabic || 'مطلوب التدقيق اليدوي لضمان سلامة بياناتك.';
+            setDoc(notifRef, {
+              id: notifRef.id,
+              userId: uId,
+              text: lang === 'ar' 
+                ? `🕒 تم توجيه ملف هويتك للمراجعة اليدوية من قبل إدارة المنصة. السبب: ${reasonStr}`
+                : `🕒 Identity routed to manual admin review. Reason: ${reasonStr}`,
+              questId: '',
+              createdAt: new Date().toISOString(),
+              read: false,
+              type: 'kyc_pending'
+            }).catch(console.error);
+          }
+
+          showToast(lang === 'ar' ? '🕒 تم إرسال الملف للتدقيق اليدوي. تم بدء فترة انتظار 15 دقيقة للفحص التالي.' : '🕒 File routed to manual review. 15-minute cooldown triggered.');
+        } else {
+          const uId = userProfile?.id || authenticatedUser?.uid;
+          if (uId) {
+            const notifRef = doc(collection(db, 'notifications'));
+            const reasonStr = data.reason_arabic || 'عدم تطابق المعلومات أو عدم وضوح الصور.';
+            setDoc(notifRef, {
+              id: notifRef.id,
+              userId: uId,
+              text: lang === 'ar' 
+                ? `❌ تم رفض توثيق الهوية من قبل الذكاء الاصطناعي. السبب: ${reasonStr}`
+                : `❌ AI identity verification rejected. Reason: ${reasonStr}`,
+              questId: '',
+              createdAt: new Date().toISOString(),
+              read: false,
+              type: 'kyc_rejected'
+            }).catch(console.error);
+          }
+
+          showToast(lang === 'ar' ? '❌ تم رفض وثائق الهوية من قبل الذكاء الاصطناعي. تم تفعيل فترة الانتظار (15 دقيقة).' : '❌ AI identity verification rejected. 15-minute cooldown triggered.');
+        }
       }
 
     } catch (err) {
       console.error("AI KYC Verification Error:", err);
+      // Trigger 15-minute cooldown on exception
+      const cdTime = Date.now() + 15 * 60 * 1000;
+      setKycCooldownUntil(cdTime);
+
       onSubmitKYC(kycFullName, kycNid, 'pending', kycFullName, kycNid, kycFrontBase64, kycBackBase64);
 
       const uId = userProfile?.id || authenticatedUser?.uid;
@@ -911,7 +1001,7 @@ export default function ProfileView({
         matches_nid: true,
         reason_arabic: "حدث عطل رقمي مؤقت أثناء الاتصال بنظام التدقيق التلقائي. لقد تم استلام وحفظ وثائق هويتك بنجاح، وتوجيه طلبك فوراً للمراجعة والتدقيق اليدوي من قبل إدارة المنصة في لوحة التحكم لضمان حقك وتفعيل حسابك دون ظلم قريباً."
       });
-      showToast(lang === 'ar' ? '⚠️ حدث خطأ رقمي مؤقت. تم حفظ طلبك وإرساله فوراً للمراجعة اليدوية لضمان عدم ظلمك.' : '⚠️ Temporary technical error. Routed to manual verification to avoid unfair rejection.');
+      showToast(lang === 'ar' ? '⚠️ حدث خطأ رقمي مؤقت. تم حفظ طلبك وإرساله للمراجعة اليدوية وبدء فترة الانتظار (15 دقيقة).' : '⚠️ Temporary technical error. Saved for manual review & 15-minute cooldown applied.');
     } finally {
       setKycAiLoading(false);
     }
@@ -1124,6 +1214,20 @@ export default function ProfileView({
       return;
     }
 
+    // Rate-limiting check: 15-minute cooldown enforcement for AI receipt verification
+    if (nowTimestamp < refillCooldownUntil) {
+      const remainingSecs = Math.ceil((refillCooldownUntil - nowTimestamp) / 1000);
+      showToast(
+        lang === 'ar'
+          ? `⏳ يرجى الانتظار ${formatTimerMinSec(remainingSecs)} دقيقة حتى انتهاء فترة التوقف المؤقت لفحص الإيصال بالذكاء الاصطناعي.`
+          : `⏳ Please wait ${formatTimerMinSec(remainingSecs)} minutes before re-submitting payment receipt to AI.`
+      );
+      return;
+    }
+
+    const nextRefillAttempts = refillAiAttempts + 1;
+    setRefillAiAttempts(nextRefillAttempts);
+
     setRefillLoading(true);
     setVerificationResult(null);
 
@@ -1137,7 +1241,7 @@ export default function ProfileView({
           referenceNumber: refillReference.trim(),
           date: refillDate,
           base64Image: refillReceiptBase64,
-          userId: userProfile?.id || authenticatedUser?.uid || 'user-current',
+          userId: authenticatedUser?.uid || (userProfile?.id && userProfile.id !== 'user-current' ? userProfile.id : null) || 'user-current',
           userEmail: userProfile?.email || authenticatedUser?.email || '',
           paymentMethod: refillPaymentMethod
         })
@@ -1151,6 +1255,10 @@ export default function ProfileView({
       setVerificationResult(data);
 
       if (data.status === 'APPROVED') {
+        // Clear attempts & cooldown on successful approval
+        setRefillAiAttempts(0);
+        setRefillCooldownUntil(0);
+
         playCoinSound(audioEffectsEnabled);
         showToast(lang === 'ar' ? `⚡ تم التحقق التلقائي وشحن رصيدك بـ ${refillAmount} توكن بنجاح!` : `⚡ Automatically verification success! Credited ${refillAmount} Tokens.`);
         onTopUpTokens(Number(refillAmount));
@@ -1176,6 +1284,10 @@ export default function ProfileView({
         setRefillReceiptBase64(null);
         setRefillReceiptUploaded(false);
       } else {
+        // Any non-approval / failure -> Trigger 15-minute cooldown
+        const cdTime = Date.now() + 15 * 60 * 1000;
+        setRefillCooldownUntil(cdTime);
+
         const errMsg = data.reason_arabic || (lang === 'ar' ? '⚠️ تم رفض عملية الشحن التلقائية من قِبل مدقق مكافحة الاحتيال الذكي.' : '⚠️ Verification failed! Anti-fraud auditor rejected your receipt.');
         showToast(errMsg);
 
@@ -1202,6 +1314,9 @@ export default function ProfileView({
       }
     } catch (err: any) {
       console.error("Payment verification failure, routing to manual review:", err);
+      // Trigger 15-minute cooldown on exception
+      const cdTime = Date.now() + 15 * 60 * 1000;
+      setRefillCooldownUntil(cdTime);
       try {
         const refId = refillReference.trim();
         const requestRef = doc(db, 'refill_requests', refId);
@@ -2179,15 +2294,46 @@ export default function ProfileView({
                     </div>
                   )}
 
+                  {/* AI KYC Cooldown / Rate Limit Banner */}
+                  {kycCooldownSecs > 0 && (
+                    <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-3.5 text-right space-y-1.5 mt-2">
+                      <div className="flex items-center justify-between text-amber-300 font-black text-xs">
+                        <span className="font-mono bg-amber-500/20 px-2.5 py-0.5 rounded-full text-amber-200 font-black tracking-wider text-[11px] animate-pulse">
+                          ⏱ {formatTimerMinSec(kycCooldownSecs)}
+                        </span>
+                        <span className="flex items-center gap-1.5 text-amber-300">
+                          <span>{lang === 'ar' ? 'فترة انتظار مؤقتة للتحقق بالذكاء الاصطناعي' : 'AI Verification Cooldown'}</span>
+                          <Clock className="w-4 h-4 text-amber-400" />
+                        </span>
+                      </div>
+                      <p className="text-[10.5px] text-amber-200/90 font-bold leading-relaxed">
+                        {lang === 'ar'
+                          ? 'تم إيقاف الفحص بالذكاء الاصطناعي مؤقتاً لمدة 15 دقيقة لحماية الحساب ومكافحة التكرار. يمكنك إعادة المحاولة فور انتهاء العداد.'
+                          : 'AI verification is temporarily paused for 15 minutes for security & rate limiting. Try again after timer expires.'}
+                      </p>
+                      <div className="flex justify-between items-center text-[9.5px] text-amber-300/80 font-extrabold border-t border-amber-500/20 pt-1.5">
+                        <span className="font-mono">
+                          {kycAiAttempts} / 3 {lang === 'ar' ? 'محاولات فحص' : 'Scanning attempts'}
+                        </span>
+                        <span>{lang === 'ar' ? 'مدة التوقف: 15 دقيقة' : 'Cooldown: 15 Min'}</span>
+                      </div>
+                    </div>
+                  )}
+
                   <button
                     type="submit"
-                    disabled={kycAiLoading || kycUploadingFront || kycUploadingBack}
-                    className="w-full mt-3 bg-[#FF3B7C] disabled:bg-gray-300 disabled:opacity-60 text-white hover:bg-[#FF3B7C]/95 font-black text-xs py-3 rounded-xl transition-all shadow-md shadow-[#FF3B7C]/15 cursor-pointer flex justify-center items-center gap-2"
+                    disabled={kycAiLoading || kycUploadingFront || kycUploadingBack || kycCooldownSecs > 0}
+                    className="w-full mt-3 bg-[#FF3B7C] disabled:bg-gray-600 disabled:opacity-60 text-white hover:bg-[#FF3B7C]/95 font-black text-xs py-3 rounded-xl transition-all shadow-md shadow-[#FF3B7C]/15 cursor-pointer flex justify-center items-center gap-2"
                   >
                     {kycAiLoading ? (
                       <>
                         <RefreshCcw className="w-3.5 h-3.5 animate-spin text-white" />
                         <span>{lang === 'ar' ? 'جاري فحص وتدقيق الهوية بالذكاء الاصطناعي...' : 'AI Auditor scanning credentials...'}</span>
+                      </>
+                    ) : kycCooldownSecs > 0 ? (
+                      <>
+                        <Clock className="w-3.5 h-3.5 text-amber-300" />
+                        <span>{lang === 'ar' ? `⏳ يرجى الانتظار (${formatTimerMinSec(kycCooldownSecs)}) دقيقة` : `⏳ Please Wait (${formatTimerMinSec(kycCooldownSecs)})`}</span>
                       </>
                     ) : (
                       <>
@@ -2471,17 +2617,48 @@ export default function ProfileView({
                 )}
               </div>
 
+              {/* Refill AI Cooldown / Rate Limit Banner */}
+              {refillPaymentMethod !== 'googleplay' && refillCooldownSecs > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 text-right space-y-1.5 shadow-xs mb-3">
+                  <div className="flex items-center justify-between text-amber-900 font-black text-xs">
+                    <span className="font-mono bg-amber-200/80 px-2.5 py-0.5 rounded-full text-amber-950 font-black tracking-wider text-[11px] animate-pulse">
+                      ⏱ {formatTimerMinSec(refillCooldownSecs)}
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span>{lang === 'ar' ? 'فترة انتظار مؤقتة لفحص الإيصال بالذكاء الاصطناعي' : 'Receipt Scanning Cooldown'}</span>
+                      <Clock className="w-4 h-4 text-amber-600" />
+                    </span>
+                  </div>
+                  <p className="text-[10.5px] text-amber-800 font-bold leading-relaxed">
+                    {lang === 'ar'
+                      ? 'تم إيقاف الفحص التلقائي بالذكاء الاصطناعي مؤقتاً لمدة 15 دقيقة لحماية حسابك ومكافحة الاحتيال. يمكنك إعادة إرسال الإيصال فور انتهاء العداد.'
+                      : 'Automatic AI receipt scanning is temporarily paused for 15 minutes for anti-fraud protection. Re-submit after timer finishes.'}
+                  </p>
+                  <div className="flex justify-between items-center text-[9.5px] text-amber-700 font-extrabold border-t border-amber-200/60 pt-1.5">
+                    <span className="font-mono">
+                      {refillAiAttempts} / 3 {lang === 'ar' ? 'محاولات فحص' : 'Scanning attempts'}
+                    </span>
+                    <span>{lang === 'ar' ? 'مدة التوقف: 15 دقيقة' : 'Cooldown: 15 Min'}</span>
+                  </div>
+                </div>
+              )}
+
               {/* Submit Button */}
               <button
                 type="submit"
                 disabled={
                   refillLoading || 
-                  (refillPaymentMethod !== 'googleplay' && (!refillAmount || !refillReference || !refillReceiptBase64))
+                  (refillPaymentMethod !== 'googleplay' && (refillCooldownSecs > 0 || !refillAmount || !refillReference || !refillReceiptBase64))
                 }
-                className="w-full py-3 bg-[#FF3B7C] hover:bg-[#E0245E] text-white font-black text-xs rounded-xl shadow-md transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+                className="w-full py-3 bg-[#FF3B7C] hover:bg-[#E0245E] text-white font-black text-xs rounded-xl shadow-md transition-all active:scale-95 cursor-pointer disabled:opacity-50 flex justify-center items-center gap-2"
               >
                 {refillLoading ? (
                   <span className="animate-pulse">{lang === 'ar' ? 'جاري إرسال الطلب للمراجعة...' : 'Submitting for review...'}</span>
+                ) : (refillPaymentMethod !== 'googleplay' && refillCooldownSecs > 0) ? (
+                  <>
+                    <Clock className="w-3.5 h-3.5 text-amber-200" />
+                    <span>{lang === 'ar' ? `⏳ يرجى الانتظار (${formatTimerMinSec(refillCooldownSecs)}) دقيقة` : `⏳ Please Wait (${formatTimerMinSec(refillCooldownSecs)})`}</span>
+                  </>
                 ) : (
                   <span>{lang === 'ar' ? 'تأكيد عملية التحويل والشحن 🚀' : 'Confirm & Request Recharge 🚀'}</span>
                 )}
@@ -3795,15 +3972,18 @@ export default function ProfileView({
                   </div>
                 </div>
 
-                <div className="flex justify-center gap-4 text-xs text-gray-500 font-bold mt-2">
-                  <span className="flex items-center gap-1">
+                <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-gray-500 font-bold mt-2.5">
+                  <span className="flex items-center gap-1 bg-slate-50 border border-gray-150 px-2.5 py-1 rounded-full text-[11px]">
                     <MapPin className="w-3.5 h-3.5 text-[#FF3B7C]" />
                     {userProfile.city}
                   </span>
-                  <span>|</span>
-                  <span className="flex items-center gap-1 font-mono">
+                  <span className="flex items-center gap-1 font-mono bg-slate-50 border border-gray-150 px-2.5 py-1 rounded-full text-[11px]">
                     <Phone className="w-3.5 h-3.5 text-[#4FC3F7]" />
                     {userProfile.phone}
+                  </span>
+                  <span className="flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200/80 px-2.5 py-1 rounded-full text-[11px] font-extrabold shadow-2xs">
+                    <Clock className="w-3.5 h-3.5 text-emerald-600" />
+                    {formatJoinedDate(userProfile.createdAt, lang)}
                   </span>
                 </div>
               </>
@@ -3998,8 +4178,8 @@ export default function ProfileView({
                                       <span className="text-[10px] font-black text-[#1F2A44] block">
                                         {review.godfatherName}
                                       </span>
-                                      <span className="text-[8px] text-gray-400 block font-mono">
-                                        {review.createdAt || 'الآن'}
+                                      <span className="text-[9px] text-emerald-600 block font-bold">
+                                        📅 {formatReviewDate(review.createdAt, lang)}
                                       </span>
                                     </div>
                                     <img 
@@ -4097,8 +4277,8 @@ export default function ProfileView({
                                       <span className="text-[10px] font-black text-[#1F2A44] block">
                                         {review.hunterName}
                                       </span>
-                                      <span className="text-[8px] text-gray-400 block font-mono">
-                                        {review.createdAt || 'الآن'}
+                                      <span className="text-[9px] text-emerald-600 block font-bold">
+                                        📅 {formatReviewDate(review.createdAt, lang)}
                                       </span>
                                     </div>
                                     <img 

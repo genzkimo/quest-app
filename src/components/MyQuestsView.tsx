@@ -1090,15 +1090,50 @@ export default function MyQuestsView({
                             </div>
                           </div>
                           
-                          {quest.helperPhone && (
-                            <a
-                              href={`tel:${quest.helperPhone}`}
-                              className="bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-extrabold text-[10px] px-4 py-2 rounded-xl flex items-center gap-1.5 transition-all shadow-sm"
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                window.dispatchEvent(new CustomEvent('open-chat', {
+                                  detail: {
+                                    chatId: `${quest.id}_${quest.creatorId}_${runnerId}`,
+                                    questTitle: quest.title,
+                                    recipientName: name,
+                                    recipientAvatar: avatar
+                                  }
+                                }));
+                              }}
+                              className="bg-slate-900 hover:bg-slate-800 active:scale-95 text-white font-extrabold text-[10px] px-3 py-2 rounded-xl flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
                             >
-                              <Phone className="w-3.5 h-3.5 text-white animate-bounce" />
-                              <span>{lang === 'ar' ? 'اتصال مباشر' : 'Direct Call'}</span>
-                            </a>
-                          )}
+                              <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>{lang === 'ar' ? 'دردشة' : 'Chat'}</span>
+                            </button>
+
+                            {quest.helperPhone ? (
+                              <a
+                                href={`tel:${quest.helperPhone}`}
+                                className="bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-extrabold text-[10px] px-3 py-2 rounded-xl flex items-center gap-1.5 transition-all shadow-sm"
+                              >
+                                <Phone className="w-3.5 h-3.5 text-white animate-bounce" />
+                                <span>{lang === 'ar' ? 'اتصال مباشر' : 'Direct Call'}</span>
+                              </a>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  alert(
+                                    lang === 'ar'
+                                      ? 'رقم هاتف العامل غير متوفر في حسابه حالياً'
+                                      : 'Worker phone number is not available'
+                                  );
+                                }}
+                                className="bg-emerald-600/20 text-emerald-800 active:scale-95 font-extrabold text-[10px] px-3 py-2 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer"
+                              >
+                                <Phone className="w-3.5 h-3.5 text-emerald-700" />
+                                <span>{lang === 'ar' ? 'اتصال' : 'Call'}</span>
+                              </button>
+                            )}
+                          </div>
                         </div>
                       );
                     })()}
@@ -1160,40 +1195,88 @@ export default function MyQuestsView({
                           </button>
                         )}
 
-                        {isClaimed && (
-                          <div className="flex gap-2 w-full">
-                            <button
-                              onClick={() => {
-                                window.dispatchEvent(new CustomEvent('open-chat', {
-                                  detail: {
-                                    chatId: `${quest.id}_${quest.creatorId}_${currentUserId}`,
-                                    questTitle: quest.title,
-                                    recipientName: quest.helperName,
-                                    recipientAvatar: `https://api.dicebear.com/7.x/initials/svg?seed=${quest.helperName}&backgroundColor=f43f5e`
-                                  }
-                                }));
-                              }}
-                              className="flex-1 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs py-3 rounded-2xl transition duration-200 cursor-pointer flex items-center justify-center gap-2 shadow-sm"
-                            >
-                              <MessageSquare className="w-4 h-4 text-emerald-400" />
-                              <span>{lang === 'ar' ? 'مراسلة المساعد' : 'Message Assistant'}</span>
-                            </button>
+                        {((isClaimed || !!quest.helperId || !!quest.assignedRunnerId) && !isFinished && quest.status !== 'cancelled' && quest.status !== 'cancelled_by_timeout') && (() => {
+                          const runnerId = quest.helperId || quest.assignedRunnerId;
+                          const runnerName = quest.helperName || (lang === 'ar' ? 'المساعد الميداني' : 'Assistant');
+                          const runnerAvatar = `https://api.dicebear.com/7.x/initials/svg?seed=${runnerName}&backgroundColor=f43f5e`;
 
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (window.confirm(lang === 'ar' ? 'هل أنت متأكد من رغبتك في إلغاء العقد وتحرير الارتباط؟' : 'Are you sure you want to force release and cancel contract?')) {
-                                  if (onForceReleaseContract) {
-                                    onForceReleaseContract(quest.id);
+                          return (
+                            <div className="flex gap-2 w-full">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  window.dispatchEvent(new CustomEvent('open-chat', {
+                                    detail: {
+                                      chatId: `${quest.id}_${quest.creatorId}_${runnerId}`,
+                                      questTitle: quest.title,
+                                      recipientName: runnerName,
+                                      recipientAvatar: runnerAvatar
+                                    }
+                                  }));
+                                }}
+                                className="flex-1 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs py-3 rounded-2xl transition duration-200 cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
+                              >
+                                <MessageSquare className="w-4 h-4 text-emerald-400" />
+                                <span>{lang === 'ar' ? 'مراسلة العامل' : 'Message Worker'}</span>
+                              </button>
+
+                              {quest.helperPhone ? (
+                                <a
+                                  href={`tel:${quest.helperPhone}`}
+                                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs py-3 rounded-2xl transition duration-200 flex items-center justify-center gap-1.5 shadow-sm"
+                                >
+                                  <PhoneCall className="w-4 h-4 text-white" />
+                                  <span>{lang === 'ar' ? 'اتصال بالعامل' : 'Call Worker'}</span>
+                                </a>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    alert(
+                                      lang === 'ar'
+                                        ? 'رقم هاتف العامل غير متوفر في حسابه حالياً'
+                                        : 'Worker phone number is not available'
+                                    );
+                                  }}
+                                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-extrabold text-xs py-3 rounded-2xl transition duration-200 flex items-center justify-center gap-1.5 border border-slate-200 cursor-pointer"
+                                >
+                                  <PhoneCall className="w-4 h-4 text-slate-500" />
+                                  <span>{lang === 'ar' ? 'اتصال بالعامل' : 'Call Worker'}</span>
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (quest.status === 'arrived' || quest.status === 'pending_verification' || quest.status === 'completed') {
+                                    alert(lang === 'ar'
+                                      ? '❌ لا يمكن إلغاء العقد بعد وصول العامل إلى الموقع الميداني أو إكمال المهمة!'
+                                      : '❌ Cannot cancel contract after the worker has arrived at the location!'
+                                    );
+                                    return;
                                   }
+                                  if (window.confirm(lang === 'ar' ? 'هل أنت متأكد من رغبتك في إلغاء العقد وحذف الكويست وتحرير الارتباط؟' : 'Are you sure you want to cancel contract and delete quest?')) {
+                                    if (onForceReleaseContract) {
+                                      onForceReleaseContract(quest.id);
+                                    }
+                                  }
+                                }}
+                                className={`px-3 bg-white font-bold text-xs py-3 rounded-2xl transition duration-200 flex items-center justify-center shrink-0 ${
+                                  (quest.status === 'arrived' || quest.status === 'pending_verification' || quest.status === 'completed')
+                                    ? 'opacity-40 cursor-not-allowed text-gray-400 border border-gray-200'
+                                    : 'hover:bg-rose-50 text-rose-600 border border-rose-200 hover:border-rose-300 cursor-pointer'
+                                }`}
+                                title={
+                                  (quest.status === 'arrived' || quest.status === 'pending_verification' || quest.status === 'completed')
+                                    ? (lang === 'ar' ? 'وصل العامل - يمنع إلغاء العقد' : 'Worker Arrived - Cancellation Blocked')
+                                    : (lang === 'ar' ? 'إلغاء العقد الميداني' : 'Cancel Contract')
                                 }
-                              }}
-                              className="flex-1 bg-white hover:bg-rose-50 text-rose-600 border border-rose-100 hover:border-rose-200 font-bold text-xs py-3 rounded-2xl transition duration-200 cursor-pointer flex items-center justify-center gap-1"
-                            >
-                              <span>{lang === 'ar' ? 'إلغاء العقد الميداني' : 'Cancel Contract'}</span>
-                            </button>
-                          </div>
-                        )}
+                              >
+                                <X className="w-4 h-4 text-rose-500" />
+                              </button>
+                            </div>
+                          );
+                        })()}
 
                         {isSubmitted && (
                           <div className="w-full">

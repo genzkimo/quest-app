@@ -79,7 +79,7 @@ export default function ReciprocalRatingModal({
           completedTaskImage: quest.proofImageUrl || (quest.imageUrls && quest.imageUrls[0]) || 'https://images.unsplash.com/photo-1540959733332-eab4deceeaf7?w=600',
           rating,
           comment: finalComment,
-          createdAt: isRtl ? 'الآن بالذات' : 'Just now',
+          createdAt: new Date().toISOString(),
         };
         onSaveHunterReview(newReview);
       } else if (isRunner) {
@@ -94,7 +94,7 @@ export default function ReciprocalRatingModal({
           completedTaskImage: quest.proofImageUrl || (quest.imageUrls && quest.imageUrls[0]) || 'https://images.unsplash.com/photo-1540959733332-eab4deceeaf7?w=600',
           rating,
           comment: finalComment,
-          createdAt: isRtl ? 'الآن بالذات' : 'Just now',
+          createdAt: new Date().toISOString(),
         };
         onSaveGodfatherReview(newReview);
       }

@@ -158,12 +158,12 @@ service cloud.firestore {
     // 5. Notifications collection rules
     match /notifications/{notifyId} {
       allow read: if isSignedIn() && (resource == null || ('userId' in resource.data && resource.data.userId == request.auth.uid));
-      allow create: if isSignedIn();
-      allow update: if isSignedIn() && (
+      allow create: if isSignedIn() || (request.resource.data != null && 'secretKey' in request.resource.data && request.resource.data.secretKey == "bk_sec_f76a45bc-f8ec-46e2-bb9e-2e336d40ae5f") || isAdmin();
+      allow update: if (request.resource.data != null && 'secretKey' in request.resource.data && request.resource.data.secretKey == "bk_sec_f76a45bc-f8ec-46e2-bb9e-2e336d40ae5f") || isAdmin() || (isSignedIn() && (
         (resource != null && 'userId' in resource.data && resource.data.userId == request.auth.uid) || 
         ('userId' in request.resource.data && request.resource.data.userId == request.auth.uid)
-      );
-      allow delete: if isSignedIn() && resource != null && 'userId' in resource.data && resource.data.userId == request.auth.uid;
+      ));
+      allow delete: if isAdmin() || (isSignedIn() && resource != null && 'userId' in resource.data && resource.data.userId == request.auth.uid);
     }
 
     // 6. Support Tickets rules
@@ -191,7 +191,7 @@ service cloud.firestore {
     // 7. Refill Requests rules
     match /refill_requests/{refillId} {
       allow read: if true;
-      allow create, update: if (request.resource.data != null && 'secretKey' in request.resource.data && request.resource.data.secretKey == "bk_sec_f76a45bc-f8ec-46e2-bb9e-2e336d40ae5f") || isAdmin();
+      allow create, update: if (request.resource.data != null && 'secretKey' in request.resource.data && request.resource.data.secretKey == "bk_sec_f76a45bc-f8ec-46e2-bb9e-2e336d40ae5f") || isAdmin() || (isSignedIn() && (incoming().userId == request.auth.uid || incoming().userId == 'user-current' || !('userId' in incoming())));
       allow delete: if isAdmin();
     }
 

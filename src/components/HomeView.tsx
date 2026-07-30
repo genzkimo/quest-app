@@ -367,23 +367,17 @@ export default function HomeView({
       },
       {
         enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 10000
+        timeout: 20000,
+        maximumAge: 0
       }
     );
   };
 
-  // Only auto-trigger GPS on mount if permission was ALREADY explicitly granted in browser
+  // Do not auto-trigger location on mount - wait for user to click button or enter Map view
   useEffect(() => {
-    Geolocator.getPermissionState().then((perm) => {
-      if (perm === 'granted') {
-        requestHomeLocation();
-      } else {
-        if (!userLoc) {
-          setGpsDenied(true);
-        }
-      }
-    });
+    if (!userLoc) {
+      setGpsDenied(true);
+    }
   }, []);
 
   // Reset infinite scroll pagination when search query, category, or userLoc changes
@@ -811,45 +805,6 @@ export default function HomeView({
         console.warn("Could not fetch stories on refresh:", err);
       }
 
-      // 3. Seamlessly update GPS location in the background without blocking or prompting
-      if (navigator.geolocation) {
-        try {
-          let canQuery = false;
-          let isGranted = true;
-          try {
-            if (typeof navigator.permissions !== 'undefined' && navigator.permissions.query) {
-              canQuery = true;
-              const perm = await navigator.permissions.query({ name: 'geolocation' as PermissionName });
-              isGranted = perm.state === 'granted';
-            }
-          } catch (pe) {
-            console.warn("Could not query geolocation permissions:", pe);
-          }
-
-          if (isGranted || !canQuery) {
-            await new Promise<void>((resolve) => {
-              navigator.geolocation.getCurrentPosition(
-                (position) => {
-                  setUserLoc({ lat: position.coords.latitude, lng: position.coords.longitude });
-                  resolve();
-                },
-                (err) => {
-                  console.warn("Seamless background location update skipped/failed:", err);
-                  resolve();
-                },
-                {
-                  enableHighAccuracy: true,
-                  timeout: 4000, // Short timeout to keep pull-to-refresh fast and seamless
-                  maximumAge: 0
-                }
-              );
-            });
-          }
-        } catch (gpsError) {
-          console.warn("GPS background update error:", gpsError);
-        }
-      }
-
       // Update parent global states
       if (setQuests && fetchedQuests.length > 0) {
         setQuests(fetchedQuests);
@@ -981,14 +936,25 @@ export default function HomeView({
         </div>
 
         {filteredQuests.length === 0 ? (
-          <div className="bg-white py-16 px-4 rounded-3xl border border-slate-900 text-center space-y-4">
+          <div className="bg-white py-12 px-4 rounded-3xl border border-gray-100 text-center space-y-4 shadow-xs">
             <div className="w-14 h-14 bg-gray-50 text-gray-400 rounded-full flex items-center justify-center mx-auto">
               <SlidersHorizontal className="w-6 h-6 text-gray-300" />
             </div>
-            <h3 className="font-extrabold text-sm">{lang === 'ar' ? 'لا توجد كويستات مطابقة لخيارات الفلترة' : 'No local chores match your filters'}</h3>
+            <h3 className="font-extrabold text-xs text-slate-700">{lang === 'ar' ? 'لا توجد كويستات مطابقة لخيارات الفلترة' : 'No local chores match your filters'}</h3>
             <p className="text-xs text-gray-400 max-w-sm mx-auto leading-relaxed">
-              {lang === 'ar' ? 'حاول كتابة كلمات أخرى أو تبديل خيار التصنيف للحصول على المنشورات الأخيرة للشباب.' : 'Change the categorized tag or clear seek tags to inspect other opportunities.'}
+              {lang === 'ar' ? 'حاول كتابة كلمات أخرى أو تبديل خيار التصنيف أو انقر أسفله لتحديث موقعك وعرض المهام.' : 'Change the categorized tag or clear seek tags, or tap below to update location.'}
             </p>
+            <button
+              type="button"
+              onClick={requestHomeLocation}
+              disabled={isGpsRequesting}
+              className="mt-2 px-5 py-2.5 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white rounded-2xl text-xs font-black shadow-sm transition-all cursor-pointer flex items-center justify-center gap-2 mx-auto"
+            >
+              <MapPin className="w-4 h-4 text-[#FF3B7C]" />
+              {isGpsRequesting
+                ? (lang === 'ar' ? 'جاري تحديد الموقع... ⏳' : 'Locating... ⏳')
+                : (lang === 'ar' ? 'تحديد الموقع وعرض المهام 📍' : 'Update Location & Show Tasks 📍')}
+            </button>
           </div>
         ) : (
           <div className="space-y-6 max-w-2xl mx-auto">
@@ -1476,9 +1442,20 @@ export default function HomeView({
                     </h4>
                     <p className="text-[11px] text-gray-400 max-w-xs mx-auto leading-relaxed">
                       {lang === 'ar' 
-                        ? 'انقر على زر مسح الرادار لتحديث موقعك، أو ابحث في كويستات خارج نطاقك الجغرافي بالأسفل!' 
-                        : 'Tap on Scan Radar to update your current location, or search quests outside your radius below.'}
+                        ? 'انقر على الزر أدناه لتحديث موقعك وعرض المهام القريبة، أو تصفح الكويستات بالأسفل!' 
+                        : 'Tap the button below to update your location & show nearby tasks, or inspect quests below!'}
                     </p>
+                    <button
+                      type="button"
+                      onClick={requestHomeLocation}
+                      disabled={isGpsRequesting}
+                      className="mt-2 px-5 py-2.5 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white rounded-2xl text-xs font-black shadow-sm transition-all cursor-pointer flex items-center justify-center gap-2 mx-auto"
+                    >
+                      <MapPin className="w-4 h-4 text-[#FF3B7C]" />
+                      {isGpsRequesting
+                        ? (lang === 'ar' ? 'جاري تحديد الموقع... ⏳' : 'Locating... ⏳')
+                        : (lang === 'ar' ? 'تحديد الموقع وعرض المهام 📍' : 'Update Location & Show Tasks 📍')}
+                    </button>
                   </div>
                 ) : (
                   <>

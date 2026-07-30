@@ -42,6 +42,7 @@ interface AdminViewProps {
   onBroadcastMessage: (msg: string) => void;
   showToast: (msg: string) => void;
   onInspectQuest?: (questId: string) => void;
+  onUpdateProfile?: (updatedFields: Partial<UserProfile>) => void;
 }
 
 export default function AdminView({
@@ -55,7 +56,8 @@ export default function AdminView({
   onDeleteQuest,
   onBroadcastMessage,
   showToast,
-  onInspectQuest
+  onInspectQuest,
+  onUpdateProfile
 }: AdminViewProps) {
   const [announcement, setAnnouncement] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -273,7 +275,16 @@ export default function AdminView({
         throw new Error(errData.error || "Server error");
       }
 
-      showToast(lang === 'ar' ? '✔ تم قبول الوصل يدوياً وشحن الرصيد المالي بنجاح!' : '✔ Receipt approved manually and wallet credited successfully!');
+      const resData = await response.json();
+      const amountCredited = Number(refill.amount) || resData.amountCredited || 0;
+
+      if (resData.creditedUserId === userProfile.id || refill.userId === userProfile.id || (refill.userEmail && refill.userEmail.toLowerCase().trim() === userProfile.email.toLowerCase().trim())) {
+        onUpdateProfile?.({
+          tokenBalance: (userProfile.tokenBalance || 0) + amountCredited
+        });
+      }
+
+      showToast(lang === 'ar' ? `✔ تم قبول الوصل يدوياً وشحن ${amountCredited} توكن بنجاح!` : `✔ Receipt approved manually and credited ${amountCredited} Tokens successfully!`);
     } catch (err: any) {
       console.error(err);
       showToast(lang === 'ar' ? '⚠️ فشل تحديث المعاملة يدوياً: ' + err.message : '⚠️ Manual approval failed: ' + err.message);

@@ -77,6 +77,7 @@ export default function MapView({
   const accuracyCircleRef = useRef<L.Circle | null>(null);
   const watchIdRef = useRef<number | null>(null);
   const lastLocUpdateTimeRef = useRef<number>(0);
+  const updateCountRef = useRef<number>(0);
 
   useEffect(() => {
     if (selectedQuest) {
@@ -426,11 +427,18 @@ export default function MapView({
     watchIdRef.current = navigator.geolocation.watchPosition(
       (position) => {
         const now = Date.now();
-        // Throttle updates strictly to once every 5 seconds (5000ms) to prevent excessive re-renders and network requests
-        if (lastLocUpdateTimeRef.current > 0 && now - lastLocUpdateTimeRef.current < 5000) {
-          return;
+        const currentCount = updateCountRef.current;
+
+        // First 3 location updates are fast (unthrottled) to guarantee rapid high-accuracy lock.
+        // After 3 updates, throttle updates to once every 10 seconds (10,000ms).
+        if (currentCount >= 3) {
+          if (lastLocUpdateTimeRef.current > 0 && now - lastLocUpdateTimeRef.current < 10000) {
+            return;
+          }
         }
+
         lastLocUpdateTimeRef.current = now;
+        updateCountRef.current = currentCount + 1;
 
         const fetchedLoc = { 
           lat: position.coords.latitude, 
@@ -456,8 +464,8 @@ export default function MapView({
       },
       {
         enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 5000
+        timeout: 20000,
+        maximumAge: 0
       }
     );
   }, []);
@@ -465,6 +473,8 @@ export default function MapView({
   const triggerGPSGet = (isManualReset = false) => {
     setIsLocating(true);
     if (isManualReset) {
+      // Reset update count on manual reset/re-center button so user gets 3 fast updates again
+      updateCountRef.current = 0;
       lastLocUpdateTimeRef.current = Date.now();
     }
     startGpsWatch();
@@ -473,11 +483,17 @@ export default function MapView({
       navigator.geolocation.getCurrentPosition(
         (position) => {
           const now = Date.now();
-          if (!isManualReset && lastLocUpdateTimeRef.current > 0 && now - lastLocUpdateTimeRef.current < 5000) {
+          const currentCount = updateCountRef.current;
+
+          if (!isManualReset && currentCount >= 3 && lastLocUpdateTimeRef.current > 0 && now - lastLocUpdateTimeRef.current < 10000) {
             setIsLocating(false);
             return;
           }
+
           lastLocUpdateTimeRef.current = now;
+          if (currentCount < 3) {
+            updateCountRef.current = currentCount + 1;
+          }
 
           const fetchedLoc = { lat: position.coords.latitude, lng: position.coords.longitude };
           const accuracy = position.coords.accuracy ? Math.round(position.coords.accuracy) : 25;
@@ -518,8 +534,8 @@ export default function MapView({
         },
         {
           enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 5000
+          timeout: 20000,
+          maximumAge: 0
         }
       );
     } else {
@@ -642,7 +658,7 @@ export default function MapView({
           triggerGPSGet(false);
         }
       });
-    }, 5000);
+    }, 10000);
 
     const handleOffline = () => {
       setIsGpsLost(true);
@@ -708,7 +724,7 @@ export default function MapView({
         interactionTimeoutRef.current = window.setTimeout(() => {
           setIsUserInteracting(false);
           isUserInteractingRef.current = false;
-        }, 5000); // Wait 5 seconds of absolute stillness
+        }, 10000); // Wait 10 seconds of absolute stillness
       };
 
       map.on('dragstart', handleUserInteractionStart);

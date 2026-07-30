@@ -14,7 +14,8 @@ import {
   where, 
   getDocs, 
   runTransaction,
-  deleteField 
+  deleteField,
+  limit 
 } from "firebase/firestore";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
@@ -170,7 +171,7 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  // ✅ السماح لتطبيق الموبايل (Capacitor / https://localhost) بالاتصال بالخادم بأمان
+  // ✅ إضافة CORS للسماح لتطبيق الموبايل (Capacitor) بالاتصال بالخادم بأمان
   app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -358,24 +359,56 @@ Provide your output in strict JSON format. Do not combine or nest it in any mark
           date,
           status: 'approved',
           createdAt: new Date().toISOString(),
-          verifiedBy: 'Gemini-3.5-AntiFraud-Agent',
+          verifiedBy: 'Gemini-3.6-AntiFraud-Agent',
           reason: resultJson.reason_arabic,
           receiptImage: base64Image,
           secretKey: BACKEND_SECRET_KEY
         });
 
         // Credit the user profile tokenBalance
-        const userRef = doc(dbAdmin, 'users', userId);
-        await runTransaction(dbAdmin, async (transaction) => {
-          const userDoc = await transaction.get(userRef);
-          if (userDoc.exists()) {
-            const currentBalance = userDoc.data()?.tokenBalance || 0;
-            transaction.update(userRef, {
-              tokenBalance: currentBalance + Number(amount),
-              secretKey: BACKEND_SECRET_KEY
-            });
+        let targetUserId = userId;
+        let userRef = doc(dbAdmin, 'users', targetUserId);
+        let userDoc = await getDoc(userRef);
+
+        if ((!userDoc.exists() || targetUserId === 'user-current') && userEmail) {
+          const userQuery = await getDocs(query(collection(dbAdmin, 'users'), where('email', '==', userEmail.toLowerCase().trim()), limit(1)));
+          if (!userQuery.empty) {
+            targetUserId = userQuery.docs[0].id;
+            userRef = doc(dbAdmin, 'users', targetUserId);
+            userDoc = userQuery.docs[0];
           }
+        }
+
+        // Save approved request to Firestore
+        await setDoc(requestRef, {
+          userId: targetUserId,
+          userEmail: userEmail || '',
+          paymentMethod,
+          amount: Number(amount),
+          referenceNumber: referenceNumber.trim(),
+          date,
+          status: 'approved',
+          createdAt: new Date().toISOString(),
+          verifiedBy: 'Gemini-3.6-AntiFraud-Agent',
+          reason: resultJson.reason_arabic,
+          receiptImage: base64Image,
+          secretKey: BACKEND_SECRET_KEY
         });
+
+        if (userDoc.exists()) {
+          await runTransaction(dbAdmin, async (transaction) => {
+            const uSnap = await transaction.get(userRef);
+            if (uSnap.exists()) {
+              const currentBalance = Number(uSnap.data()?.tokenBalance) || Number(uSnap.data()?.tokens) || 0;
+              const newBalance = currentBalance + Number(amount);
+              transaction.update(userRef, {
+                tokenBalance: newBalance,
+                tokens: newBalance,
+                secretKey: BACKEND_SECRET_KEY
+              });
+            }
+          });
+        }
       } else {
         // Log rejected/suspicious request
         await setDoc(requestRef, {
@@ -387,7 +420,7 @@ Provide your output in strict JSON format. Do not combine or nest it in any mark
           date,
           status: resultJson.status.toLowerCase(),
           createdAt: new Date().toISOString(),
-          verifiedBy: 'Gemini-3.5-AntiFraud-Agent',
+          verifiedBy: 'Gemini-3.6-AntiFraud-Agent',
           reason: resultJson.reason_arabic,
           receiptImage: base64Image,
           secretKey: BACKEND_SECRET_KEY
@@ -416,7 +449,8 @@ Provide your output in strict JSON format. Do not combine or nest it in any mark
           questId: '',
           createdAt: new Date().toISOString(),
           read: false,
-          type: notifType
+          type: notifType,
+          secretKey: BACKEND_SECRET_KEY
         });
       } catch (nErr) {
         console.error("Failed to write AI refill notification:", nErr);
@@ -453,7 +487,7 @@ Provide your output in strict JSON format. Do not combine or nest it in any mark
           date,
           status: 'suspicious',
           createdAt: new Date().toISOString(),
-          verifiedBy: 'Gemini-3.5-AntiFraud-Agent-Fallback',
+          verifiedBy: 'Gemini-3.6-AntiFraud-Agent-Fallback',
           reason: fallbackJson.reason_arabic,
           receiptImage: base64Image,
           secretKey: BACKEND_SECRET_KEY
@@ -500,26 +534,46 @@ Provide your output in strict JSON format. Do not combine or nest it in any mark
         return res.json({ success: true, message: "This refill request has already been approved" });
       }
 
-      // Apply the transaction securely on the server
-      const userRef = doc(dbAdmin, 'users', refillData.userId);
+      // Look up target user by userId or email fallback
+      let targetUserId = refillData.userId;
+      let userRef = doc(dbAdmin, 'users', targetUserId);
+      let userSnap = await getDoc(userRef);
+
+      if ((!userSnap.exists() || targetUserId === 'user-current') && refillData.userEmail) {
+        const uQuery = await getDocs(query(collection(dbAdmin, 'users'), where('email', '==', refillData.userEmail.toLowerCase().trim()), limit(1)));
+        if (!uQuery.empty) {
+          targetUserId = uQuery.docs[0].id;
+          userRef = doc(dbAdmin, 'users', targetUserId);
+          userSnap = uQuery.docs[0];
+        }
+      }
+
+      if (!userSnap.exists()) {
+        throw new Error("User account does not exist to credit.");
+      }
+
+      const refillAmountValue = Number(refillData.amount) || 0;
+
       await runTransaction(dbAdmin, async (transaction) => {
-        const userSnap = await transaction.get(userRef);
-        if (!userSnap.exists()) {
+        const uSnap = await transaction.get(userRef);
+        if (!uSnap.exists()) {
           throw new Error("User account does not exist to credit.");
         }
 
-        const userData = userSnap.data();
-        const currentBalance = userData.tokenBalance || 0;
-        const refillAmountValue = Number(refillData.amount) || 0;
+        const userData = uSnap.data();
+        const currentBalance = Number(userData.tokenBalance) || Number(userData.tokens) || 0;
+        const newBalance = currentBalance + refillAmountValue;
 
-        // Credit the tokens to user
+        // Credit the tokens to user (both tokenBalance and tokens for compatibility)
         transaction.update(userRef, {
-          tokenBalance: currentBalance + refillAmountValue,
+          tokenBalance: newBalance,
+          tokens: newBalance,
           secretKey: BACKEND_SECRET_KEY
         });
 
-        // Update verification request status to approved
+        // Update verification request status to approved and update target userId
         transaction.update(refillRef, {
+          userId: targetUserId,
           status: 'approved',
           verifiedBy: 'Administrator (Backend)',
           approvedAt: new Date().toISOString(),
@@ -532,18 +586,19 @@ Provide your output in strict JSON format. Do not combine or nest it in any mark
         const notifRef = doc(collection(dbAdmin, 'notifications'));
         await setDoc(notifRef, {
           id: notifRef.id,
-          userId: refillData.userId,
+          userId: targetUserId,
           text: `🎉 تم قبول طلب الشحن يدوياً للوصل رقم (${refillData.referenceNumber || refillId}) وشحن محفظتك بـ ${refillData.amount} توكن بنجاح!`,
           questId: '',
           createdAt: new Date().toISOString(),
           read: false,
-          type: 'refill_approved'
+          type: 'refill_approved',
+          secretKey: BACKEND_SECRET_KEY
         });
       } catch (nErr) {
         console.error("Failed to write approval notification:", nErr);
       }
 
-      return res.json({ success: true, message: "Approved successfully" });
+      return res.json({ success: true, message: "Approved successfully", creditedUserId: targetUserId, amountCredited: refillAmountValue });
     } catch (err: any) {
       console.error("Admin approval error:", err);
       return res.status(500).json({ error: err.message });
@@ -584,10 +639,22 @@ Provide your output in strict JSON format. Do not combine or nest it in any mark
         return res.status(400).json({ error: "Cannot reject a refill request that has already been approved" });
       }
 
-      const userRef = doc(dbAdmin, 'users', refillData.userId);
+      // Look up target user
+      let targetUserId = refillData.userId;
+      let userRef = doc(dbAdmin, 'users', targetUserId);
+      let userSnap = await getDoc(userRef);
+
+      if ((!userSnap.exists() || targetUserId === 'user-current') && refillData.userEmail) {
+        const uQuery = await getDocs(query(collection(dbAdmin, 'users'), where('email', '==', refillData.userEmail.toLowerCase().trim()), limit(1)));
+        if (!uQuery.empty) {
+          targetUserId = uQuery.docs[0].id;
+          userRef = doc(dbAdmin, 'users', targetUserId);
+          userSnap = uQuery.docs[0];
+        }
+      }
 
       await runTransaction(dbAdmin, async (transaction) => {
-        const userSnap = await transaction.get(userRef);
+        const uSnap = userSnap.exists() ? await transaction.get(userRef) : null;
         const currentRefillSnap = await transaction.get(refillRef);
 
         if (!currentRefillSnap.exists()) {
@@ -597,14 +664,16 @@ Provide your output in strict JSON format. Do not combine or nest it in any mark
         const currentRefillData = currentRefillSnap.data();
         const wasApproved = currentRefillData?.status === 'approved';
 
-        if (userSnap.exists() && wasApproved) {
-          const userData = userSnap.data();
-          const currentBalance = userData?.tokenBalance || 0;
+        if (uSnap && uSnap.exists() && wasApproved) {
+          const userData = uSnap.data();
+          const currentBalance = Number(userData?.tokenBalance) || Number(userData?.tokens) || 0;
           const refillAmountValue = Number(currentRefillData?.amount) || 0;
+          const newBalance = Math.max(0, currentBalance - refillAmountValue);
 
           // Deduct the tokens since we are rejecting a previously approved request
           transaction.update(userRef, {
-            tokenBalance: Math.max(0, currentBalance - refillAmountValue),
+            tokenBalance: newBalance,
+            tokens: newBalance,
             secretKey: BACKEND_SECRET_KEY
           });
         }
@@ -623,12 +692,13 @@ Provide your output in strict JSON format. Do not combine or nest it in any mark
         const reasonText = refillData?.reason || 'إيصال غير صالح أو بيانات مكررة.';
         await setDoc(notifRef, {
           id: notifRef.id,
-          userId: refillData.userId,
+          userId: targetUserId,
           text: `❌ تم رفض طلب الشحن للوصل رقم (${refillData.referenceNumber || refillId}). السبب: ${reasonText}`,
           questId: '',
           createdAt: new Date().toISOString(),
           read: false,
-          type: 'refill_rejected'
+          type: 'refill_rejected',
+          secretKey: BACKEND_SECRET_KEY
         });
       } catch (nErr) {
         console.error("Failed to write rejection notification:", nErr);

@@ -51,7 +51,6 @@ import { playCoinSound, triggerHaptic, playCameraShutter } from '../utils/audio'
 import { compressImage } from '../utils/imageCompressor';
 import LeaderboardView from './LeaderboardView';
 import { formatJoinedDate, formatReviewDate } from '../utils/dateFormatter';
-
 // رابط الخادم الوسيط (غيّره إلى رابط Render الخاص بك بعد الرفع)
 const API_BASE_URL = 'https://quest-app-jne8.onrender.com';
 
@@ -3940,6 +3939,7 @@ export default function ProfileView({
               {/* Hidden file input for custom gallery avatar */}
               <input 
                 type="file" 
+                id="profile-avatar-gallery-picker"
                 ref={avatarInputRef}
                 accept="image/*"
                 className="hidden"
@@ -3947,6 +3947,7 @@ export default function ProfileView({
               />
               <input 
                 type="file" 
+                id="profile-avatar-camera-picker"
                 ref={avatarCameraInputRef}
                 accept="image/*"
                 capture="user"
@@ -3954,29 +3955,23 @@ export default function ProfileView({
                 onChange={handleAvatarFileChange}
               />
 
-              <button
-                type="button"
-                onClick={() => {
-                  playCameraShutter(audioEffectsEnabled);
-                  if (avatarCameraInputRef.current) {
-                    avatarCameraInputRef.current.value = '';
-                    avatarCameraInputRef.current.click();
-                  }
-                }}
-                className="w-10 h-10 rounded-full border border-dashed border-pink-400 bg-pink-50/70 hover:bg-pink-100 flex items-center justify-center cursor-pointer shadow-xs"
+              <label
+                htmlFor="profile-avatar-camera-picker"
+                onClick={() => playCameraShutter(audioEffectsEnabled)}
+                className="w-10 h-10 rounded-full border border-dashed border-pink-400 bg-pink-50/70 hover:bg-pink-100 flex items-center justify-center cursor-pointer shadow-xs select-none"
                 title={lang === 'ar' ? 'التقاط سيلفي بالكاميرا' : 'Take selfie with camera'}
               >
                 <Camera className="w-4 h-4 text-pink-500" />
-              </button>
+              </label>
 
-              <button
-                type="button"
-                onClick={triggerAvatarGalleryPicker}
-                className="w-10 h-10 rounded-full border border-dashed border-[#4FC3F7] bg-sky-50/50 hover:bg-sky-50 flex items-center justify-center cursor-pointer shadow-xs"
+              <label
+                htmlFor="profile-avatar-gallery-picker"
+                onClick={() => playCameraShutter(audioEffectsEnabled)}
+                className="w-10 h-10 rounded-full border border-dashed border-[#4FC3F7] bg-sky-50/50 hover:bg-sky-50 flex items-center justify-center cursor-pointer shadow-xs select-none"
                 title={lang === 'ar' ? 'رفع صورة من المعرض' : 'Upload custom photograph from Gallery'}
               >
                 <ImageIcon className="w-4 h-4 text-[#4FC3F7]" />
-              </button>
+              </label>
 
               {AVATAR_PRESETS.map((preset, idx) => (
                 <img 
@@ -4488,35 +4483,37 @@ export default function ProfileView({
                   </p>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => {
+                  <label
+                    htmlFor="portfolio-camera-input"
+                    onClick={(e) => {
                       if (portfolioPhotos.length >= 10) {
+                        e.preventDefault();
                         showToast(lang === 'ar' ? '⚠️ لقد وصلت للحد الأقصى المسموح به (10 صور) في معرض الأعمال!' : '⚠️ Max limit reached (10 photos)!');
                         return;
                       }
                       playCameraShutter(audioEffectsEnabled);
-                      if (portfolioCameraInputRef.current) {
-                        portfolioCameraInputRef.current.value = '';
-                        portfolioCameraInputRef.current.click();
-                      }
                     }}
-                    disabled={portfolioUploading}
-                    className="bg-[#FF3B7C]/10 hover:bg-[#FF3B7C]/20 text-[#FF3B7C] font-black text-[9.5px] uppercase tracking-wider px-2.5 py-1.5 rounded-xl cursor-pointer transition-all flex items-center gap-1 border-none active:scale-95"
+                    className={`bg-[#FF3B7C]/10 hover:bg-[#FF3B7C]/20 text-[#FF3B7C] font-black text-[9.5px] uppercase tracking-wider px-2.5 py-1.5 rounded-xl cursor-pointer transition-all flex items-center gap-1 border-none active:scale-95 select-none ${portfolioUploading ? 'pointer-events-none opacity-50' : ''}`}
                   >
                     <Camera className="w-3 h-3 text-[#FF3B7C]" />
                     <span>{lang === 'ar' ? '📷 كاميرا' : 'Camera'}</span>
-                  </button>
+                  </label>
 
-                  <button
-                    type="button"
-                    onClick={triggerAddPortfolioPhoto}
-                    disabled={portfolioUploading}
-                    className="bg-[#4FC3F7]/15 hover:bg-[#4FC3F7]/25 text-[#4FC3F7] font-black text-[9.5px] uppercase tracking-wider px-2.5 py-1.5 rounded-xl cursor-pointer transition-all flex items-center gap-1 border-none active:scale-95"
+                  <label
+                    htmlFor="portfolio-gallery-input"
+                    onClick={(e) => {
+                      if (portfolioPhotos.length >= 10) {
+                        e.preventDefault();
+                        showToast(lang === 'ar' ? '⚠️ لقد وصلت للحد الأقصى المسموح به (10 صور) في معرض الأعمال!' : '⚠️ Max limit reached (10 photos)!');
+                        return;
+                      }
+                      playCameraShutter(audioEffectsEnabled);
+                    }}
+                    className={`bg-[#4FC3F7]/15 hover:bg-[#4FC3F7]/25 text-[#4FC3F7] font-black text-[9.5px] uppercase tracking-wider px-2.5 py-1.5 rounded-xl cursor-pointer transition-all flex items-center gap-1 border-none active:scale-95 select-none ${portfolioUploading ? 'pointer-events-none opacity-50' : ''}`}
                   >
                     <ImageIcon className="w-3 h-3 text-[#4FC3F7]" />
                     <span>{lang === 'ar' ? '🖼️ المعرض' : 'Gallery'}</span>
-                  </button>
+                  </label>
                 </div>
               </div>
 
@@ -4531,6 +4528,7 @@ export default function ProfileView({
               {/* Hidden File Inputs for Portfolio (Gallery & Camera) */}
               <input 
                 type="file" 
+                id="portfolio-gallery-input"
                 ref={portfolioInputRef}
                 accept="image/*"
                 className="hidden"
@@ -4538,6 +4536,7 @@ export default function ProfileView({
               />
               <input 
                 type="file" 
+                id="portfolio-camera-input"
                 ref={portfolioCameraInputRef}
                 accept="image/*"
                 capture="environment"

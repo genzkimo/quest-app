@@ -133,6 +133,28 @@ export default function MapView({
   const [gpsDenied, setGpsDenied] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
+  const [hiddenArrivedQuestIds, setHiddenArrivedQuestIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('hidden_arrived_quest_ids');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const handleHideArrivedQuest = (questId: string) => {
+    setHiddenArrivedQuestIds(prev => {
+      const updated = [...prev, questId];
+      try {
+        localStorage.setItem('hidden_arrived_quest_ids', JSON.stringify(updated));
+      } catch (e) {
+        console.warn("Error saving hidden arrived quest:", e);
+      }
+      return updated;
+    });
+    showToast(lang === 'ar' ? '👁️‍🗨️ تم إخفاء المهمة المكتملة الوصول بنجاح!' : '👁️‍🗨️ Arrived quest hidden successfully!');
+  };
+
   useEffect(() => {
     const handleResize = () => {
       setIsMobile(window.innerWidth < 768);
@@ -404,7 +426,18 @@ export default function MapView({
   // Visible quests: include open & pending quests for public discovery + booked/active quests for involved users
   const visibleQuests = useMemo(() => {
     return quests.filter(q => {
-      if (q.status === 'completed' || q.status === 'cancelled') return false;
+      if (q.status === 'completed' || q.status === 'cancelled' || q.status === 'cancelled_by_timeout' || q.status === 'stale_cleared') return false;
+
+      // Requirement 2: Hide tasks that workers have arrived at from everyone EXCEPT the worker who arrived
+      if (q.status === 'arrived') {
+        const isArrivedWorker = q.helperId === userProfile.id || 
+                               q.assignedRunnerId === userProfile.id || 
+                               q.assignedRunnerIds?.includes(userProfile.id);
+        if (!isArrivedWorker) return false;
+        if (hiddenArrivedQuestIds.includes(q.id)) return false;
+        return true;
+      }
+
       if (q.status === 'open' || q.status === 'pending_verification') return true;
       const isUserInvolved = q.creatorId === userProfile.id || 
                              q.helperId === userProfile.id || 
@@ -412,7 +445,7 @@ export default function MapView({
                              q.assignedRunnerIds?.includes(userProfile.id);
       return isUserInvolved;
     });
-  }, [quests, userProfile.id]);
+  }, [quests, userProfile.id, hiddenArrivedQuestIds]);
 
   const startGpsWatch = useCallback(() => {
     if (!navigator.geolocation) return;
@@ -724,7 +757,7 @@ export default function MapView({
         interactionTimeoutRef.current = window.setTimeout(() => {
           setIsUserInteracting(false);
           isUserInteractingRef.current = false;
-        }, 10000); // Wait 10 seconds of absolute stillness
+        }, 5000); // Wait 5 seconds of absolute stillness
       };
 
       map.on('dragstart', handleUserInteractionStart);
@@ -1248,14 +1281,14 @@ export default function MapView({
           </div>
         )}
 
-        {/* Floating card stating Location Services Disabled (non-blocking over live map) */}
-        {(gpsDenied || !isGpsServiceEnabled) && !userLoc && (
-          <div className="absolute top-20 md:top-24 left-1/2 -translate-x-1/2 z-[10015] w-[92%] max-w-md bg-slate-900/95 backdrop-blur-xl border border-rose-500/40 p-4 rounded-2xl shadow-2xl flex flex-col items-center text-center gap-3 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center gap-2 text-rose-400 font-black text-xs">
-              <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping"></span>
-              <span>{lang === 'ar' ? 'تحديد الموقع (GPS) غير مفعّل' : 'GPS Location Disabled'}</span>
+        {/* Immediate Orange Notice Banner when Location Services are Disabled or Inactive */}
+        {(gpsDenied || !isGpsServiceEnabled || (!gpsActive && !userLoc)) && (
+          <div className="absolute top-20 md:top-24 left-1/2 -translate-x-1/2 z-[10020] w-[92%] max-w-md bg-amber-500 text-slate-950 border-2 border-amber-300 p-4 rounded-2xl shadow-2xl flex flex-col items-center text-center gap-3 animate-in fade-in duration-100">
+            <div className="flex items-center gap-2 text-slate-950 font-black text-xs">
+              <MapPin className="w-4 h-4 text-slate-950 animate-bounce" />
+              <span>{lang === 'ar' ? 'تحديد الموقع (GPS) غير مفعّل 📍' : 'GPS Location Disabled 📍'}</span>
             </div>
-            <p className="text-[11px] font-bold text-slate-300 leading-snug">
+            <p className="text-[11px] font-extrabold text-slate-900 leading-snug">
               {lang === 'ar'
                 ? 'يرجى تفعيل خدمة تحديد الموقع (GPS) لتحديد موقعك واستعراض المهام القريبة منك على الخريطة.'
                 : 'Please enable GPS location services to pinpoint your position and view nearby tasks.'}
@@ -1266,7 +1299,7 @@ export default function MapView({
                 setIsGpsServiceEnabled(true);
                 triggerGPSGet(true);
               }}
-              className="w-full py-2.5 bg-[#FF3B7C] hover:bg-[#FF3B7C]/90 active:scale-95 text-white rounded-xl text-xs font-black shadow-lg cursor-pointer transition-transform flex items-center justify-center gap-2"
+              className="w-full py-2.5 bg-slate-950 hover:bg-slate-900 active:scale-95 text-amber-400 rounded-xl text-xs font-black shadow-lg cursor-pointer transition-transform flex items-center justify-center gap-2"
             >
               <span>{lang === 'ar' ? 'تفعيل الـ GPS وتحديد موقعي على الخريطة 📍' : 'Enable GPS & Center My Location 📍'}</span>
             </button>
@@ -1451,6 +1484,19 @@ export default function MapView({
                   </div>
 
                   <div className="flex gap-2 shrink-0 items-center">
+                    {selectedQuest.status === 'arrived' && 
+                     (selectedQuest.helperId === userProfile.id || selectedQuest.assignedRunnerId === userProfile.id || selectedQuest.assignedRunnerIds?.includes(userProfile.id)) && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleHideArrivedQuest(selectedQuest.id);
+                          setSelectedQuest(null);
+                        }}
+                        className="bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[9px] font-black uppercase px-2.5 py-1.5 rounded-xl hover:bg-amber-500 hover:text-slate-950 transition duration-200 select-none cursor-pointer flex items-center gap-1"
+                      >
+                        👁️‍🗨️ {lang === 'ar' ? 'اخفاء' : 'Hide'}
+                      </button>
+                    )}
                     <span 
                       onClick={(e) => {
                         e.stopPropagation();

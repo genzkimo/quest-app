@@ -805,10 +805,9 @@ export default function GlobalCreateQuestModal({
                     ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {/* Direct Live Camera Capture */}
-                        <button
-                          type="button"
-                          onClick={() => cameraInputRef.current?.click()}
-                          className="py-5 px-4 rounded-2xl border-2 border-dashed border-[#4FC3F7] bg-[#4FC3F7]/10 hover:bg-[#4FC3F7]/20 flex flex-col items-center justify-center gap-2 transition-all active:scale-[0.98] text-center group shadow-md cursor-pointer"
+                        <label
+                          htmlFor="global-camera-picker"
+                          className="py-5 px-4 rounded-2xl border-2 border-dashed border-[#4FC3F7] bg-[#4FC3F7]/10 hover:bg-[#4FC3F7]/20 flex flex-col items-center justify-center gap-2 transition-all active:scale-[0.98] text-center group shadow-md cursor-pointer select-none"
                         >
                           <div className="w-12 h-12 rounded-full bg-[#4FC3F7]/20 flex items-center justify-center group-hover:scale-110 transition-transform">
                             <Camera className="w-6 h-6 text-[#4FC3F7]" />
@@ -821,13 +820,12 @@ export default function GlobalCreateQuestModal({
                               {lang === 'ar' ? 'انقر لفتح الكاميرا والتقاط صورة للعمل' : 'Open live device camera directly'}
                             </span>
                           </div>
-                        </button>
+                        </label>
 
                         {/* Gallery Choice */}
-                        <button
-                          type="button"
-                          onClick={() => fileInputRef.current?.click()}
-                          className="py-5 px-4 rounded-2xl border-2 border-dashed border-pink-400/40 bg-pink-500/10 hover:bg-pink-500/20 flex flex-col items-center justify-center gap-2 transition-all active:scale-[0.98] text-center group shadow-md cursor-pointer"
+                        <label
+                          htmlFor="global-image-picker"
+                          className="py-5 px-4 rounded-2xl border-2 border-dashed border-pink-400/40 bg-pink-500/10 hover:bg-pink-500/20 flex flex-col items-center justify-center gap-2 transition-all active:scale-[0.98] text-center group shadow-md cursor-pointer select-none"
                         >
                           <div className="w-12 h-12 rounded-full bg-pink-400/20 flex items-center justify-center group-hover:scale-110 transition-transform">
                             <ImageIcon className="w-6 h-6 text-pink-400" />
@@ -840,7 +838,7 @@ export default function GlobalCreateQuestModal({
                               {lang === 'ar' ? 'تصفح ملفات الصور المخزنة لديك' : 'Browse saved photos on device'}
                             </span>
                           </div>
-                        </button>
+                        </label>
                       </div>
                     )}
 

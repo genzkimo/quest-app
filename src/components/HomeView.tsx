@@ -943,19 +943,24 @@ export default function HomeView({
             </div>
             <h3 className="font-extrabold text-xs text-slate-700">{lang === 'ar' ? 'لا توجد كويستات مطابقة لخيارات الفلترة' : 'No local chores match your filters'}</h3>
             <p className="text-xs text-gray-400 max-w-sm mx-auto leading-relaxed">
-              {lang === 'ar' ? 'حاول كتابة كلمات أخرى أو تبديل خيار التصنيف أو انقر أسفله لتحديث موقعك وعرض المهام.' : 'Change the categorized tag or clear seek tags, or tap below to update location.'}
+              {userLoc && !gpsDenied
+                ? (lang === 'ar' ? 'حاول كتابة كلمات أخرى أو تبديل خيار التصنيف.' : 'Try changing search terms or category tags.')
+                : (lang === 'ar' ? 'حاول كتابة كلمات أخرى أو تبديل خيار التصنيف أو انقر أسفله لتحديث موقعك وعرض المهام.' : 'Change the categorized tag or clear seek tags, or tap below to update location.')
+              }
             </p>
-            <button
-              type="button"
-              onClick={requestHomeLocation}
-              disabled={isGpsRequesting}
-              className="mt-2 px-5 py-2.5 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white rounded-2xl text-xs font-black shadow-sm transition-all cursor-pointer flex items-center justify-center gap-2 mx-auto"
-            >
-              <MapPin className="w-4 h-4 text-[#FF3B7C]" />
-              {isGpsRequesting
-                ? (lang === 'ar' ? 'جاري تحديد الموقع... ⏳' : 'Locating... ⏳')
-                : (lang === 'ar' ? 'تحديد الموقع وعرض المهام 📍' : 'Update Location & Show Tasks 📍')}
-            </button>
+            {(!userLoc || gpsDenied) && (
+              <button
+                type="button"
+                onClick={requestHomeLocation}
+                disabled={isGpsRequesting}
+                className="mt-2 px-5 py-2.5 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white rounded-2xl text-xs font-black shadow-sm transition-all cursor-pointer flex items-center justify-center gap-2 mx-auto"
+              >
+                <MapPin className="w-4 h-4 text-[#FF3B7C]" />
+                {isGpsRequesting
+                  ? (lang === 'ar' ? 'جاري تحديد الموقع... ⏳' : 'Locating... ⏳')
+                  : (lang === 'ar' ? 'تحديد الموقع وعرض المهام 📍' : 'Update Location & Show Tasks 📍')}
+              </button>
+            )}
           </div>
         ) : (
           <div className="space-y-6 max-w-2xl mx-auto">
@@ -1442,21 +1447,24 @@ export default function HomeView({
                       {lang === 'ar' ? 'لا توجد كويستات قريبة في حيك حالياً 📍' : 'No nearby quests in your neighborhood currently 📍'}
                     </h4>
                     <p className="text-[11px] text-gray-400 max-w-xs mx-auto leading-relaxed">
-                      {lang === 'ar' 
-                        ? 'انقر على الزر أدناه لتحديث موقعك وعرض المهام القريبة، أو تصفح الكويستات بالأسفل!' 
-                        : 'Tap the button below to update your location & show nearby tasks, or inspect quests below!'}
+                      {userLoc && !gpsDenied
+                        ? (lang === 'ar' ? 'تصفح باقي الكويستات بالأسفل أو عد لاحقاً لرؤية كويستات جديدة!' : 'Inspect available quests below or check back later for new ones!')
+                        : (lang === 'ar' ? 'انقر على الزر أدناه لتحديث موقعك وعرض المهام القريبة، أو تصفح الكويستات بالأسفل!' : 'Tap the button below to update your location & show nearby tasks, or inspect quests below!')
+                      }
                     </p>
-                    <button
-                      type="button"
-                      onClick={requestHomeLocation}
-                      disabled={isGpsRequesting}
-                      className="mt-2 px-5 py-2.5 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white rounded-2xl text-xs font-black shadow-sm transition-all cursor-pointer flex items-center justify-center gap-2 mx-auto"
-                    >
-                      <MapPin className="w-4 h-4 text-[#FF3B7C]" />
-                      {isGpsRequesting
-                        ? (lang === 'ar' ? 'جاري تحديد الموقع... ⏳' : 'Locating... ⏳')
-                        : (lang === 'ar' ? 'تحديد الموقع وعرض المهام 📍' : 'Update Location & Show Tasks 📍')}
-                    </button>
+                    {(!userLoc || gpsDenied) && (
+                      <button
+                        type="button"
+                        onClick={requestHomeLocation}
+                        disabled={isGpsRequesting}
+                        className="mt-2 px-5 py-2.5 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white rounded-2xl text-xs font-black shadow-sm transition-all cursor-pointer flex items-center justify-center gap-2 mx-auto"
+                      >
+                        <MapPin className="w-4 h-4 text-[#FF3B7C]" />
+                        {isGpsRequesting
+                          ? (lang === 'ar' ? 'جاري تحديد الموقع... ⏳' : 'Locating... ⏳')
+                          : (lang === 'ar' ? 'تحديد الموقع وعرض المهام 📍' : 'Update Location & Show Tasks 📍')}
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <>

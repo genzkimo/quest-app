@@ -196,7 +196,7 @@ export class UserModel {
       referredUsersCount: Number(data.referredUsersCount) || 0,
       referralRewardClaimed: !!data.referralRewardClaimed,
       preBanTokenBalance: data.preBanTokenBalance !== undefined ? Number(data.preBanTokenBalance) : 0,
-      createdAt: data.createdAt || data.joinedAt || '2025-01-15T00:00:00.000Z',
+      createdAt: data.createdAt || data.joinedAt || new Date().toISOString(),
       termsAccepted: data.termsAccepted !== undefined ? !!data.termsAccepted : true,
     };
   }

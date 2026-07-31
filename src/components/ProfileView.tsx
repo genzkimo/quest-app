@@ -919,8 +919,8 @@ export default function ProfileView({
             id: notifRef.id,
             userId: uId,
             text: lang === 'ar' 
-              ? '🎉 تم قبول وتوثيق هويتك بنجاح بواسطة الذكاء الاصطناعي وترقية حسابك إلى حساب موثق وإضافة +700 توكن إضافية!'
-              : '🎉 AI identity verification successful! Your account is now fully verified with +700 bonus tokens!',
+              ? '🎉 تم قبول وتوثيق هويتك بنجاح بواسطة الذكاء الاصطناعي وترقية حسابك إلى حساب موثق وإضافة +700 د.ج رصيد استخدام إضافي!'
+              : '🎉 AI identity verification successful! Your account is now fully verified with +700 DA bonus balance!',
             questId: '',
             createdAt: new Date().toISOString(),
             read: false,
@@ -928,7 +928,7 @@ export default function ProfileView({
           }).catch(console.error);
         }
 
-        showToast(lang === 'ar' ? '🎉 تم التحقق من هويتك بنجاح بواسطة الذكاء الاصطناعي وترقية حسابك وإضافة 700 توكن!' : '🎉 AI identity verification successful! +700 tokens added & verified!');
+        showToast(lang === 'ar' ? '🎉 تم التحقق من هويتك بنجاح بواسطة الذكاء الاصطناعي وترقية حسابك وإضافة +700 د.ج رصيد استخدام!' : '🎉 AI identity verification successful! +700 DA usage balance added!');
       } else {
         // Any failure (SUSPICIOUS / REJECTED) -> Increment failed attempts & set anti-fraud cooldown
         setKycAiAttempts(nextKycAttempts);
@@ -1193,8 +1193,8 @@ export default function ProfileView({
           const fallbackTxId = 'PAYPAL_INIT_FAIL_' + Math.floor(100000 + Math.random() * 900000);
           const requestRef = doc(db, 'refill_requests', fallbackTxId);
           const reasonText = lang === 'ar'
-            ? `فشل فني في بدء بوابة الدفع الرقمية لـ PayPal بقيمة $${refillAmountUSD} (${refillAmountUSD * 150} توكن). تم توجيه العملية تلقائياً إلى المراجعة اليدوية للتحقق وشحن حسابك وتفادي أي أخطاء.`
-            : `PayPal payment initiation of $${refillAmountUSD} (${refillAmountUSD * 150} Tokens) failed due to a gateway error. The request has been saved and routed for manual administrative review.`;
+            ? `فشل فني في بدء بوابة الدفع الرقمية لـ PayPal بقيمة $${refillAmountUSD} (${refillAmountUSD * 150} د.ج رصيد استخدام). تم توجيه العملية تلقائياً إلى المراجعة اليدوية للتحقق وإضافة الرصيد وتفادي أي أخطاء.`
+            : `PayPal payment initiation of $${refillAmountUSD} (${refillAmountUSD * 150} DA) failed due to a gateway error. The request has been saved and routed for manual administrative review.`;
 
           await setDoc(requestRef, {
             userId: userProfile?.id || authenticatedUser?.uid || 'user-current',
@@ -1285,7 +1285,7 @@ export default function ProfileView({
         setRefillCooldownUntil(0);
 
         playCoinSound(audioEffectsEnabled);
-        showToast(lang === 'ar' ? `⚡ تم التحقق التلقائي وشحن رصيدك بـ ${refillAmount} توكن بنجاح!` : `⚡ Automatically verification success! Credited ${refillAmount} Tokens.`);
+        showToast(lang === 'ar' ? `⚡ تم التحقق التلقائي وإضافة ${refillAmount} د.ج إلى رصيد الاستخدام بنجاح!` : `⚡ Automatic verification successful! Added ${refillAmount} DA to usage balance.`);
         onTopUpTokens(Number(refillAmount));
 
         const uId = userProfile?.id || authenticatedUser?.uid;
@@ -1295,8 +1295,8 @@ export default function ProfileView({
             id: notifRef.id,
             userId: uId,
             text: lang === 'ar' 
-              ? `⚡ تم قبول إيصال الشحن (${refillReference.trim()}) وشحن محفظتك بـ ${refillAmount} توكن بنجاح!`
-              : `⚡ Recharge receipt (${refillReference.trim()}) verified and credited ${refillAmount} Tokens successfully!`,
+              ? `⚡ تم قبول إيصال التحويل (${refillReference.trim()}) وإضافة ${refillAmount} د.ج إلى رصيد الاستخدام بنجاح!`
+              : `⚡ Recharge receipt (${refillReference.trim()}) verified! Added ${refillAmount} DA to usage balance.`,
             questId: '',
             createdAt: new Date().toISOString(),
             read: false,
@@ -1428,8 +1428,8 @@ export default function ProfileView({
       const tokensToCredit = refillAmountUSD * 150;
       playCoinSound(audioEffectsEnabled);
       showToast(lang === 'ar' 
-        ? `💳 تم تحصيل $${refillAmountUSD} وشحن محفظتك بـ ${tokensToCredit} توكن بنجاح!` 
-        : `💳 Successfully charged $${refillAmountUSD} and credited ${tokensToCredit} Tokens!`
+        ? `💳 تم تحصيل $${refillAmountUSD} وإضافة ${tokensToCredit} د.ج إلى رصيد الاستخدام بنجاح!` 
+        : `💳 Successfully charged $${refillAmountUSD} and added ${tokensToCredit} DA usage balance!`
       );
       onTopUpTokens(tokensToCredit);
 
@@ -1445,8 +1445,8 @@ export default function ProfileView({
         const fallbackTxId = pendingTxId || ('PAYPAL_OTP_FAIL_' + Math.floor(100000 + Math.random() * 900000));
         const requestRef = doc(db, 'refill_requests', fallbackTxId);
         const reasonText = lang === 'ar'
-          ? `فشل تأكيد رمز الأمان OTP الافتراضي لعملية PayPal بقيمة $${refillAmountUSD} (${refillAmountUSD * 150} توكن). تم توجيه المعاملة تلقائياً إلى المراجعة اليدوية للتحقق وشحن حسابك وتفادي أي أخطاء.`
-          : `OTP verification for PayPal payment of $${refillAmountUSD} (${refillAmountUSD * 150} Tokens) failed. The transaction has been saved and routed for manual administrative review.`;
+          ? `فشل تأكيد رمز الأمان OTP الافتراضي لعملية PayPal بقيمة $${refillAmountUSD} (${refillAmountUSD * 150} د.ج رصيد استخدام). تم توجيه المعاملة تلقائياً إلى المراجعة اليدوية للتحقق وإضافة الرصيد وتفادي أي أخطاء.`
+          : `OTP verification for PayPal payment of $${refillAmountUSD} (${refillAmountUSD * 150} DA) failed. The transaction has been saved and routed for manual administrative review.`;
 
         await setDoc(requestRef, {
           userId: userProfile?.id || authenticatedUser?.uid || 'user-current',
@@ -1580,12 +1580,12 @@ export default function ProfileView({
                   <div className="space-y-1 text-right">
                     <h4 className="text-xs font-black text-[#FFD34D] tracking-wider uppercase flex items-center justify-start gap-1.5 flex-row-reverse">
                       <span className="text-[9px] bg-[#FF3B7C] text-white font-black px-1.5 py-0.5 rounded uppercase">bonus 🛡️</span>
-                      <span>⚡ {lang === 'ar' ? 'تفعيل الهوية الوطني (KYC) للحصول على +700 رمز!' : 'Optional KYC Incentive: Unlock Extra +700 Tokens!'}</span>
+                      <span>⚡ {lang === 'ar' ? 'تفعيل الهوية الوطني (KYC) للحصول على +700 د.ج رصيد استخدام!' : 'Optional KYC Incentive: Unlock Extra +700 DA Usage Balance!'}</span>
                     </h4>
                     <p className="text-[11px] text-gray-200 font-medium leading-relaxed">
                       {lang === 'ar' 
-                        ? 'قم بإثبات تفاصيل هويتك الوطنية لتأمين حسابك بنجاح، وستحصل على هدية بقيمة 700 توكن إضافية (المجموع 1000 توكن ترحيبي بالكامل) وشارة التحقق الرسمية فور المراجعة والاعتماد.' 
-                        : 'Submit your national ID details optionally to claim an extra +700 Quest Tokens bonus (Total 1000 Tokens) and gain the verified badge.'}
+                        ? 'قم بإثبات تفاصيل هويتك الوطنية لتأمين حسابك بنجاح، وستحصل على هدية بقيمة 700 د.ج رصيد استخدام إضافي وشارة التحقق الرسمية فور المراجعة والاعتماد.' 
+                        : 'Submit your national ID details optionally to claim an extra +700 DA usage balance bonus and gain the verified badge.'}
                     </p>
                   </div>
                 </div>
@@ -1692,16 +1692,16 @@ export default function ProfileView({
                   </div>
                   <div className="text-right">
                     <h4 className="text-xs font-black text-[#1F2A44]">
-                      {lang === 'ar' ? '💳 المحفظة الرقمية والدفع' : '💳 Digital Wallet & Payments'}
+                      {lang === 'ar' ? '💳 رصيد الاستخدام والمحفظة' : '💳 Usage Balance & Wallet'}
                     </h4>
                     <p className="text-[10px] text-gray-405 font-semibold mt-0.5">
-                      {lang === 'ar' ? 'شحن رصيد التوكنز عبر البطاقة النقدية الذهبية/CIB لبريد الجزائر' : 'Manage balances & top up gold cards'}
+                      {lang === 'ar' ? 'إضافة رصيد Quest عبر بريديموب أو البطاقة الذهبية/CIB' : 'Manage balance & add funds via Baridimob / CIB'}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] font-mono font-black text-[#FF3B7C] bg-red-50 px-2 py-0.5 rounded-lg">
-                    ⚡ {userProfile.tokenBalance} Tokens
+                    {userProfile.tokenBalance} د.ج
                   </span>
                   <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform ${isRtl ? 'rotate-180 group-hover:-translate-x-1' : 'group-hover:translate-x-1'}`} />
                 </div>
@@ -1741,16 +1741,16 @@ export default function ProfileView({
                   </div>
                   <div className="text-right">
                     <h4 className="text-xs font-black text-[#1F2A44]">
-                      {lang === 'ar' ? '🎁 نقاط مجانية ومكافآت' : '🎁 Free Tokens & Rewards'}
+                      {lang === 'ar' ? '🎁 مكافآت ورصيد مجاني' : '🎁 Free Rewards & Balance'}
                     </h4>
                     <p className="text-[10px] text-gray-405 font-semibold mt-0.5">
-                      {lang === 'ar' ? 'دعوة الأصدقاء للحصول على توكنز ومطالبة مكافآت الحضور اليومي' : 'Invite friends for free tokens and claim daily login rewards'}
+                      {lang === 'ar' ? 'دعوة الأصدقاء ومطالبة مكافآت الحضور اليومي لرصيد الاستخدام' : 'Invite friends & claim daily check-in usage balance'}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-[9px] font-black bg-amber-100 text-amber-700 px-2 py-0.5 rounded-md">
-                    +100 Tokens
+                    +100 د.ج
                   </span>
                   <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform ${isRtl ? 'rotate-180 group-hover:-translate-x-1' : 'group-hover:translate-x-1'}`} />
                 </div>
@@ -2394,15 +2394,16 @@ export default function ProfileView({
             <div className="flex justify-between items-center bg-gray-55 border border-gray-150 p-4 rounded-2xl">
               <div className="space-y-0.5 text-right flex-1">
                 <span className="text-[10px] font-extrabold uppercase text-gray-450 block tracking-wider">
-                  {lang === 'ar' ? 'المحفظة الرقمية لـ QUEST / رصيد التوكنز' : 'Wallet Security Suite'}
+                  {lang === 'ar' ? 'إضافة رصيد Quest / رصيد الاستخدام' : 'Quest Usage Balance & Payments'}
                 </span>
                 <span className="text-[10px] text-gray-450 font-semibold block leading-relaxed">
-                  {lang === 'ar' ? '١ توكن مشحون = ١ دينار جزائري (DZD)' : '1 Token = 1 Algerian Dinar (DA / DZD)'}
+                  {lang === 'ar' ? 'الرصيد يستخدم فقط لدفع رسوم استخدام منصة Quest مثل نشر أو حجز المهام.' : 'Balance is strictly used to pay Quest platform fees for publishing or booking quests.'}
                 </span>
               </div>
               <div className="text-right font-mono">
-                <span className="text-xs font-black text-[#FF3B7C] bg-red-50 px-3.5 py-1.5 rounded-full border border-red-150/40">
-                  ⚡ {userProfile.tokenBalance} Tokens
+                <div className="text-[9px] text-gray-400 font-bold">{lang === 'ar' ? 'رصيد الاستخدام' : 'Usage Balance'}</div>
+                <span className="text-xs font-black text-[#FF3B7C] bg-red-50 px-3.5 py-1 rounded-full border border-red-150/40 inline-block mt-0.5">
+                  {userProfile.tokenBalance} د.ج
                 </span>
               </div>
             </div>
@@ -2427,7 +2428,7 @@ export default function ProfileView({
 
               <div className="text-[10px] font-black text-gray-500 uppercase tracking-wide flex items-center gap-1.5 justify-end">
                 <span>
-                  {lang === 'ar' ? 'شحن رصيد المحفظة عبر بريد الجزائر / بريديموب' : 'Algeria Post / BaridiMob Escrow Recharge'}
+                  {lang === 'ar' ? 'إضافة رصيد Quest عبر بريد الجزائر / بريديموب' : 'Add Quest Balance via Algeria Post / BaridiMob'}
                 </span>
                 <CreditCard className="w-4 h-4 text-slate-400" />
               </div>
@@ -3357,10 +3358,10 @@ export default function ProfileView({
               </div>
               <div className="flex-1">
                 <h5 className="text-xs font-black text-[#1F2A44]">
-                  {lang === 'ar' ? '🎁 مكافآت ونقاط مجانية' : '🎁 Free Tokens & Rewards'}
+                  {lang === 'ar' ? '🎁 مكافآت ورصيد مجاني' : '🎁 Free Rewards & Balance'}
                 </h5>
                 <p className="text-[10px] text-gray-400 font-semibold">
-                  {lang === 'ar' ? 'أكمل حضورك اليومي أو ادعُ أصدقاءك للحصول على توكنز إضافية!' : 'Claim daily streak rewards or invite your friends to obtain bonus Gold Ammo!'}
+                  {lang === 'ar' ? 'أكمل حضورك اليومي أو ادعُ أصدقاءك للحصول على رصيد استخدام إضافي!' : 'Claim daily streak rewards or invite your friends to obtain bonus usage balance!'}
                 </p>
               </div>
             </div>
@@ -3479,13 +3480,13 @@ export default function ProfileView({
 
                     if (newStreak === 7) {
                       showToast(lang === 'ar'
-                        ? `🎉 رائع! لقد حصلت على الجائزة الكبرى لليوم السابع: +50 توكنز!`
-                        : `🎉 Grand achievement! Credited Day 7 Jackpot: +50 Tokens!`
+                        ? `🎉 رائع! لقد حصلت على الجائزة الكبرى لليوم السابع: +50 د.ج رصيد استخدام!`
+                        : `🎉 Grand achievement! Credited Day 7 Jackpot: +50 DA usage balance!`
                       );
                     } else {
                       showToast(lang === 'ar'
-                        ? `🔥 تم تسجيل حضورك لليوم ${newStreak}! وحصلت على +${reward} توكنز.`
-                        : `🔥 Success! Day ${newStreak} check-in recorded: +${reward} Tokens added.`
+                        ? `🔥 تم تسجيل حضورك لليوم ${newStreak}! وحصلت على +${reward} د.ج رصيد استخدام.`
+                        : `🔥 Success! Day ${newStreak} check-in recorded: +${reward} DA added.`
                       );
                     }
                   }
@@ -3577,8 +3578,8 @@ export default function ProfileView({
                           <PartyPopper className="w-4 h-4" />
                           <span>
                             {lang === 'ar' 
-                              ? `تسجيل حضور اليوم (+${DAILY_REWARDS[activeClaimDay - 1]} توكنز) ⚡` 
-                              : `Claim Day ${activeClaimDay} (+${DAILY_REWARDS[activeClaimDay - 1]} Tokens) ⚡`}
+                              ? `تسجيل حضور اليوم (+${DAILY_REWARDS[activeClaimDay - 1]} د.ج) ⚡` 
+                              : `Claim Day ${activeClaimDay} (+${DAILY_REWARDS[activeClaimDay - 1]} DA) ⚡`}
                           </span>
                         </button>
                       )}
@@ -3596,8 +3597,8 @@ export default function ProfileView({
               
               <p className="text-[10px] text-gray-400 font-semibold leading-relaxed">
                 {lang === 'ar' 
-                  ? 'شارك كود الدعوة الخاص بك مع أصدقائك. عند انضمامهم، ستحصل أنت على 100 توكنز فوراً، وسيحصل صديقك المدعو على 100 توكنز إضافية فور إتمامه أول مهمة له بنجاح!' 
-                  : 'Share your code with friends. You will receive 100 tokens immediately when they use your code, and they will get 100 bonus tokens after finishing their first quest!'}
+                  ? 'شارك كود الدعوة الخاص بك مع أصدقائك. عند انضمامهم، ستحصل أنت على 100 د.ج رصيد استخدام فوراً، وسيحصل صديقك المدعو على 100 د.ج رصيد إضافي فور إتمامه أول مهمة له بنجاح!' 
+                  : 'Share your code with friends. You will receive 100 DA usage balance immediately when they use your code, and they will get 100 DA bonus usage balance after finishing their first quest!'}
               </p>
 
               {/* Your Code Display Card */}
@@ -3652,9 +3653,9 @@ export default function ProfileView({
                     </p>
                     <div className="text-[9px] font-extrabold text-emerald-800 mt-1">
                       {userProfile.questsCompleted && userProfile.questsCompleted >= 1 ? (
-                        <span>🎉 {lang === 'ar' ? 'تمت إضافة 100 توكن مكافأة للتسجيل بنجاح بعد إتمام أول مهمة!' : '100 bonus tokens added to your balance after first quest!'}</span>
+                        <span>🎉 {lang === 'ar' ? 'تمت إضافة 100 د.ج رصيد مكافأة للتسجيل بنجاح بعد إتمام أول مهمة!' : '100 DA bonus usage balance added after first quest!'}</span>
                       ) : (
-                        <span>⏳ {lang === 'ar' ? 'ستحصل على 100 توكن إضافية فور إتمام مهمتك الأولى!' : 'You will receive 100 bonus tokens after your first quest!'}</span>
+                        <span>⏳ {lang === 'ar' ? 'ستحصل على 100 د.ج رصيد إضافي فور إتمام مهمتك الأولى!' : 'You will receive 100 DA bonus balance after your first quest!'}</span>
                       )}
                     </div>
                   </div>
@@ -3706,8 +3707,8 @@ export default function ProfileView({
                             }
                             
                             showToast(lang === 'ar' 
-                              ? '🎉 تم قبول كود الدعوة بنجاح! ستحصل على 100 توكن مكافأة فور إتمام مهمتك الأولى، وحصل الداعي على 100 توكن مكافأة فوراً!' 
-                              : '🎉 Referral code applied! You will get 100 bonus tokens after your first quest, and the inviter received 100 tokens immediately!'
+                              ? '🎉 تم قبول كود الدعوة بنجاح! ستحصل على 100 د.ج رصيد مكافأة فور إتمام مهمتك الأولى، وحصل الداعي على 100 د.ج رصيد إضافي فوراً!' 
+                              : '🎉 Referral code applied! You will get 100 DA bonus usage balance after your first quest, and the inviter received 100 DA immediately!'
                             );
                             setReferralCodeInput('');
                           } catch (err) {

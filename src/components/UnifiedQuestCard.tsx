@@ -291,8 +291,8 @@ export default function UnifiedQuestCard({
                 <span className="text-xs font-black text-slate-800">{distance} {lang === 'ar' ? 'كم' : 'km'}</span>
               </div>
               <div className="text-center flex flex-col justify-center items-center border-x border-slate-100">
-                <span className="text-[9px] uppercase font-bold text-slate-400 block mb-0.5">⚡ {lang === 'ar' ? 'الرموز' : 'Tokens'}</span>
-                <span className="text-xs font-black text-amber-500">⚡ {tokenAmount}</span>
+                <span className="text-[9px] uppercase font-bold text-slate-400 block mb-0.5">⚡ {lang === 'ar' ? 'رسوم الحجز' : 'Booking Fee'}</span>
+                <span className="text-xs font-black text-amber-500">{tokenAmount} د.ج</span>
               </div>
               <div className="text-center flex flex-col justify-center items-center">
                 <span className="text-[9px] uppercase font-bold text-slate-400 block mb-0.5">⏰ {lang === 'ar' ? 'الوقت المتبقي' : 'Time Left'}</span>

@@ -187,10 +187,10 @@ export default function Navbar({
                         <span className="text-lg shrink-0 mt-0.5">🎁</span>
                         <div className="flex-1 text-right">
                           <span className="text-xs font-black text-emerald-800 block group-hover:text-emerald-700">
-                            {lang === 'ar' ? 'توثيق الهوية (700 توكن)' : lang === 'fr' ? 'Vérifier NID (700 tokens)' : 'Verify NID (700 tokens)'}
+                            {lang === 'ar' ? 'توثيق الهوية (+700 د.ج)' : lang === 'fr' ? 'Vérifier NID (+700 DA)' : 'Verify NID (+700 DA)'}
                           </span>
                           <span className="text-[10px] text-emerald-650 block leading-tight">
-                            {lang === 'ar' ? 'ارفع بطاقة التعريف الوطنية للحصول على 700 توكن مجاناً' : lang === 'fr' ? 'Soumettez votre carte d\'identité pour 700 tokens gratuits' : 'Submit your identity card to get 700 free tokens'}
+                            {lang === 'ar' ? 'ارفع بطاقة التعريف الوطنية للحصول على 700 د.ج رصيد مجاناً' : lang === 'fr' ? 'Soumettez votre carte pour 700 DA solde gratuit' : 'Submit your identity card to get 700 DA free usage balance'}
                           </span>
                         </div>
                       </button>
@@ -209,7 +209,7 @@ export default function Navbar({
                       <span className="text-lg shrink-0 mt-0.5">⚡</span>
                       <div className="flex-1 text-right">
                         <span className="text-xs font-black text-slate-800 block group-hover:text-[#039BE5]">
-                          {lang === 'ar' ? 'شحن رصيد المحفظة الدفع' : lang === 'fr' ? 'Recharger le solde de paiement' : 'Recharge Payment Wallet'}
+                          {lang === 'ar' ? 'إضافة رصيد Quest' : lang === 'fr' ? 'Ajouter du solde Quest' : 'Add Quest Balance'}
                         </span>
                         <span className="text-[10px] text-gray-500 block leading-tight">
                           {lang === 'ar' ? 'شحن رصيدك عبر بريدي موب أو بطاقة الدفع' : lang === 'fr' ? 'Recharger via Baridimob ou carte' : 'Top up your balance via Baridimob or card'}

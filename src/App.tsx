@@ -174,8 +174,8 @@ export default function App() {
       });
 
       showToast(isAr 
-        ? '🎉 تم إضافة +700 توكن لمكافأة توثيق الهوية إلى رصيدك بنجاح!' 
-        : '🎉 +700 Bonus tokens credited to your wallet for ID verification!');
+        ? '🎉 تم إضافة +700 د.ج مكافأة توثيق الهوية إلى رصيد الاستخدام بنجاح!' 
+        : '🎉 +700 DA Bonus credited to your usage balance for ID verification!');
     }
   }, [userProfile?.idVerificationStatus, userProfile?.kycRewardClaimed]);
 
@@ -1171,8 +1171,8 @@ export default function App() {
       setTimeout(() => {
         showToast(
           finalProfile.language === 'ar'
-            ? '🎁 مبروك! حصلت على +100 توكن إضافية لتسجيلك بكود دعوة وإتمام أول مهمة بنجاح!'
-            : '🎁 Congrats! You received +100 bonus tokens for joining via referral and finishing your first task successfully!'
+            ? '🎁 مبروك! حصلت على +100 د.ج رصيد إضافي لتسجيلك بكود دعوة وإتمام أول مهمة بنجاح!'
+            : '🎁 Congrats! You received +100 DA bonus usage balance for joining via referral and finishing your first task successfully!'
         );
       }, 700);
     }
@@ -2419,8 +2419,8 @@ export default function App() {
     });
 
     showToast(userProfile.language === 'ar' 
-      ? `تم إلغاء الحجز بنجاح! تم استيراد ريفاوند 30% بقيمة (${finalRefundTokens} رمز) لمحفظتك.`
-      : `Quest booking canceled. Refunded strictly 30% (${finalRefundTokens} tokens) to your wallet.`
+      ? `تم إلغاء الحجز بنجاح! تم إعادة 30% بقيمة (${finalRefundTokens} د.ج) لرصيد محفظتك.`
+      : `Quest booking canceled. Refunded 30% (${finalRefundTokens} DA) to your wallet balance.`
     );
   };
 
@@ -2518,7 +2518,7 @@ export default function App() {
       completedTaskImage: targetQuest.proofImageUrl || (targetQuest.imageUrls && targetQuest.imageUrls[0]) || 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=600&auto=format&fit=crop&q=80',
       rating: finalRating,
       comment: finalComment,
-      createdAt: 'الآن بالذات'
+      createdAt: new Date().toISOString()
     };
 
     const updatedReviews = [newReview, ...hunterReviews];
@@ -3911,21 +3911,21 @@ export default function App() {
 
               <h3 className="text-sm font-black text-slate-800 text-center">
                 {userProfile?.language === 'ar' 
-                  ? 'رصيد الرموز غير كافٍ لحجز العقد! ⚖️' 
-                  : 'Insufficient Token Balance to Reserve Contract'}
+                  ? 'رصيد الاستخدام غير كافٍ لحجز المهمة! ⚖️' 
+                  : 'Insufficient Usage Balance to Reserve Quest'}
               </h3>
 
               <div className="space-y-3">
                 <p className="text-[11px] text-gray-500 leading-relaxed font-bold text-center">
                   {userProfile?.language === 'ar'
-                    ? `رصيدك الحالي هو (${userProfile?.tokenBalance || 0} توكن)، بينما تبلغ «رسوم التحقق والضمان وحماية المنصة» لهذه المهمة (${requiredRefillFee} توكن) لضمان التزام معايير متجر Google Play لمنع الاحتيال.`
-                    : `Your token balance is (${userProfile?.tokenBalance || 0} tokens), whereas the «Platform guarantee & validation safety fee» is (${requiredRefillFee} tokens) to satisfy dynamic Google Play data integrity conditions.`}
+                    ? `رصيدك الحالي هو (${userProfile?.tokenBalance || 0} د.ج)، بينما تبلغ «رسوم حجز وضمان استخدام المنصة» لهذه المهمة (${requiredRefillFee} د.ج) لضمان التزام معايير الأمان والجدية.`
+                    : `Your current usage balance is (${userProfile?.tokenBalance || 0} DA), while the platform booking fee for this quest is (${requiredRefillFee} DA).`}
                 </p>
 
                 <p className="text-[11px] text-[#4FC3F7] font-extrabold bg-[#4FC3F7]/5 p-3 rounded-2xl border border-[#4FC3F7]/20 text-center leading-relaxed">
                   {userProfile?.language === 'ar'
-                    ? '💡 نصيحة مجانية: يمكنك توثيق هويتك (KYC) فوراً لكسب 700 توكن مجانية، أو شحن محفظتك مباشرة لتأمين المهمة.'
-                    : '💡 Smart Tip: Verify your identity (KYC) for free to earn +700 welcome tokens immediately, or add tokens to your wallet.'}
+                    ? '💡 نصيحة مجانية: يمكنك توثيق هويتك (KYC) فوراً لكسب 700 د.ج رصيد استخدام مجاني، أو إضافة رصيد Quest لمتابعة حجز المهمة.'
+                    : '💡 Smart Tip: Verify your identity (KYC) for free to earn +700 DA usage balance immediately, or add funds to your Quest balance.'}
                 </p>
               </div>
 
@@ -3938,7 +3938,7 @@ export default function App() {
                   }}
                   className="w-full py-2.5 bg-[#4FC3F7] hover:bg-[#4FC3F7]/85 text-white font-black text-xs rounded-xl shadow-md cursor-pointer text-center"
                 >
-                  {userProfile?.language === 'ar' ? '🛡️ توثيق هويتي الآن مجاناً (+700)' : '🛡️ Verify Identity for Free (+700)'}
+                  {userProfile?.language === 'ar' ? '🛡️ توثيق هويتي الآن مجاناً (+700 د.ج)' : '🛡️ Verify Identity for Free (+700 DA)'}
                 </button>
 
                 <button
@@ -3949,7 +3949,7 @@ export default function App() {
                   }}
                   className="w-full py-2.5 bg-[#1F2A44] hover:bg-[#1E2E4E] text-white font-black text-xs rounded-xl shadow-md cursor-pointer text-center"
                 >
-                  {userProfile?.language === 'ar' ? '💳 شحن رصيد المحفظة بالتوكنز' : '💳 Top Up Wallet Tokens'}
+                  {userProfile?.language === 'ar' ? '💳 إضافة رصيد Quest' : '💳 Add Quest Balance'}
                 </button>
 
                 <button

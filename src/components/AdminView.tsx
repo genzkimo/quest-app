@@ -284,7 +284,7 @@ export default function AdminView({
         });
       }
 
-      showToast(lang === 'ar' ? `✔ تم قبول الوصل يدوياً وشحن ${amountCredited} توكن بنجاح!` : `✔ Receipt approved manually and credited ${amountCredited} Tokens successfully!`);
+      showToast(lang === 'ar' ? `✔ تم قبول الوصل يدوياً وإضافة ${amountCredited} د.ج إلى رصيد الاستخدام بنجاح!` : `✔ Receipt approved manually and added ${amountCredited} DA to usage balance successfully!`);
     } catch (err: any) {
       console.error(err);
       showToast(lang === 'ar' ? '⚠️ فشل تحديث المعاملة يدوياً: ' + err.message : '⚠️ Manual approval failed: ' + err.message);

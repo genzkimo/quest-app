@@ -74,14 +74,16 @@ export function formatArabicDate(dateInput: string | Date | undefined, lang: 'ar
 
 export function formatJoinedDate(dateInput?: string | Date, lang: 'ar' | 'fr' | 'en' = 'ar'): string {
   if (!dateInput) {
-    if (lang === 'ar') return 'تم الانضمام منذ فترة';
-    if (lang === 'fr') return 'Rejoint il y a un moment';
-    return 'Joined a while ago';
+    if (lang === 'ar') return 'انضم حديثاً';
+    if (lang === 'fr') return 'Rejoint récemment';
+    return 'Joined recently';
   }
 
   const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
   if (isNaN(date.getTime())) {
-    return lang === 'ar' ? `تم الانضمام منذ ${dateInput}` : `Joined ${dateInput}`;
+    if (lang === 'ar') return 'انضم حديثاً';
+    if (lang === 'fr') return 'Rejoint récemment';
+    return 'Joined recently';
   }
 
   const now = new Date();
@@ -91,38 +93,53 @@ export function formatJoinedDate(dateInput?: string | Date, lang: 'ar' | 'fr' | 
   const diffYears = Math.floor(diffDays / 365);
 
   if (lang === 'ar') {
-    let timeAgoStr = '';
-    if (diffDays < 1) timeAgoStr = 'اليوم';
-    else if (diffDays === 1) timeAgoStr = 'أمس';
-    else if (diffDays < 7) timeAgoStr = `${diffDays} أيام`;
-    else if (diffDays < 30) timeAgoStr = `${Math.floor(diffDays / 7)} أسابيع`;
-    else if (diffMonths < 12) {
-      if (diffMonths === 1) timeAgoStr = 'شهر';
-      else if (diffMonths === 2) timeAgoStr = 'شهرين';
-      else if (diffMonths >= 3 && diffMonths <= 10) timeAgoStr = `${diffMonths} أشهر`;
-      else timeAgoStr = `${diffMonths} شهراً`;
-    } else {
-      if (diffYears === 1) timeAgoStr = 'سنة';
-      else if (diffYears === 2) timeAgoStr = 'سنتين';
-      else timeAgoStr = `${diffYears} سنوات`;
+    if (diffDays < 1) return 'انضم اليوم';
+    if (diffDays === 1) return 'انضم أمس';
+    if (diffDays < 7) return `انضم منذ ${diffDays} أيام`;
+    if (diffDays < 30) {
+      const weeks = Math.floor(diffDays / 7);
+      if (weeks <= 1) return 'انضم منذ أسبوع';
+      if (weeks === 2) return 'انضم منذ أسبوعين';
+      return `انضم منذ ${weeks} أسابيع`;
     }
-    return `تم الانضمام منذ ${timeAgoStr}`;
+    if (diffMonths < 12) {
+      if (diffMonths <= 1) return 'انضم منذ شهر';
+      if (diffMonths === 2) return 'انضم منذ شهرين';
+      if (diffMonths >= 3 && diffMonths <= 10) return `انضم منذ ${diffMonths} أشهر`;
+      return `انضم منذ ${diffMonths} شهراً`;
+    }
+    try {
+      const formatter = new Intl.DateTimeFormat('ar-DZ', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+      });
+      return `انضم في ${formatter.format(date)}`;
+    } catch {
+      return `انضم في ${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
+    }
   } else if (lang === 'fr') {
-    let timeAgoStr = '';
-    if (diffDays < 1) timeAgoStr = "aujourd'hui";
-    else if (diffDays === 1) timeAgoStr = "hier";
-    else if (diffDays < 30) timeAgoStr = `${diffDays} jours`;
-    else if (diffMonths < 12) timeAgoStr = `${diffMonths} mois`;
-    else timeAgoStr = `${diffYears} ans`;
-    return `Rejoint il y a ${timeAgoStr}`;
+    if (diffDays < 1) return "Rejoint aujourd'hui";
+    if (diffDays === 1) return "Rejoint hier";
+    if (diffDays < 30) return `Rejoint il y a ${diffDays} jours`;
+    if (diffMonths < 12) return `Rejoint il y a ${diffMonths} mois`;
+    try {
+      const formatter = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+      return `Rejoint le ${formatter.format(date)}`;
+    } catch {
+      return `Rejoint le ${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
+    }
   } else {
-    let timeAgoStr = '';
-    if (diffDays < 1) timeAgoStr = 'today';
-    else if (diffDays === 1) timeAgoStr = 'yesterday';
-    else if (diffDays < 30) timeAgoStr = `${diffDays} days ago`;
-    else if (diffMonths < 12) timeAgoStr = `${diffMonths} months ago`;
-    else timeAgoStr = `${diffYears} years ago`;
-    return `Joined ${timeAgoStr}`;
+    if (diffDays < 1) return 'Joined today';
+    if (diffDays === 1) return 'Joined yesterday';
+    if (diffDays < 30) return `Joined ${diffDays} days ago`;
+    if (diffMonths < 12) return `Joined ${diffMonths} months ago`;
+    try {
+      const formatter = new Intl.DateTimeFormat('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
+      return `Joined ${formatter.format(date)}`;
+    } catch {
+      return `Joined ${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
+    }
   }
 }
 
@@ -131,6 +148,12 @@ export function formatReviewDate(dateInput?: string | Date, lang: 'ar' | 'fr' | 
     if (lang === 'ar') return 'حديثاً';
     if (lang === 'fr') return 'Récemment';
     return 'Recently';
+  }
+
+  if (typeof dateInput === 'string') {
+    if (dateInput === 'الآن بالذات' || dateInput === 'Just Now' || dateInput === 'Just now') {
+      return lang === 'ar' ? 'الآن' : (lang === 'fr' ? 'À l\'instant' : 'Just now');
+    }
   }
 
   const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
@@ -158,16 +181,29 @@ export function formatReviewDate(dateInput?: string | Date, lang: 'ar' | 'fr' | 
     if (diffMonths === 1) return 'منذ شهر';
     if (diffMonths === 2) return 'منذ شهرين';
     if (diffMonths < 12) return `منذ ${diffMonths} أشهر`;
-    return date.toLocaleDateString('ar-DZ', { year: 'numeric', month: 'short', day: 'numeric' });
+    try {
+      const formatter = new Intl.DateTimeFormat('ar-DZ', { year: 'numeric', month: 'short', day: 'numeric' });
+      return formatter.format(date);
+    } catch {
+      return `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
+    }
   } else if (lang === 'fr') {
+    if (diffMinutes < 5) return "À l'instant";
     if (diffMinutes < 60) return `Il y a ${diffMinutes} min`;
     if (diffHours < 24) return `Il y a ${diffHours} h`;
-    if (diffDays < 30) return `Il y a ${diffDays} j`;
+    if (diffDays === 1) return "Hier";
+    if (diffDays < 7) return `Il y a ${diffDays} j`;
+    if (diffWeeks < 4) return `Il y a ${diffWeeks} sem`;
+    if (diffMonths < 12) return `Il y a ${diffMonths} mois`;
     return date.toLocaleDateString('fr-FR', { year: 'numeric', month: 'short', day: 'numeric' });
   } else {
+    if (diffMinutes < 5) return 'Just now';
     if (diffMinutes < 60) return `${diffMinutes}m ago`;
     if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 30) return `${diffDays}d ago`;
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays}d ago`;
+    if (diffWeeks < 4) return `${diffWeeks}w ago`;
+    if (diffMonths < 12) return `${diffMonths}mo ago`;
     return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
   }
 }

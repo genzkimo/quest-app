@@ -130,6 +130,7 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
         email: normEmail,
         shortId: generateShortId(),
         termsAccepted: false,
+        createdAt: new Date().toISOString(),
       };
 
       await setDoc(doc(db, 'users', uid), cleanData(newUserProfile));

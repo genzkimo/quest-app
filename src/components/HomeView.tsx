@@ -282,13 +282,13 @@ export default function HomeView({
 
       if (newStreak === 7) {
         showToast(lang === 'ar'
-          ? `🎉 رائع وممتاز! لقد حصلت على الجائزة الكبرى لليوم السابع: +50 ذخيرة ذهبية!`
-          : `🎉 Grand achievement! Credited Day 7 Jackpot: +50 Gold Ammo!`
+          ? `🎉 رائع وممتاز! لقد حصلت على الجائزة الكبرى لليوم السابع: +50 د.ج رصيد استخدام!`
+          : `🎉 Grand achievement! Credited Day 7 Jackpot: +50 DA usage balance!`
         );
       } else {
         showToast(lang === 'ar'
-          ? `🔥 تم تسجيل حضورك لليوم ${newStreak}! وحصلت على +${reward} ذخيرة ذهبية.`
-          : `🔥 Success! Day ${newStreak} check-in recorded: +${reward} Gold Ammo added.`
+          ? `🔥 تم تسجيل حضورك لليوم ${newStreak}! وحصلت على +${reward} د.ج رصيد استخدام.`
+          : `🔥 Success! Day ${newStreak} check-in recorded: +${reward} DA usage balance added.`
         );
       }
     }
@@ -547,7 +547,7 @@ export default function HomeView({
     // Check Token balance (Requires 5%, min 35 tokens, max 2000 tokens)
     const fee = calculateBookingFee(quest.cashReward);
     if (userProfile.tokenBalance < fee) {
-      showToast(lang === 'ar' ? '⚡ رصيد غير كافٍ لدفع رسوم الحجز وضمان المنصة (5% من المكافأة، الحد الأدنى 35 د.ج والحد الأقصى 2000 د.ج)' : '⚡ Insufficient token balance for booking & platform safety guarantee (5% fee, min 35 DA, max 2000 DA)');
+      showToast(lang === 'ar' ? '⚡ رصيد استخدام غير كافٍ لدفع رسوم الحجز (5% من المكافأة، الحد الأدنى 35 د.ج والحد الأقصى 2000 د.ج). الرصيد يستخدم فقط لدفع رسوم استخدام منصة Quest مثل نشر أو حجز المهام.' : '⚡ Insufficient usage balance for booking platform fee (5% fee, min 35 DA, max 2000 DA). Balance is strictly used to pay Quest platform usage fees.');
       return;
     }
 
@@ -1222,10 +1222,10 @@ export default function HomeView({
 
                         <div className="text-right">
                           <span className="text-[9.5px] text-gray-300 block font-black uppercase tracking-widest leading-none mb-1">
-                            ⚡ {lang === 'ar' ? 'الرمز المطلوب لحجز والمؤمن' : 'Required Booking Tokens'}
+                            ⚡ {lang === 'ar' ? 'رسوم حجز استخدام المنصة' : 'Platform Booking Fee'}
                           </span>
-                          <span className="text-sm font-black text-[#FFD34D] font-mono flex items-center justify-end gap-1">
-                            ⚡ {tokenAmount} <span className="text-[10px] font-sans text-gray-300 font-bold">Tokens</span>
+                          <span className="text-xs font-black text-[#FFD34D] font-mono flex items-center justify-end gap-1">
+                            {lang === 'ar' ? `سيتم خصم رسوم الحجز: ${tokenAmount} د.ج` : `Booking Fee: ${tokenAmount} DA`}
                           </span>
                         </div>
                       </div>
@@ -2416,18 +2416,18 @@ export default function HomeView({
 
                       <div className="text-right">
                         <span className="text-[9px] text-gray-300 block font-black uppercase tracking-wider mb-1">
-                          ⚡ {lang === 'ar' ? 'الرمز المطلوب والمسحوب لحجز' : 'Required Tokens'}
+                          ⚡ {lang === 'ar' ? 'رسوم حجز استخدام المنصة' : 'Platform Booking Fee'}
                         </span>
-                        <span className="text-md sm:text-lg font-black text-[#FFD34D] font-mono flex items-center justify-end gap-1">
-                          ⚡ {tokenAmount} <span className="text-[10px] font-sans text-gray-300 font-bold">Tokens</span>
+                        <span className="text-sm font-black text-[#FFD34D] font-mono flex items-center justify-end gap-1">
+                          {lang === 'ar' ? `سيتم خصم رسوم الحجز: ${tokenAmount} د.ج` : `Booking Fee: ${tokenAmount} DA`}
                         </span>
                       </div>
                     </div>
 
                     <div className="text-[9.5px] text-gray-300 font-bold leading-relaxed border-t border-white/10 pt-2 text-start">
                       ℹ️ {lang === 'ar' 
-                        ? 'الدفع يتم يداً بيد نقداً مائة بالمائة أو عبر تطبيق بريدي موب (BaridiMob) فور التسليم الميداني. يتم استخدام الرموز المطلوبة فقط لحجز وتثبيت الكويست.' 
-                        : 'Paid directly in cash or via BaridiMob transfer on completion. Required tokens are consumed only to book and secure the quest opportunity.'}
+                        ? 'الدفع يتم يداً بيد نقداً مائة بالمائة أو عبر تطبيق بريدي موب فور التسليم الميداني. الرصيد يستخدم فقط لدفع رسوم استخدام منصة Quest مثل نشر أو حجز المهام.' 
+                        : 'Paid directly in cash or via BaridiMob transfer on completion. Balance is strictly used to pay Quest platform fees for publishing or booking quests.'}
                     </div>
 
                     <div className="space-y-2 pt-1">
@@ -2456,8 +2456,8 @@ export default function HomeView({
                           <Award className="w-4.5 h-4.5" />
                           <span>
                             {lang === 'ar' 
-                              ? `احجز المهمة الآن: يخصم ${tokenAmount} رمز ⚡` 
-                              : `Book Quest Now: Deduct ${tokenAmount} Tokens ⚡`}
+                              ? `احجز المهمة الآن (سيتم خصم رسوم الحجز: ${tokenAmount} د.ج) ⚡` 
+                              : `Book Quest Now (Deduct Fee: ${tokenAmount} DA) ⚡`}
                           </span>
                         </button>
                       )}

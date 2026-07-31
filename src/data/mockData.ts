@@ -24,6 +24,7 @@ export const INITIAL_USER_PROFILE: UserProfile = {
   audioEffectsEnabled: true,
   hapticFeedbackEnabled: true,
   isAdmin: true,
+  createdAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(),
 };
 
 export const INITIAL_WALLET_TRANSACTIONS: WalletTransaction[] = [
@@ -183,11 +184,11 @@ export const INITIAL_CHALLENGES: Challenge[] = [
   } as any,
   {
     id: 'weekly-3',
-    title: { ar: 'المستثمر المحنك 🪙', fr: 'Investisseur Elite 🪙', en: 'Master Token Spender 🪙' },
+    title: { ar: 'المستثمر المحنك 💳', fr: 'Investisseur Elite 💳', en: 'Master Usage Balance Holder 💳' },
     description: {
-      ar: 'قم بخصم أو حجز ما مجموعه ١٥٠ رمز مميز في تعهدات العقود الأسبوعية.',
-      fr: 'Dépensez 150 Tokens dans les frais d\'engagement de quêtes.',
-      en: 'Burn or dedicate 150 total tokens in active quest assignments.'
+      ar: 'قم بدفع ما مجموعه ١٥٠ د.ج رسوم استخدام المنصة في تعهدات العقود الأسبوعية.',
+      fr: 'Dépensez 150 DA dans les frais d\'utilisation de la plateforme.',
+      en: 'Pay 150 total DA platform usage fees in active quest assignments.'
     },
     pointsReward: 110,
     targetCount: 150,
@@ -308,7 +309,7 @@ export const INITIAL_BADGES: Badge[] = [
   // --- RUBY TIERS (46-50): Ultra-Rare Ultimate Milestones (0.1% Only) ---
   { id: 'r46', name: 'الأسطورة المطلقة (The Legend)', title: 'الأسطورة المطلقة (The Legend)', tier: 'RUBY', description: 'بلغت القمة المستحيلة وحققت أعلى معدل إنجاز في تاريخ المنصة.', requirement: 'إتمام 500 كويست موثق بالكامل', iconName: 'Trophy', unlocked: false },
   { id: 'r47', name: 'حارس المدينة المخلص', title: 'حارس المدينة المخلص', tier: 'RUBY', description: 'أمنت وحللت 100 كويست ميداني متتالي بتقييم 5.0 نجوم كاملة.', requirement: '100 تقييم كامل متتالي', iconName: 'Award', unlocked: false },
-  { id: 'r48', name: 'عاهل الرموز والتوكنز', title: 'عاهل الرموز والتوكنز', tier: 'RUBY', description: 'قمت بحرق واستهلاك آلاف التوكنز في حجز وإتمام عقود حية.', requirement: 'حرق 5,000 توكنز تراكمياً', iconName: 'Sparkles', unlocked: false },
+  { id: 'r48', name: 'عاهل رصيد Quest', title: 'عاهل رصيد Quest', tier: 'RUBY', description: 'قمت بدفع واستخدام آلاف الدنانير في رسوم استخدام المنصة لحجز ونشر العقود.', requirement: 'دفع 5,000 د.ج رسوم استخدام تراكمياً', iconName: 'Sparkles', unlocked: false },
   { id: 'r49', name: 'المنقذ الميداني الخارق', title: 'المنقذ الميداني الخارق', tier: 'RUBY', description: 'أنهيت 50 كويست مصنف "حرج جداً ومستعجل" بنجاح متناهي.', requirement: 'إتمام 50 كويست حرج جداً', iconName: 'Zap', unlocked: false },
   { id: 'r50', name: 'النخبة الصفوة (The Elite)', title: 'النخبة الصفوة (The Elite)', tier: 'RUBY', description: 'الشارة التعجيزية الكبرى للوصول للمستوى الأقصى وتصدر قائمة المتصدرين بشكل دائم.', requirement: 'الوصول للمستوى 50 وحصد 10,000 XP', iconName: 'Trophy', unlocked: false }
 ];
@@ -359,8 +360,8 @@ export const OLD_INITIAL_BADGES: Badge[] = [
   },
   {
     id: 'bronze-8',
-    title: { ar: 'حارس المحفظة الرقمية 🪙', fr: 'Gardien de Solde 🪙', en: 'Token Wallet Guard 🪙' },
-    description: { ar: 'اطّلعت على كشف الحساب وتوزيع رصيد التوكنز الترحيبي.', fr: 'Vérification du solde de jetons de réserve.', en: 'Opened your wallet transaction history ledger for the first time.' },
+    title: { ar: 'حارس رصيد الاستخدام 💳', fr: 'Gardien de Solde 💳', en: 'Usage Balance Guard 💳' },
+    description: { ar: 'اطّلعت على كشف الحساب وتوزيع رصيد Quest بالمحفظة.', fr: 'Vérification du solde Quest.', en: 'Opened your wallet transaction history ledger for the first time.' },
     iconName: 'Sparkles', unlocked: true, tier: 'Bronze'
   },
   {
@@ -517,8 +518,8 @@ export const OLD_INITIAL_BADGES: Badge[] = [
   },
   {
     id: 'silver-14',
-    title: { ar: 'المليونير الفضي الصاعد 💰', fr: 'Fortune d\'Argent 💰', en: 'Silver Fortune 💰' },
-    description: { ar: 'جمعت رصيداً صافياً يفوق 4500 من عملات توكنز بالمحفظة.', fr: 'Un solde dépassant 4500 jetons d\'affaires.', en: 'Accumulated over 4,500 active tokens inside your wallet.' },
+    title: { ar: 'صاحب المحفظة الماسية 💰', fr: 'Fortune d\'Argent 💰', en: 'Silver Fortune 💰' },
+    description: { ar: 'جمعت رصيد استخدام صافياً يفوق 4500 د.ج بالمحفظة.', fr: 'Un solde dépassant 4500 DA.', en: 'Accumulated over 4,500 DA active balance inside your wallet.' },
     iconName: 'Sparkles', unlocked: false, tier: 'Silver', pointsCost: 200
   },
   {
@@ -605,8 +606,8 @@ export const OLD_INITIAL_BADGES: Badge[] = [
   },
   {
     id: 'ruby-3',
-    title: { ar: 'إمبراطور الرموز والتوكنز 👑', fr: 'Empereur de Jeton 👑', en: 'Token Monarch 👑' },
-    description: { ar: 'احرق واستهلك ٥,٠٠٠ توكنز تراكمياً في تأمين ورعاية العقود.', fr: 'Consommez plus de 5 000 jetons dans vos affectations.', en: 'Burn 5,000 cumulative tokens on gig assignments.' },
+    title: { ar: 'إمبراطور رصيد Quest 👑', fr: 'Empereur de Quest 👑', en: 'Quest Balance Monarch 👑' },
+    description: { ar: 'ادفع واستهلك ٥,٠٠٠ د.ج تراكمياً في رسوم استخدام المنصة لتأمين العقود.', fr: 'Consommez plus de 5 000 DA dans vos affectations.', en: 'Pay 5,000 DA cumulative platform usage fees.' },
     iconName: 'Zap', unlocked: false, tier: 'Ruby', pointsCost: 2000
   },
   {
@@ -633,7 +634,7 @@ export const INITIAL_HUNTER_REVIEWS: HunterReview[] = [
     completedTaskImage: 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=600&auto=format&fit=crop&q=80',
     rating: 5,
     comment: 'عمل رائع جداً وسريع! قام بإصلاح مكيف الهواء باحترافية تامة وأنصح بالتعامل معه.',
-    createdAt: 'منذ يومين'
+    createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
   },
   {
     reviewId: 'rev-2',
@@ -644,7 +645,7 @@ export const INITIAL_HUNTER_REVIEWS: HunterReview[] = [
     completedTaskImage: 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=600&auto=format&fit=crop&q=80',
     rating: 4,
     comment: 'شرح ممتاز للألياف البصرية وحل مفصل لأسئلة الامتحان الاستدراكي ومفاهيم الـ OOP.',
-    createdAt: 'منذ ٤ أيام'
+    createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
   }
 ];
 
@@ -658,6 +659,6 @@ export const INITIAL_GODFATHER_REVIEWS: GodfatherReview[] = [
     completedTaskImage: 'https://images.unsplash.com/photo-1540959733332-eab4deceeaf7?w=600&auto=format&fit=crop&q=80',
     rating: 5,
     comment: 'العراب ياسين بلقاسم قمة في الأمانة والاحترام، دفع المستحقات على الفور فور الانتهاء من تأكيد العمل الموثق! سرعة رهيبة في التواصل وتوضيح الكويست الميداني.',
-    createdAt: 'البارحة'
+    createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString()
   }
 ];

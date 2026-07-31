@@ -117,13 +117,7 @@ export default function Navbar({
     },
   ];
 
-  if (isAdmin) {
-    NAV_ITEMS.push({
-      id: 'admin',
-      label: lang === 'ar' ? 'الإشراف' : lang === 'fr' ? 'Superviser' : 'Supervise',
-      icon: ShieldAlert
-    });
-  }
+
 
   const isRtl = lang === 'ar';
 

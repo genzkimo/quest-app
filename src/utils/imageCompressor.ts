@@ -2,19 +2,83 @@ import heic2any from 'heic2any';
 
 /**
  * Professional, high-performance offline image compression pipeline.
- * Converts HEIC/HEIF (iPhone) images automatically to JPEG/PNG,
- * resizes any loaded image to max dimensions of 1080x1080 while conserving ratio,
- * and encodes as a high-quality JPEG at imageQuality: 70 (0.7).
+ * Handles camera photos (JPEG, PNG, WEBP, HEIC/HEIF, HDR, Display P3).
+ * Prefers native browser decoding (via Object URL / Image element)
+ * to prevent WASM color-overflow posterization bugs on camera photos,
+ * while maintaining HEIC fallback and direct Data URL recovery.
  */
 export async function compressImage(inputFile: File): Promise<string> {
-  let fileToProcess = inputFile;
+  if (!inputFile) return '';
 
-  // Check if the file is HEIC/HEIF (common on iPhone/iOS devices)
+  const maxDimension = 1200;
+
+  // Helper to process an HTMLImageElement onto canvas with white background & quality scaling
+  const processDrawable = (
+    img: HTMLImageElement,
+    origWidth: number,
+    origHeight: number
+  ): string => {
+    let width = origWidth || 800;
+    let height = origHeight || 600;
+
+    if (width > height) {
+      if (width > maxDimension) {
+        height = Math.round(height * (maxDimension / width));
+        width = maxDimension;
+      }
+    } else {
+      if (height > maxDimension) {
+        width = Math.round(width * (maxDimension / height));
+        height = maxDimension;
+      }
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Could not get 2D context');
+
+    // Fill clean white background
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.drawImage(img, 0, 0, width, height);
+    return canvas.toDataURL('image/jpeg', 0.82);
+  };
+
+  // Step 1: Try native browser decoding via Object URL (fastest, accurate color profile)
+  try {
+    const objectUrl = URL.createObjectURL(inputFile);
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const result = processDrawable(img, img.naturalWidth || img.width, img.naturalHeight || img.height);
+          resolve(result);
+        } catch (err) {
+          reject(err);
+        }
+      };
+      img.onerror = (err) => reject(err);
+      img.src = objectUrl;
+    });
+
+    URL.revokeObjectURL(objectUrl);
+    if (dataUrl && dataUrl.startsWith('data:image/')) {
+      return dataUrl;
+    }
+  } catch {
+    // Native load failed or unsupported format (e.g. HEIC on desktop Chrome)
+  }
+
+  // Step 2: Fallback for HEIC/HEIF files if native load failed
   const fileNameLower = inputFile.name.toLowerCase();
-  const isHeic = 
-    inputFile.type === 'image/heic' || 
-    inputFile.type === 'image/heif' || 
-    fileNameLower.endsWith('.heic') || 
+  const isHeic =
+    inputFile.type === 'image/heic' ||
+    inputFile.type === 'image/heif' ||
+    fileNameLower.endsWith('.heic') ||
     fileNameLower.endsWith('.heif');
 
   if (isHeic) {
@@ -22,109 +86,42 @@ export async function compressImage(inputFile: File): Promise<string> {
       const convertedBlob = await heic2any({
         blob: inputFile,
         toType: 'image/jpeg',
-        quality: 0.8
+        quality: 0.85,
       });
       const singleBlob = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
-      fileToProcess = new File([singleBlob], inputFile.name.replace(/\.(heic|heif)$/i, '.jpg'), {
-        type: 'image/jpeg'
+      const convertedFile = new File([singleBlob], 'converted.jpg', { type: 'image/jpeg' });
+
+      const objectUrl = URL.createObjectURL(convertedFile);
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const result = processDrawable(img, img.naturalWidth || img.width, img.naturalHeight || img.height);
+            resolve(result);
+          } catch (err) {
+            reject(err);
+          }
+        };
+        img.onerror = (err) => reject(err);
+        img.src = objectUrl;
       });
+
+      URL.revokeObjectURL(objectUrl);
+      if (dataUrl && dataUrl.startsWith('data:image/')) {
+        return dataUrl;
+      }
     } catch (heicErr) {
-      console.warn("Failed to convert HEIC image with heic2any, attempting direct processing:", heicErr);
+      console.warn('heic2any conversion fallback failed:', heicErr);
     }
   }
 
-  return new Promise((resolve, reject) => {
-    // If file type is not image or not recognized, try reading anyway or check extension
-    const file = fileToProcess;
-
+  // Step 3: Ultimate safe fallback - read directly as Data URL
+  return new Promise<string>((resolve) => {
     const reader = new FileReader();
-
-    const timeoutId = setTimeout(() => {
-      console.warn("compressImage timeout reached. Using fallback FileReader progress.");
-      try {
-        if (reader.result) {
-          resolve(reader.result as string);
-        } else {
-          const fallbackReader = new FileReader();
-          fallbackReader.onload = (ev) => resolve(ev.target?.result as string || '');
-          fallbackReader.onerror = () => resolve('');
-          fallbackReader.readAsDataURL(file);
-        }
-      } catch (err) {
-        resolve('');
-      }
-    }, 6000);
-
-    const cleanup = () => clearTimeout(timeoutId);
-
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        let width = img.width;
-        let height = img.height;
-        const maxSize = 1080;
-
-        // Calculate responsive resizing dimensions keeping strict aspect ratio
-        if (width > height) {
-          if (width > maxSize) {
-            height = Math.round(height * (maxSize / width));
-            width = maxSize;
-          }
-        } else {
-          if (height > maxSize) {
-            width = Math.round(width * (maxSize / height));
-            height = maxSize;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          cleanup();
-          resolve(event.target?.result as string || '');
-          return;
-        }
-
-        // Draw white background under solid canvas (important for transparent PNGs converted to JPEG quality 70)
-        ctx.fillStyle = "#FFFFFF";
-        ctx.fillRect(0, 0, width, height);
-
-        // Draw source image onto normalized 1080 bounds
-        ctx.drawImage(img, 0, 0, width, height);
-
-        // Convert canvas image as compressed JPEG output
-        try {
-          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
-          cleanup();
-          resolve(compressedDataUrl);
-        } catch (err) {
-          cleanup();
-          resolve(event.target?.result as string || '');
-        }
-      };
-      
-      img.onerror = () => {
-        cleanup();
-        // If image loading fails, resolve with data URL as fallback instead of hard reject
-        if (event.target?.result) {
-          resolve(event.target.result as string);
-        } else {
-          reject(new Error("Failed to load source image file"));
-        }
-      };
-
-      img.src = event.target?.result as string;
-    };
-
-    reader.onerror = () => {
-      cleanup();
-      reject(new Error("File reader reading exception"));
-    };
-
-    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result as string || '');
+    reader.onerror = () => resolve('');
+    reader.readAsDataURL(inputFile);
   });
 }
+
 

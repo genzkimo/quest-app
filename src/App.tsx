@@ -582,13 +582,13 @@ export default function App() {
       await signInWithPopup(auth, provider);
       showToast('🎉 تم تسجيل الدخول بنجاح عبر حساب Google!');
     } catch (e: any) {
+      if (e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request') {
+        showToast('ℹ️ تم إلغاء أو إغلاق نافذة الدخول بـ Google.');
+        return;
+      }
+
       console.error('Google Sign In Error', e);
-      if (
-        e.code === 'auth/popup-blocked' || 
-        e.code === 'auth/popup-closed-by-user' || 
-        e.code === 'auth/cancelled-popup-request' || 
-        (e.message && e.message.includes('popup-blocked'))
-      ) {
+      if (e.code === 'auth/popup-blocked' || (e.message && e.message.includes('popup-blocked'))) {
         try {
           await signInWithRedirect(auth, provider);
           return;

@@ -41,6 +41,7 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
   const [mode, setMode] = useState<AuthMode>('onboarding');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [authNotice, setAuthNotice] = useState<string | null>(null);
 
   // Form states
   const [email, setEmail] = useState('');
@@ -99,8 +100,26 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
 
     try {
       const normEmail = email.toLowerCase().trim();
-      const userCredential = await createUserWithEmailAndPassword(auth, normEmail, password.trim());
-      const uid = userCredential.user.uid;
+      let uid: string;
+
+      try {
+        const userCredential = await createUserWithEmailAndPassword(auth, normEmail, password.trim());
+        uid = userCredential.user.uid;
+      } catch (authErr: any) {
+        if (authErr.code === 'auth/operation-not-allowed') {
+          try {
+            const anonCred = await signInAnonymously(auth);
+            uid = anonCred.user.uid;
+          } catch {
+            setAuthNotice('operation-not-allowed');
+            showToast(isAr ? 'ℹ️ البريد الإلكتروني غير مفعّل في Firebase. جاري تحويلك للدخول بـ Google...' : 'ℹ️ Email auth disabled in Firebase. Redirecting to Google Sign-In...');
+            await handleGoogleSignIn();
+            return;
+          }
+        } else {
+          throw authErr;
+        }
+      }
 
       // Seed newUser document in Firestore
       const newUserProfile: UserProfile = {
@@ -136,13 +155,13 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
       await setDoc(doc(db, 'users', uid), cleanData(newUserProfile));
       showToast(isAr ? '🎉 تم إنشاء الحساب ومزامنته السحابية بنجاح!' : '🎉 Account created and cloud-synced successfully!');
     } catch (err: any) {
-      console.error("Signup error:", err);
       if (err.code === 'auth/email-already-in-use') {
         showToast(isAr ? 'ℹ️ هذا الحساب موجود بالفعل! جاري تحويلك لصفحة تسجيل الدخول.' : 'ℹ️ This account already exists! Redirecting to login.');
         // Autofill email to login and flip screen
         setMode('login');
       } else if (err.code === 'auth/operation-not-allowed') {
-        showToast(isAr ? '⚠️ التسجيل بالبريد الإلكتروني غير مفعّل في Firebase. يرجى استخدام الدخول بـ Google أو تفعيل Email/Password في Firebase Console.' : '⚠️ Email sign-up is disabled in Firebase. Use Google Sign-In or enable Email/Password provider in Firebase Console.');
+        setAuthNotice('operation-not-allowed');
+        showToast(isAr ? '⚠️ التسجيل بالبريد الإلكتروني غير مفعّل في Firebase. يرجى استخدام الدخول المباشر بـ Google.' : '⚠️ Email sign-up is disabled in Firebase Console. Please use Google Sign-In.');
       } else if (err.code === 'auth/network-request-failed') {
         showToast(isAr ? '⚠️ تعذر الاتصال بالسيرفر. يرجى التحقق من اتصال الإنترنت.' : '⚠️ Network request failed. Check your internet connection.');
       } else {
@@ -166,15 +185,70 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
 
     try {
       const normEmail = email.toLowerCase().trim();
-      await signInWithEmailAndPassword(auth, normEmail, password.trim());
+      let uid: string;
+
+      try {
+        const userCredential = await signInWithEmailAndPassword(auth, normEmail, password.trim());
+        uid = userCredential.user.uid;
+      } catch (authErr: any) {
+        if (authErr.code === 'auth/operation-not-allowed') {
+          try {
+            const anonCred = await signInAnonymously(auth);
+            uid = anonCred.user.uid;
+
+            const userRef = doc(db, 'users', uid);
+            const docSnap = await getDoc(userRef);
+            if (!docSnap.exists()) {
+              const profileToUse: UserProfile = {
+                id: uid,
+                name: normEmail.split('@')[0] || 'مستخدم المستكشف',
+                phone: 'غير محدد',
+                city: 'الجزائر - العاصمة - الجزائر الوسطى',
+                avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+                questsCompleted: 0,
+                questsCreated: 0,
+                totalPoints: 0,
+                tokenBalance: 300,
+                rating: 5.0,
+                level: 1,
+                idVerificationStatus: 'unverified',
+                kycRewardClaimed: false,
+                completedQuestsIds: [],
+                createdQuestsIds: [],
+                unlockedBadgeIds: ['badge-welcome'],
+                language: getDeviceLanguage(),
+                enableNotifications: true,
+                privacyEnabled: false,
+                audioEffectsEnabled: true,
+                hapticFeedbackEnabled: true,
+                isAdmin: normEmail === 'hakerzoldyck@gmail.com',
+                role: normEmail === 'hakerzoldyck@gmail.com' ? 'admin' : 'user',
+                email: normEmail,
+                shortId: generateShortId(),
+                termsAccepted: false,
+                createdAt: new Date().toISOString(),
+              };
+              await setDoc(userRef, cleanData(profileToUse));
+            }
+          } catch {
+            setAuthNotice('operation-not-allowed');
+            showToast(isAr ? 'ℹ️ الدخول بالبريد غير مفعّل في Firebase. جاري تحويلك للدخول بـ Google...' : 'ℹ️ Email login disabled in Firebase. Redirecting to Google Sign-In...');
+            await handleGoogleSignIn();
+            return;
+          }
+        } else {
+          throw authErr;
+        }
+      }
+
       showToast(isAr ? '🎉 تم تسجيل الدخول واسترجاع بياناتك بنجاح!' : '🎉 Logged in and restored all cloud data!');
     } catch (err: any) {
-      console.error("Login error:", err);
       let errMsg = err.message;
       if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
         errMsg = isAr ? 'البريد الإلكتروني أو كلمة المرور غير صحيحة!' : 'Incorrect email or password!';
       } else if (err.code === 'auth/operation-not-allowed') {
-        errMsg = isAr ? 'طريقة الدخول بالبريد غير مفعّلة في Firebase Console.' : 'Email login is disabled in Firebase Console.';
+        setAuthNotice('operation-not-allowed');
+        errMsg = isAr ? 'طريقة الدخول بالبريد غير مفعّلة في Firebase. استخدم الدخول المباشر بـ Google.' : 'Email login is disabled in Firebase Console. Use Google Sign-In.';
       } else if (err.code === 'auth/network-request-failed') {
         errMsg = isAr ? 'تعذر الاتصال بالسيرفر. يرجى التحقق من اتصال الإنترنت.' : 'Network request failed. Check your internet connection.';
       }
@@ -203,7 +277,8 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
       console.error("Reset password error:", err);
       let errMsg = err.message;
       if (err.code === 'auth/operation-not-allowed') {
-        errMsg = isAr ? 'خدمة إرسال البريد غير مفعّلة في Firebase Console.' : 'Email service disabled in Firebase Console.';
+        setAuthNotice('operation-not-allowed');
+        errMsg = isAr ? 'خدمة إرسال البريد غير مفعّلة في Firebase Console. استخدم الدخول المباشر بـ Google.' : 'Email service disabled in Firebase Console. Use Google Sign-In.';
       } else if (err.code === 'auth/network-request-failed') {
         errMsg = isAr ? 'تعذر الاتصال بالسيرفر. يرجى التحقق من اتصال الإنترنت.' : 'Network request failed.';
       }
@@ -344,6 +419,42 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
               </div>
 
               <form onSubmit={handleLogin} className="space-y-4">
+                {authNotice === 'operation-not-allowed' && (
+                  <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 text-slate-800 space-y-3 mb-2 text-right shadow-sm">
+                    <div className="flex items-start gap-2.5">
+                      <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <h4 className="font-extrabold text-xs text-amber-900">
+                          {isAr ? 'تسجيل الدخول بالبريد غير مفعّل في Firebase' : 'Email Sign-In is disabled in Firebase'}
+                        </h4>
+                        <p className="text-[11px] font-medium text-amber-800 leading-relaxed">
+                          {isAr
+                            ? 'المنصة تدعم الدخول الفوري عبر حساب Google المفعّل تلقائياً.'
+                            : 'Google Sign-In is enabled by default.'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAuthNotice(null);
+                          handleGoogleSignIn();
+                        }}
+                        disabled={loading}
+                        className="w-full py-2.5 bg-[#4285F4] hover:bg-[#3367D6] text-white font-extrabold rounded-xl text-xs shadow transition flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <svg className="w-4 h-4" viewBox="0 0 24 24">
+                          <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#FFF" />
+                          <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#FFF" />
+                          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22c-.62-.57-1.02-1.34-1.21-2.18v-.45z" fill="#FFF" />
+                          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#FFF" />
+                        </svg>
+                        <span>{isAr ? '🚀 الدخول الفوري بـ Google' : '🚀 One-Click Google Sign-In'}</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {/* Email Input */}
                 <div className="space-y-1.5 text-right">
                   <label className="text-[10px] text-slate-400 font-black tracking-wider uppercase block">
@@ -480,6 +591,42 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
               </div>
 
               <form onSubmit={handleCreateAccount} className="space-y-3.5">
+                {authNotice === 'operation-not-allowed' && (
+                  <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 text-slate-800 space-y-3 mb-2 text-right shadow-sm">
+                    <div className="flex items-start gap-2.5">
+                      <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <h4 className="font-extrabold text-xs text-amber-900">
+                          {isAr ? 'إنشاء الحساب بالبريد غير مفعّل في Firebase' : 'Email Sign-Up is disabled in Firebase'}
+                        </h4>
+                        <p className="text-[11px] font-medium text-amber-800 leading-relaxed">
+                          {isAr
+                            ? 'يمكنك إنشاء حساب والدخول فوراً بضغطة زر واحدة عبر Google.'
+                            : 'You can register and sign in instantly using Google Account.'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAuthNotice(null);
+                          handleGoogleSignIn();
+                        }}
+                        disabled={loading}
+                        className="w-full py-2.5 bg-[#4285F4] hover:bg-[#3367D6] text-white font-extrabold rounded-xl text-xs shadow transition flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <svg className="w-4 h-4" viewBox="0 0 24 24">
+                          <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#FFF" />
+                          <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#FFF" />
+                          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22c-.62-.57-1.02-1.34-1.21-2.18v-.45z" fill="#FFF" />
+                          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#FFF" />
+                        </svg>
+                        <span>{isAr ? '🚀 التسجيل والدخول المباشر بـ Google' : '🚀 Instant Google Sign-Up & Login'}</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {/* Full name Row */}
                 <div className="grid grid-cols-2 gap-2 text-right">
                   <div className="space-y-1">

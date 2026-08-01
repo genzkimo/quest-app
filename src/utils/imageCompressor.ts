@@ -1,15 +1,41 @@
+import heic2any from 'heic2any';
+
 /**
  * Professional, high-performance offline image compression pipeline.
- * Resizes any loaded image to max dimensions of 1080x1080 while conserving ratio,
+ * Converts HEIC/HEIF (iPhone) images automatically to JPEG/PNG,
+ * resizes any loaded image to max dimensions of 1080x1080 while conserving ratio,
  * and encodes as a high-quality JPEG at imageQuality: 70 (0.7).
  */
-export function compressImage(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    // If the file is not an image, reject
-    if (!file.type.startsWith('image/')) {
-      reject(new Error("Chosen file is not a valid image"));
-      return;
+export async function compressImage(inputFile: File): Promise<string> {
+  let fileToProcess = inputFile;
+
+  // Check if the file is HEIC/HEIF (common on iPhone/iOS devices)
+  const fileNameLower = inputFile.name.toLowerCase();
+  const isHeic = 
+    inputFile.type === 'image/heic' || 
+    inputFile.type === 'image/heif' || 
+    fileNameLower.endsWith('.heic') || 
+    fileNameLower.endsWith('.heif');
+
+  if (isHeic) {
+    try {
+      const convertedBlob = await heic2any({
+        blob: inputFile,
+        toType: 'image/jpeg',
+        quality: 0.8
+      });
+      const singleBlob = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
+      fileToProcess = new File([singleBlob], inputFile.name.replace(/\.(heic|heif)$/i, '.jpg'), {
+        type: 'image/jpeg'
+      });
+    } catch (heicErr) {
+      console.warn("Failed to convert HEIC image with heic2any, attempting direct processing:", heicErr);
     }
+  }
+
+  return new Promise((resolve, reject) => {
+    // If file type is not image or not recognized, try reading anyway or check extension
+    const file = fileToProcess;
 
     const reader = new FileReader();
 
@@ -27,7 +53,7 @@ export function compressImage(file: File): Promise<string> {
       } catch (err) {
         resolve('');
       }
-    }, 4500);
+    }, 6000);
 
     const cleanup = () => clearTimeout(timeoutId);
 
@@ -70,13 +96,11 @@ export function compressImage(file: File): Promise<string> {
         ctx.drawImage(img, 0, 0, width, height);
 
         // Convert canvas image as compressed JPEG output
-        // Setting imageQuality to 70 (0.7 quality parameter)
         try {
           const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
           cleanup();
           resolve(compressedDataUrl);
         } catch (err) {
-          // Cross-origin fallback or standard failure
           cleanup();
           resolve(event.target?.result as string || '');
         }
@@ -84,7 +108,12 @@ export function compressImage(file: File): Promise<string> {
       
       img.onerror = () => {
         cleanup();
-        reject(new Error("Failed to load source image file"));
+        // If image loading fails, resolve with data URL as fallback instead of hard reject
+        if (event.target?.result) {
+          resolve(event.target.result as string);
+        } else {
+          reject(new Error("Failed to load source image file"));
+        }
       };
 
       img.src = event.target?.result as string;
@@ -98,3 +127,4 @@ export function compressImage(file: File): Promise<string> {
     reader.readAsDataURL(file);
   });
 }
+

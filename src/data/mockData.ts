@@ -4,7 +4,7 @@ import { getDeviceLanguage } from '../utils/language';
 export const INITIAL_USER_PROFILE: UserProfile = {
   id: 'user-current',
   name: 'ياسين بلقاسم',
-  phone: '0555123456',
+  phone: '',
   city: 'الجزائر العاصمة (Algiers)',
   avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
   questsCompleted: 4,

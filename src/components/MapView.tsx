@@ -328,6 +328,11 @@ export default function MapView({
     const fetchKey = `${navigatingQuest.id}_${travelMode}_${startCoords.lat.toFixed(3)}_${startCoords.lng.toFixed(3)}_${endCoords.lat.toFixed(3)}_${endCoords.lng.toFixed(3)}`;
 
     const fetchRoutePath = async (start: { lat: number; lng: number }, end: { lat: number; lng: number }, mode: 'driving' | 'cycling' | 'walking') => {
+      if (!start || !end || isNaN(start.lat) || isNaN(start.lng) || isNaN(end.lat) || isNaN(end.lng)) {
+        console.warn("Invalid coordinates provided to fetchRoutePath:", start, end);
+        return;
+      }
+
       if (isFetchingRouteRef.current) return;
       if (lastRouteFetchKeyRef.current === fetchKey && lockedRoutePoints.length > 0) return;
 
@@ -335,36 +340,47 @@ export default function MapView({
       lastRouteFetchKeyRef.current = fetchKey;
       setIsCalculatingRoute(true);
 
-      const osrmProfile = mode === 'walking' ? 'foot' : mode; // 'foot', 'cycling' or 'driving'
-      const url = `https://router.project-osrm.org/route/v1/${osrmProfile}/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&alternatives=false&geometries=geojson`;
-      
-      try {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`HTTP error ${res.status}`);
-        const data = await res.json();
-        if (data && data.code === 'Ok' && data.routes && data.routes[0]) {
-          const coords = data.routes[0].geometry.coordinates;
-          if (Array.isArray(coords) && coords.length > 0) {
-            const points = coords.map((c: any) => [c[1], c[0]] as [number, number]);
-            setLockedRoutePoints(points);
-            return;
+      const profiles = mode === 'walking' 
+        ? ['foot', 'driving', 'cycling'] 
+        : mode === 'cycling' 
+        ? ['cycling', 'driving', 'foot'] 
+        : ['driving', 'foot', 'cycling'];
+
+      let fetchedPoints: [number, number][] | null = null;
+
+      for (const profile of profiles) {
+        const url = `https://router.project-osrm.org/route/v1/${profile}/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&alternatives=false&geometries=geojson`;
+        try {
+          const res = await fetch(url);
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.code === 'Ok' && data.routes && data.routes[0]) {
+              const coords = data.routes[0].geometry.coordinates;
+              if (Array.isArray(coords) && coords.length > 0) {
+                fetchedPoints = coords.map((c: any) => [c[1], c[0]] as [number, number]);
+                break;
+              }
+            }
           }
+        } catch (err: any) {
+          console.warn(`OSRM Route fetch failure for ${profile}:`, err?.message || err);
         }
-        // Fallback to direct line if route empty
-        setLockedRoutePoints([[start.lat, start.lng], [end.lat, end.lng]]);
-      } catch (err: any) {
-        console.warn("OSRM Route fetch failure (using straight-line fallback):", err.message || err);
-        // Guaranteed fallback so lockedRoutePoints is non-empty and fetch won't re-loop infinitely
-        setLockedRoutePoints([[start.lat, start.lng], [end.lat, end.lng]]);
-      } finally {
-        isFetchingRouteRef.current = false;
-        setIsCalculatingRoute(false);
       }
+
+      if (fetchedPoints && fetchedPoints.length > 0) {
+        setLockedRoutePoints(fetchedPoints);
+      } else {
+        // Guaranteed fallback if all OSRM servers are offline
+        setLockedRoutePoints([[start.lat, start.lng], [end.lat, end.lng]]);
+      }
+
+      isFetchingRouteRef.current = false;
+      setIsCalculatingRoute(false);
     };
 
     if (lockedRoutePoints.length === 0) {
       // First route locking
-      fetchRoutePath(userLoc, navigatingQuest, travelMode);
+      fetchRoutePath(userLoc, endCoords, travelMode);
       return;
     }
 
@@ -378,7 +394,7 @@ export default function MapView({
           ? `🔄 تم الانحراف عن المسار بـ ${Math.round(currentDrift)}م.. جاري تحديث المسار!`
           : `🔄 Drifted ${Math.round(currentDrift)}m from path (>100m). Recalculating route!`
       );
-      fetchRoutePath(userLoc, navigatingQuest, travelMode);
+      fetchRoutePath(userLoc, endCoords, travelMode);
     }
   }, [userLoc?.lat, userLoc?.lng, navigatingQuest?.id, travelMode, lockedRoutePoints.length, gpsActive, getQuestCoords]);
 

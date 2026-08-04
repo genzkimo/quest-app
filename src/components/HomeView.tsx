@@ -140,8 +140,15 @@ export default function HomeView({
       return true;
     }
   });
-  const [activeStory, setActiveStory] = useState<QuestStory | null>(null);
-  const [storyTimer, setStoryTimer] = useState(100);
+  const [activeStoryGroup, setActiveStoryGroup] = useState<{
+    userKey: string;
+    user: string;
+    userAvatar: string;
+    userId?: string;
+    stories: QuestStory[];
+  } | null>(null);
+  const [activeStoryIndex, setActiveStoryIndex] = useState<number>(0);
+  const [storyTimer, setStoryTimer] = useState(0);
   const [selectedQuest, setSelectedQuest] = useState<Quest | null>(null);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [showKycBlocker, setShowKycBlocker] = useState(false);
@@ -415,34 +422,102 @@ export default function HomeView({
     { name: 'أخرى', ar: 'تصنيفات أخرى متنوعة', fr: 'Divers', en: 'Other' },
   ];
 
-  // Story disappearing progress simulation
+  // Group stories by user (Instagram style)
+  const userStoryGroups = React.useMemo(() => {
+    const groupsMap = new Map<string, {
+      userKey: string;
+      user: string;
+      userAvatar: string;
+      userId?: string;
+      stories: QuestStory[];
+    }>();
+
+    stories.forEach((story) => {
+      const userKey = (story.userId && story.userId !== 'mock') ? story.userId : story.user;
+      if (!groupsMap.has(userKey)) {
+        groupsMap.set(userKey, {
+          userKey,
+          user: story.user,
+          userAvatar: story.userAvatar || story.image,
+          userId: story.userId,
+          stories: [story]
+        });
+      } else {
+        groupsMap.get(userKey)!.stories.push(story);
+      }
+    });
+
+    return Array.from(groupsMap.values());
+  }, [stories]);
+
+  const activeStory = activeStoryGroup
+    ? (activeStoryGroup.stories[activeStoryIndex] || activeStoryGroup.stories[0])
+    : null;
+
+  const handleNextStoryInGroup = React.useCallback(() => {
+    if (!activeStoryGroup) return;
+    if (activeStoryIndex < activeStoryGroup.stories.length - 1) {
+      setActiveStoryIndex((prev) => prev + 1);
+      setStoryTimer(0);
+    } else {
+      const currentGroupIdx = userStoryGroups.findIndex((g) => g.userKey === activeStoryGroup.userKey);
+      if (currentGroupIdx !== -1 && currentGroupIdx < userStoryGroups.length - 1) {
+        const nextGroup = userStoryGroups[currentGroupIdx + 1];
+        setActiveStoryGroup(nextGroup);
+        setActiveStoryIndex(0);
+        setStoryTimer(0);
+      } else {
+        setActiveStoryGroup(null);
+        setActiveStoryIndex(0);
+        setStoryTimer(0);
+      }
+    }
+  }, [activeStoryGroup, activeStoryIndex, userStoryGroups]);
+
+  const handlePrevStoryInGroup = React.useCallback(() => {
+    if (!activeStoryGroup) return;
+    if (activeStoryIndex > 0) {
+      setActiveStoryIndex((prev) => prev - 1);
+      setStoryTimer(0);
+    } else {
+      const currentGroupIdx = userStoryGroups.findIndex((g) => g.userKey === activeStoryGroup.userKey);
+      if (currentGroupIdx > 0) {
+        const prevGroup = userStoryGroups[currentGroupIdx - 1];
+        setActiveStoryGroup(prevGroup);
+        setActiveStoryIndex(prevGroup.stories.length - 1);
+        setStoryTimer(0);
+      } else {
+        setActiveStoryGroup(null);
+        setActiveStoryIndex(0);
+        setStoryTimer(0);
+      }
+    }
+  }, [activeStoryGroup, activeStoryIndex, userStoryGroups]);
+
+  // Story progress timer simulation
   React.useEffect(() => {
     let interval: NodeJS.Timeout;
-    if (activeStory && !showDeleteConfirm) {
+    if (activeStoryGroup && activeStory && !showDeleteConfirm) {
       interval = setInterval(() => {
         setStoryTimer((prev) => {
-          if (prev <= 2) {
-            clearInterval(interval);
-            setTimeout(() => {
-              setActiveStory(null);
-            }, 0);
-            return 100;
+          if (prev >= 100) {
+            handleNextStoryInGroup();
+            return 0;
           }
-          return prev - 2;
+          return prev + 2;
         });
-      }, 120);
+      }, 100);
     }
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [activeStory, showDeleteConfirm]);
+  }, [activeStoryGroup, activeStory, showDeleteConfirm, handleNextStoryInGroup]);
 
   React.useEffect(() => {
-    if (activeStory) {
-      setStoryTimer(100);
+    if (activeStoryGroup) {
       setShowDeleteConfirm(false);
     }
-  }, [activeStory]);
+  }, [activeStoryGroup, activeStoryIndex]);
 
   const handleStoryUpload = () => {
     setIsCreatingStory(true);
@@ -698,7 +773,7 @@ export default function HomeView({
       : `📩 Reaction message sent directly to [${activeStory.user}] inbox!`
     );
     setStoryReactMsg('');
-    setActiveStory(null);
+    setActiveStoryGroup(null);
   };
 
   const handleStoryEmojiReact = (emoji: string) => {
@@ -707,7 +782,7 @@ export default function HomeView({
       ? `📩 تم إرسال تفاعل (${emoji}) للعامل [${activeStory.user}]!` 
       : `📩 Sent (${emoji}) reaction message to runner [${activeStory.user}]!`
     );
-    setActiveStory(null);
+    setActiveStoryGroup(null);
   };
 
   const filteredQuests = useMemo(() => {
@@ -885,43 +960,58 @@ export default function HomeView({
             </span>
           </button>
 
-          {/* Map mock and custom local stories */}
-          {stories.map(story => (
-            <button
-               key={story.id}
-               onClick={() => {
-                 if (onIncrementStoryView) {
-                   onIncrementStoryView(story.id);
-                 }
-                 setStoryViewsMap(prev => ({
-                   ...prev,
-                   [story.id]: (prev[story.id] || 0) + 1
-                 }));
-                 setActiveStory(story);
-               }}
-               className="flex flex-col items-center gap-1.5 focus:outline-none shrink-0 group cursor-pointer text-center"
-            >
-              <div className="relative">
-                {/* Glowing neon halo layout representation */}
-                <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-[#FF3B7C] via-[#FFD34D] to-[#4FC3F7] p-0.5 group-hover:scale-105 transition-all shadow-md group-hover:rotate-12 duration-300">
-                  <div className="w-full h-full bg-white rounded-full p-0.5">
-                    <img
-                      src={story.userAvatar || story.image}
-                      alt={story.user}
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full rounded-full object-cover"
-                    />
+          {/* Map Instagram style grouped user stories */}
+          {userStoryGroups.map(group => {
+            const firstStory = group.stories[0];
+            const storyCount = group.stories.length;
+
+            return (
+              <button
+                key={group.userKey}
+                onClick={() => {
+                  if (onIncrementStoryView && firstStory) {
+                    onIncrementStoryView(firstStory.id);
+                  }
+                  if (firstStory) {
+                    setStoryViewsMap(prev => ({
+                      ...prev,
+                      [firstStory.id]: (prev[firstStory.id] || 0) + 1
+                    }));
+                  }
+                  setActiveStoryGroup(group);
+                  setActiveStoryIndex(0);
+                  setStoryTimer(0);
+                }}
+                className="flex flex-col items-center gap-1.5 focus:outline-none shrink-0 group cursor-pointer text-center"
+              >
+                <div className="relative">
+                  {/* Glowing neon halo layout representation */}
+                  <div className={`w-16 h-16 rounded-full bg-gradient-to-tr from-[#FF3B7C] via-[#FFD34D] to-[#4FC3F7] p-0.5 group-hover:scale-105 transition-all shadow-md group-hover:rotate-12 duration-300 ${storyCount > 1 ? 'ring-2 ring-[#FF3B7C] ring-offset-2' : ''}`}>
+                    <div className="w-full h-full bg-white rounded-full p-0.5">
+                      <img
+                        src={group.userAvatar || (firstStory ? firstStory.userAvatar || firstStory.image : '')}
+                        alt={group.user}
+                        referrerPolicy="no-referrer"
+                        className="w-full h-full rounded-full object-cover"
+                      />
+                    </div>
                   </div>
+                  {storyCount > 1 ? (
+                    <span className="absolute -top-1 -right-1 bg-[#FF3B7C] text-white text-[9px] px-1.5 py-0.5 rounded-full font-black border-2 border-white shadow-sm">
+                      {storyCount}
+                    </span>
+                  ) : (
+                    <span className="absolute -bottom-1.5 right-1/2 translate-x-1/2 bg-[#FFD34D] text-[#1F2A44] text-[8px] px-2 py-0.5 rounded-full font-black border border-white shadow-sm flex items-center gap-0.5 scale-90 uppercase">
+                      Proof
+                    </span>
+                  )}
                 </div>
-                <span className="absolute -bottom-1.5 right-1/2 translate-x-1/2 bg-[#FFD34D] text-[#1F2A44] text-[8px] px-2 py-0.5 rounded-full font-black border border-white shadow-sm flex items-center gap-0.5 scale-90 uppercase">
-                  Proof
+                <span className="text-[10px] font-extrabold text-gray-700 max-w-[70px] truncate">
+                  {group.user}
                 </span>
-              </div>
-              <span className="text-[10px] font-extrabold text-gray-700 max-w-[70px] truncate">
-                {story.user}
-              </span>
-            </button>
-          ))}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -1521,7 +1611,7 @@ export default function HomeView({
 
       {/* DISAPPEARING STORIES OVERLAY VIEW MODAL (Gorgeous Instagram simulation with reaction boxes & progress lines) */}
       <AnimatePresence>
-        {activeStory && (
+        {activeStoryGroup && activeStory && (
           <div className="fixed inset-0 bg-[#1F2A44]/95 backdrop-blur-md z-50 flex items-center justify-center p-3 select-none">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
@@ -1538,22 +1628,67 @@ export default function HomeView({
               <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/90 via-black/40 to-transparent z-0"></div>
               <div className="absolute inset-x-0 bottom-0 h-44 bg-gradient-to-t from-black/90 via-black/40 to-transparent z-0"></div>
 
-              {/* Header Timer Progress Layout */}
-              <div className="relative z-10 w-full space-y-3">
-                <div className="w-full bg-white/20 h-1 rounded-full overflow-hidden">
-                  <div className="bg-gradient-to-r from-[#FF3B7C] to-[#FFD34D] h-full transition-all" style={{ width: `${storyTimer}%` }}></div>
+              {/* Tap Left / Right Zones for Instagram Story Navigation */}
+              <div 
+                className="absolute inset-y-20 left-0 w-1/3 z-20 cursor-pointer flex items-center justify-start pl-2 group" 
+                onClick={(e) => { e.stopPropagation(); handlePrevStoryInGroup(); }}
+              >
+                <div className="w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all font-black text-base select-none">
+                  ‹
+                </div>
+              </div>
+              <div 
+                className="absolute inset-y-20 right-0 w-1/3 z-20 cursor-pointer flex items-center justify-end pr-2 group" 
+                onClick={(e) => { e.stopPropagation(); handleNextStoryInGroup(); }}
+              >
+                <div className="w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all font-black text-base select-none">
+                  ›
+                </div>
+              </div>
+
+              {/* Header Timer Segment Progress Layout */}
+              <div className="relative z-30 w-full space-y-3">
+                <div className="flex gap-1.5 w-full">
+                  {activeStoryGroup.stories.map((s, idx) => {
+                    let widthPct = 0;
+                    if (idx < activeStoryIndex) widthPct = 100;
+                    else if (idx === activeStoryIndex) widthPct = storyTimer;
+                    else widthPct = 0;
+
+                    return (
+                      <div
+                        key={s.id || idx}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveStoryIndex(idx);
+                          setStoryTimer(0);
+                        }}
+                        className="flex-1 bg-white/30 h-1 rounded-full overflow-hidden cursor-pointer"
+                      >
+                        <div
+                          className="bg-gradient-to-r from-[#FF3B7C] to-[#FFD34D] h-full transition-all duration-100 ease-linear"
+                          style={{ width: `${widthPct}%` }}
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
 
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <img
-                      src={activeStory.userAvatar}
+                      src={activeStory.userAvatar || activeStoryGroup.userAvatar}
                       alt={activeStory.user}
                       className="w-9 h-9 rounded-full object-cover border-2 border-[#FFD34D]"
                     />
                     <div>
-                      <div className="text-white text-xs font-black flex items-center gap-1">
+                      <div className="text-white text-xs font-black flex items-center gap-1.5">
                         <span>{activeStory.user}</span>
+                        {activeStoryGroup.stories.length > 1 && (
+                          <span className="text-[10px] font-bold text-[#FFD34D] bg-white/10 px-1.5 py-0.5 rounded-full">
+                            {activeStoryIndex + 1}/{activeStoryGroup.stories.length}
+                          </span>
+                        )}
                         <span className="text-[#4FC3F7] font-black scale-90">✔</span>
                       </div>
                       <div className="text-gray-300 text-[9px] font-mono flex items-center gap-1.5 mt-0.5">
@@ -1571,9 +1706,10 @@ export default function HomeView({
                     <span className="text-[8px] bg-emerald-600 text-white font-black px-2 py-0.5 rounded uppercase tracking-wider">
                       Proof Uploaded
                     </span>
-                    {(activeStory.user === userProfile.name || userProfile.isAdmin || activeStory.id.startsWith('story-user-') || userProfile.role === 'admin') && (
+                    {((activeStory.userId && activeStory.userId === userProfile.id) || activeStory.user === userProfile.name || userProfile.isAdmin || userProfile.role === 'admin') && (
                       <button
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           setShowDeleteConfirm(true);
                         }}
                         className="text-white hover:text-rose-500 bg-rose-600/80 hover:bg-rose-600 p-1.5 rounded-full cursor-pointer flex items-center justify-center transition animate-pulse"
@@ -1583,7 +1719,10 @@ export default function HomeView({
                       </button>
                     )}
                     <button 
-                      onClick={() => setActiveStory(null)} 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveStoryGroup(null);
+                      }} 
                       className="text-white bg-black/40 hover:bg-black/60 p-1.5 rounded-full cursor-pointer"
                     >
                       <X className="w-4 h-4" />
@@ -1620,18 +1759,30 @@ export default function HomeView({
                         if (onDeleteStory && activeStory) {
                           onDeleteStory(activeStory.id)
                             .then(() => {
-                              setActiveStory(null);
-                              setShowDeleteConfirm(false);
                               showToast(lang === 'ar' ? '🗑️ تم حذف قصتك بنجاح!' : '🗑️ Your quest proof story deleted successfully!');
+                              setShowDeleteConfirm(false);
+                              const updatedStories = activeStoryGroup.stories.filter(s => s.id !== activeStory.id);
+                              if (updatedStories.length > 0) {
+                                const nextIdx = Math.min(activeStoryIndex, updatedStories.length - 1);
+                                setActiveStoryGroup({
+                                  ...activeStoryGroup,
+                                  stories: updatedStories
+                                });
+                                setActiveStoryIndex(nextIdx);
+                                setStoryTimer(0);
+                              } else {
+                                setActiveStoryGroup(null);
+                                setActiveStoryIndex(0);
+                              }
                             })
                             .catch((err) => {
                               console.error("Failed to delete story from DB:", err);
                               showToast(lang === 'ar' ? '⚠️ فشل حذف القصة!' : '⚠️ Failed to delete story!');
                             });
                         } else {
-                          setActiveStory(null);
+                          setActiveStoryGroup(null);
                           setShowDeleteConfirm(false);
-                          showToast(lang === 'ar' ? '🗑️ تم حذف قصتك بنجاح!' : '🗑️ Your quest proof story deleted successfully!');
+                          showToast(lang === 'ar' ? '🗑️ تم حذف قصتك بنجاح!' : '🗑️ Your story deleted!');
                         }
                       }}
                       className="w-full py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-black text-xs rounded-xl transition cursor-pointer shadow-lg active:scale-95 border-none"
@@ -1913,14 +2064,14 @@ export default function HomeView({
                             <input
                               id="story-file-uploader"
                               type="file"
-                              accept="image/*"
+                              accept="image/*,image/heic,image/heif,.heic,.heif"
                               onChange={handleImageFileChange}
                               className="hidden"
                             />
                             <input
                               id="story-camera-uploader"
                               type="file"
-                              accept="image/*"
+                              accept="image/*,image/heic,image/heif,.heic,.heif"
                               capture="environment"
                               onChange={handleImageFileChange}
                               className="hidden"

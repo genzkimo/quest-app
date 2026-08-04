@@ -20,6 +20,7 @@ import { auth, db, cleanData } from '../utils/firebase';
 import { UserProfile } from '../types';
 import QuestLogo from './QuestLogo';
 import { getDeviceLanguage } from '../utils/language';
+import { ALGERIA_WILAYAS } from '../data/algeriaData';
 
 interface AuthScreenProps {
   showToast: (msg: string) => void;
@@ -49,8 +50,20 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [country, setCountry] = useState('الجزائر');
-  const [stateName, setStateName] = useState('');
-  const [municipality, setMunicipality] = useState('');
+  const [selectedWilayaCode, setSelectedWilayaCode] = useState('16');
+  const defaultWilayaObj = ALGERIA_WILAYAS.find(w => w.code === '16') || ALGERIA_WILAYAS[15] || ALGERIA_WILAYAS[0];
+  const selectedWilaya = ALGERIA_WILAYAS.find(w => w.code === selectedWilayaCode) || defaultWilayaObj;
+  const [municipality, setMunicipality] = useState(selectedWilaya.communes[0] || 'الجزائر الوسطى');
+
+  const handleWilayaChange = (code: string) => {
+    setSelectedWilayaCode(code);
+    const w = ALGERIA_WILAYAS.find(item => item.code === code);
+    if (w && w.communes.length > 0) {
+      setMunicipality(w.communes[0]);
+    } else {
+      setMunicipality('');
+    }
+  };
 
   // UI labels based on language
   const isAr = lang === 'ar';
@@ -86,7 +99,7 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
     e.preventDefault();
     if (loading) return;
 
-    if (!firstName.trim() || !lastName.trim() || !stateName.trim() || !municipality.trim() || !email.trim() || !password.trim()) {
+    if (!firstName.trim() || !lastName.trim() || !municipality.trim() || !email.trim() || !password.trim()) {
       showToast(isAr ? '⚠️ يرجى ملء جميع الحقول المطلوبة لإنشاء حسابك!' : '⚠️ Please fill out all fields to create your account!');
       return;
     }
@@ -126,7 +139,7 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
         id: uid,
         name: `${firstName.trim()} ${lastName.trim()}`,
         phone: 'غير محدد',
-        city: `${country.trim()} - ${stateName.trim()} - ${municipality.trim()}`,
+        city: `${country.trim()} - ${selectedWilaya.nameAr} - ${municipality.trim()}`,
         avatar: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150`,
         questsCompleted: 0,
         questsCreated: 0,
@@ -420,21 +433,46 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
 
               <form onSubmit={handleLogin} className="space-y-4">
                 {authNotice === 'operation-not-allowed' && (
-                  <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 text-slate-800 space-y-3 mb-2 text-right shadow-sm">
+                  <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 text-slate-800 space-y-3 mb-3 text-right shadow-sm">
                     <div className="flex items-start gap-2.5">
                       <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-                      <div className="space-y-1">
+                      <div className="space-y-1.5">
                         <h4 className="font-extrabold text-xs text-amber-900">
-                          {isAr ? 'تسجيل الدخول بالبريد غير مفعّل في Firebase' : 'Email Sign-In is disabled in Firebase'}
+                          {isAr ? 'تفعيل البريد الإلكتروني في Firebase ⚙️' : 'Enable Email Auth in Firebase ⚙️'}
                         </h4>
                         <p className="text-[11px] font-medium text-amber-800 leading-relaxed">
                           {isAr
-                            ? 'المنصة تدعم الدخول الفوري عبر حساب Google المفعّل تلقائياً.'
-                            : 'Google Sign-In is enabled by default.'}
+                            ? 'خيار الدخول بالبريد مفصول حالياً في إعدادات Firebase Console. لتفعيله خلال 10 ثوانٍ:'
+                            : 'Email/Password sign-in is disabled in Firebase Console. To enable it:'}
                         </p>
+                        <ol className="text-[10px] font-bold text-amber-900 space-y-1 list-decimal pr-4">
+                          <li>
+                            {isAr
+                              ? 'افتَح لوحة تحكم Firebase (اضغط الزر أدناه).'
+                              : 'Open Firebase Console (button below).'}
+                          </li>
+                          <li>
+                            {isAr
+                              ? 'اختر Email/Password من قائمة موفري الخدمة (Sign-in providers).'
+                              : 'Select Email/Password from Sign-in providers.'}
+                          </li>
+                          <li>
+                            {isAr
+                              ? 'قم بتفعيل خيار Enable ثم اضغط Save.'
+                              : 'Toggle Enable switch and click Save.'}
+                          </li>
+                        </ol>
                       </div>
                     </div>
-                    <div className="flex flex-col gap-2 pt-1">
+                    <div className="flex flex-col gap-2 pt-1 border-t border-amber-200/60">
+                      <a
+                        href="https://console.firebase.google.com/project/sublime-falcon-m7k72/authentication/providers"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-extrabold rounded-xl text-xs shadow transition flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <span>{isAr ? '🔗 فتح لوحة تحكم Firebase لتفعيل البريد' : '🔗 Open Firebase Console to Enable Email Auth'}</span>
+                      </a>
                       <button
                         type="button"
                         onClick={() => {
@@ -450,7 +488,7 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
                           <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22c-.62-.57-1.02-1.34-1.21-2.18v-.45z" fill="#FFF" />
                           <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#FFF" />
                         </svg>
-                        <span>{isAr ? '🚀 الدخول الفوري بـ Google' : '🚀 One-Click Google Sign-In'}</span>
+                        <span>{isAr ? '🚀 أو الدخول المباشر بـ Google' : '🚀 Or One-Click Google Sign-In'}</span>
                       </button>
                     </div>
                   </div>
@@ -592,21 +630,46 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
 
               <form onSubmit={handleCreateAccount} className="space-y-3.5">
                 {authNotice === 'operation-not-allowed' && (
-                  <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 text-slate-800 space-y-3 mb-2 text-right shadow-sm">
+                  <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 text-slate-800 space-y-3 mb-3 text-right shadow-sm">
                     <div className="flex items-start gap-2.5">
                       <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-                      <div className="space-y-1">
+                      <div className="space-y-1.5">
                         <h4 className="font-extrabold text-xs text-amber-900">
-                          {isAr ? 'إنشاء الحساب بالبريد غير مفعّل في Firebase' : 'Email Sign-Up is disabled in Firebase'}
+                          {isAr ? 'تفعيل البريد الإلكتروني في Firebase ⚙️' : 'Enable Email Auth in Firebase ⚙️'}
                         </h4>
                         <p className="text-[11px] font-medium text-amber-800 leading-relaxed">
                           {isAr
-                            ? 'يمكنك إنشاء حساب والدخول فوراً بضغطة زر واحدة عبر Google.'
-                            : 'You can register and sign in instantly using Google Account.'}
+                            ? 'خيار التسجيل بالبريد مفصول حالياً في إعدادات Firebase Console. لتفعيله خلال 10 ثوانٍ:'
+                            : 'Email/Password sign-up is disabled in Firebase Console. To enable it:'}
                         </p>
+                        <ol className="text-[10px] font-bold text-amber-900 space-y-1 list-decimal pr-4">
+                          <li>
+                            {isAr
+                              ? 'افتَح لوحة تحكم Firebase (اضغط الزر أدناه).'
+                              : 'Open Firebase Console (button below).'}
+                          </li>
+                          <li>
+                            {isAr
+                              ? 'اختر Email/Password من قائمة موفري الخدمة (Sign-in providers).'
+                              : 'Select Email/Password from Sign-in providers.'}
+                          </li>
+                          <li>
+                            {isAr
+                              ? 'قم بتفعيل خيار Enable ثم اضغط Save.'
+                              : 'Toggle Enable switch and click Save.'}
+                          </li>
+                        </ol>
                       </div>
                     </div>
-                    <div className="flex flex-col gap-2 pt-1">
+                    <div className="flex flex-col gap-2 pt-1 border-t border-amber-200/60">
+                      <a
+                        href="https://console.firebase.google.com/project/sublime-falcon-m7k72/authentication/providers"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-extrabold rounded-xl text-xs shadow transition flex items-center justify-center gap-2 cursor-pointer text-center"
+                      >
+                        <span>{isAr ? '🔗 فتح لوحة تحكم Firebase لتفعيل البريد' : '🔗 Open Firebase Console to Enable Email Auth'}</span>
+                      </a>
                       <button
                         type="button"
                         onClick={() => {
@@ -619,8 +682,8 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
                         <svg className="w-4 h-4" viewBox="0 0 24 24">
                           <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#FFF" />
                           <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#FFF" />
-                          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22c-.62-.57-1.02-1.34-1.21-2.18v-.45z" fill="#FFF" />
-                          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#FFF" />
+                          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22c-.62-.57-1.02-1.34-1.21-2.18v-.45z" fill="#FBBC05" />
+                          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
                         </svg>
                         <span>{isAr ? '🚀 التسجيل والدخول المباشر بـ Google' : '🚀 Instant Google Sign-Up & Login'}</span>
                       </button>
@@ -656,38 +719,42 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
                 {/* Residence Structure */}
                 <div className="space-y-1.5 text-right bg-slate-50/50 p-2.5 border border-slate-100 rounded-2xl">
                   <h3 className="text-[9px] text-slate-400 font-black uppercase mb-1 flex items-center justify-end gap-1">
-                    <span>{isAr ? 'مكان الإقامة (الجزائر بالكامل) 📍' : 'City Residence Info 📍'}</span>
+                    <span>{isAr ? 'مكان الإقامة (الولاية والبلدية) 📍' : 'City Residence Info 📍'}</span>
                     <MapPin className="w-3 h-3 text-[#FC0D82]" />
                   </h3>
                   
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
-                      <input
-                        type="text"
+                      <label className="text-[9px] font-extrabold text-slate-500 block text-right">
+                        {isAr ? 'البلدية' : 'Commune'}
+                      </label>
+                      <select
                         value={municipality}
                         onChange={(e) => setMunicipality(e.target.value)}
-                        placeholder={isAr ? 'البلدية' : 'Commune'}
-                        required
-                        className="w-full px-2 py-2 bg-white border border-slate-100 rounded-xl text-[11px] font-bold text-slate-800 outline-none text-center"
-                      />
+                        className="w-full px-2 py-2 bg-white border border-slate-200 rounded-xl text-[11px] font-bold text-slate-800 outline-none focus:border-[#FC0D82] text-right cursor-pointer"
+                      >
+                        {selectedWilaya.communes.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <div className="space-y-1">
-                      <input
-                        type="text"
-                        value={stateName}
-                        onChange={(e) => setStateName(e.target.value)}
-                        placeholder={isAr ? 'الولاية' : 'State'}
-                        required
-                        className="w-full px-2 py-2 bg-white border border-slate-100 rounded-xl text-[11px] font-bold text-slate-800 outline-none text-center"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <input
-                        type="text"
-                        value={country}
-                        disabled
-                        className="w-full px-2 py-2 bg-slate-100 border border-slate-100 rounded-xl text-[11px] font-bold text-slate-400 text-center"
-                      />
+                      <label className="text-[9px] font-extrabold text-slate-500 block text-right">
+                        {isAr ? 'الولاية' : 'Wilaya'}
+                      </label>
+                      <select
+                        value={selectedWilayaCode}
+                        onChange={(e) => handleWilayaChange(e.target.value)}
+                        className="w-full px-2 py-2 bg-white border border-slate-200 rounded-xl text-[11px] font-bold text-slate-800 outline-none focus:border-[#FC0D82] text-right cursor-pointer"
+                      >
+                        {ALGERIA_WILAYAS.map((w) => (
+                          <option key={w.code} value={w.code}>
+                            {isAr ? w.nameAr : w.nameFr}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </div>
                 </div>

@@ -32,6 +32,7 @@ import PullToRefresh from './PullToRefresh';
 import { translations } from '../data/translations';
 import { formatArabicDate } from '../utils/dateFormatter';
 import { compressImage } from '../utils/imageCompressor';
+import { Geolocator } from '../utils/geolocator';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { storage, db, auth, handleFirestoreError, OperationType } from '../utils/firebase';
 import { doc, getDoc, setDoc, onSnapshot, collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
@@ -272,39 +273,35 @@ export default function MyQuestsView({
   const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [gpsLoading, setGpsLoading] = useState(false);
 
-  const handleAutoTagLocation = () => {
+  const handleAutoTagLocation = async () => {
     if (!navigator.geolocation) {
       showToast(lang === 'ar' ? '⚠️ تحديد الموقع غير مدعوم في متصفحك!' : '⚠️ Geolocation is not supported by your browser!');
       return;
     }
     setGpsLoading(true);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const coords = {
-          lat: position.coords.latitude,
-          lng: position.coords.longitude
-        };
-        setGpsCoords(coords);
-        setGpsLoading(false);
-        setNewLoc(`Lat: ${coords.lat.toFixed(5)}, Lng: ${coords.lng.toFixed(5)}`);
-        showToast(lang === 'ar' ? '🎯 تم تحديد ونشاط رمز إحداثيات GPS بنجاح!' : '🎯 GPS location coordinates tagged successfully!');
-      },
-      (error) => {
-        console.warn(error);
-        setGpsLoading(false);
-        setGpsCoords(null);
-        setNewLoc('');
-        showToast(lang === 'ar' 
-          ? "⚠️ شغل gps وفقك"
-          : "⚠️ Please turn on your GPS"
-        );
-      },
-      { 
-        enableHighAccuracy: true, // Demands pure physical GPS hardware sensors
-        timeout: 15000, 
-        maximumAge: 0 // Disable cached network IP location entirely (always false caching)
-      }
-    );
+    showToast(lang === 'ar' ? '⏳ جاري فحص ومعايرة دقة موقع الـ GPS (5 ثوانٍ)...' : '⏳ Calibrating precise GPS location (5s)...');
+
+    try {
+      const accurate = await Geolocator.getAccuratePhysicalLocation();
+      const coords = {
+        lat: accurate.lat,
+        lng: accurate.lng
+      };
+      setGpsCoords(coords);
+      setNewLoc(`Lat: ${coords.lat.toFixed(5)}, Lng: ${coords.lng.toFixed(5)}`);
+      showToast(
+        lang === 'ar'
+          ? `🎯 تم التقاط الموقع بدقة عالية (±${Math.round(accurate.accuracy)}م)!`
+          : `🎯 GPS location tagged with high precision (±${Math.round(accurate.accuracy)}m)!`
+      );
+    } catch (error) {
+      console.warn("GPS tagging error:", error);
+      setGpsCoords(null);
+      setNewLoc('');
+      showToast(lang === 'ar' ? "⚠️ يرجي التأكد من شغل الـ GPS والسماح بالموقع" : "⚠️ Please turn on your GPS and allow location access");
+    } finally {
+      setGpsLoading(false);
+    }
   };
 
   // Refs for native Gallery-only input selectors
@@ -509,7 +506,7 @@ export default function MyQuestsView({
       location: locString,
       category: newCat,
       cashReward: Number(newCash),
-      bookingFeeTokens: Math.max(50, Math.round(Number(newCash) * 0.10)),
+      bookingFeeDA: Math.max(50, Math.round(Number(newCash) * 0.10)),
       urgency: newUrgency,
       lat,
       lng,
@@ -855,7 +852,7 @@ export default function MyQuestsView({
 
                             <button
                               onClick={() => {
-                                const refundAmount = Math.round(quest.bookingFeeTokens * 0.30);
+                                const refundAmount = Math.round(quest.bookingFeeDA * 0.30);
                                 onCancelBookedQuest(quest.id, refundAmount);
                               }}
                               className="flex-1 bg-white hover:bg-rose-50 text-rose-600 border border-rose-100 hover:border-rose-200 font-bold text-xs py-2.5 rounded-2xl transition duration-200 cursor-pointer flex items-center justify-center gap-1"
@@ -1398,14 +1395,14 @@ export default function MyQuestsView({
                 type="file" 
                 id="helper-proof-picker"
                 ref={proofInputRef}
-                accept="image/*"
+                accept="image/*,image/heic,image/heif,.heic,.heif"
                 className="hidden"
                 onChange={handleHelperFileChange}
               />
               <input 
                 type="file" 
                 id="helper-proof-camera-picker"
-                accept="image/*"
+                accept="image/*,image/heic,image/heif,.heic,.heif"
                 capture="environment"
                 className="hidden"
                 onChange={handleHelperFileChange}
@@ -1905,14 +1902,14 @@ export default function MyQuestsView({
                             id="contract-image-picker"
                             ref={contractInputRef}
                             multiple
-                            accept="image/*"
+                            accept="image/*,image/heic,image/heif,.heic,.heif"
                             className="hidden"
                             onChange={handleContractFileChange}
                           />
                           <input 
                             type="file" 
                             id="contract-camera-picker"
-                            accept="image/*"
+                            accept="image/*,image/heic,image/heif,.heic,.heif"
                             capture="environment"
                             className="hidden"
                             onChange={handleContractFileChange}

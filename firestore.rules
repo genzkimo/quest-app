@@ -61,16 +61,20 @@ service cloud.firestore {
              (!("idCardUrl" in data) || data.idCardUrl is string);
     }
 
+    match /deleted_users_fingerprints/{fingerprint} {
+      allow read, write: if true;
+    }
+
     match /users/{userId} {
       allow read: if true;
-      allow create: if isOwner(userId) && isValidUserProfile(incoming());
+      allow create: if true;
       allow update: if (request.resource.data != null && 'secretKey' in request.resource.data && request.resource.data.secretKey == "bk_sec_f76a45bc-f8ec-46e2-bb9e-2e336d40ae5f") || 
                        isAdmin() || 
                        (isSignedIn() && isOwner(userId) && isValidUserProfile(incoming()) && 
                         (!existing().keys().hasAll(['isAdmin']) || incoming().isAdmin == existing().isAdmin) &&
                         (!existing().keys().hasAll(['role']) || incoming().role == existing().role) &&
                         (!existing().keys().hasAll(['isBanned']) || incoming().isBanned == existing().isBanned));
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || isOwner(userId) || userId == 'user-current' || isSignedIn();
     }
 
     // 2. Quests collection

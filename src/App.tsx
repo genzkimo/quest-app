@@ -28,7 +28,6 @@ import MapView from './components/MapView';
 import LeaderboardView from './components/LeaderboardView';
 import MyQuestsView from './components/MyQuestsView';
 import ProfileView from './components/ProfileView';
-
 import PublicProfileView from './components/PublicProfileView';
 import ReciprocalRatingModal from './components/ReciprocalRatingModal';
 import NotificationScreen, { NotificationDoc } from './components/NotificationScreen';
@@ -37,6 +36,8 @@ import UnifiedQuestCard from './components/UnifiedQuestCard';
 import QuestDetailScreen from './components/QuestDetailScreen';
 import GlobalCreateQuestModal from './components/GlobalCreateQuestModal';
 import TermsConsentModal from './components/TermsConsentModal';
+import OnboardingModal from './components/OnboardingModal';
+import SmartContextualGuide from './components/SmartContextualGuide';
 import { motion, AnimatePresence } from 'motion/react';
 import { Geolocator } from './utils/geolocator';
 import { calculateBookingFee } from './utils/fee';
@@ -51,6 +52,16 @@ const generateShortId = () => {
     result += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return result;
+};
+
+const hashString = (str: string): string => {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(36);
 };
 
 export default function App() {
@@ -111,6 +122,7 @@ export default function App() {
   const [showGlobalCreateQuest, setShowGlobalCreateQuest] = useState<boolean>(false);
   const [globalQuestDetailId, setGlobalQuestDetailId] = useState<string | null>(null);
   const [showTermsConsentModal, setShowTermsConsentModal] = useState<boolean>(false);
+  const [showOnboardingModal, setShowOnboardingModal] = useState<boolean>(false);
   const [navigationHistory, setNavigationHistory] = useState<{ view: ViewState; questDetailId: string | null; selectedPublicProfileId: string | null }[]>([]);
 
   // State variables for the instant payment-before-evaluation safety/lock system
@@ -157,6 +169,17 @@ export default function App() {
       }
     }
   }, [userProfile?.id, userProfile?.termsAccepted, authenticatedUser]);
+
+  // First time login Onboarding check (Location + Phone + App Feature Hints)
+  useEffect(() => {
+    if (userProfile && authenticatedUser && !showTermsConsentModal) {
+      const localCompleted = localStorage.getItem('onboarding_completed_' + userProfile.id);
+      const isMissingInfo = !userProfile.phone || userProfile.phone === 'غير محدد' || !userProfile.city || userProfile.city === 'Alger' || userProfile.city.trim() === '';
+      if (!userProfile.hasCompletedOnboarding && (localCompleted !== 'true' || isMissingInfo)) {
+        setShowOnboardingModal(true);
+      }
+    }
+  }, [userProfile?.id, userProfile?.hasCompletedOnboarding, userProfile?.phone, userProfile?.city, authenticatedUser, showTermsConsentModal]);
 
   // Auto-heal / Auto-claim +700 KYC reward tokens if account is verified but reward not marked claimed
   useEffect(() => {
@@ -345,7 +368,21 @@ export default function App() {
   };
   
   // Real-time hardware GPS level tracking coordinates
-  const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(null);
+  const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(() => Geolocator.getCachedLocation());
+
+  useEffect(() => {
+    if (!userLoc && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          setUserLoc(coords);
+          Geolocator.saveCachedLocation(coords.lat, coords.lng);
+        },
+        (err) => console.warn("App GPS auto-init warning:", err),
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+      );
+    }
+  }, []);
 
   // Quest Cleanup, Expiration & Extension System task loop
   useEffect(() => {
@@ -741,18 +778,53 @@ export default function App() {
             }
           }
         } else {
+          // Check for archived points & stats if user previously deleted their account and returned
+          let restoredPoints = 0;
+          let restoredTokenBalance = 300;
+          let restoredQuestsCompleted = 0;
+          let restoredRating = 5.0;
+          let restoredLevel = 1;
+
+          try {
+            // 1. Check archive by UID
+            const uidArchiveRef = doc(db, 'deleted_users_fingerprints', 'uid_' + firebaseUser.uid);
+            const uidSnap = await getDoc(uidArchiveRef);
+            let archiveData = uidSnap.exists() ? uidSnap.data() : null;
+
+            // 2. Check archive by email
+            if (!archiveData && normEmail) {
+              const emailHash = hashString(normEmail);
+              const emailArchiveRef = doc(db, 'deleted_users_fingerprints', 'email_' + emailHash);
+              const emailSnap = await getDoc(emailArchiveRef);
+              if (emailSnap.exists()) {
+                archiveData = emailSnap.data();
+              }
+            }
+
+            if (archiveData) {
+              restoredPoints = Number(archiveData.totalPoints) || 0;
+              restoredTokenBalance = Number(archiveData.tokenBalance) ?? 300;
+              restoredQuestsCompleted = Number(archiveData.questsCompleted) || 0;
+              restoredRating = Number(archiveData.rating) || 5.0;
+              restoredLevel = Number(archiveData.level) || 1;
+              console.log("Restored points and stats for returning user:", archiveData);
+            }
+          } catch (archErr) {
+            console.warn("Could not check archived stats for returning user:", archErr);
+          }
+
           profileToUse = {
             id: firebaseUser.uid,
             name: firebaseUser.displayName || 'صياد كويست',
             phone: firebaseUser.phoneNumber || '',
             city: '',
             avatar: firebaseUser.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-            questsCompleted: 0,
+            questsCompleted: restoredQuestsCompleted,
             questsCreated: 0,
-            totalPoints: 0,
-            tokenBalance: 300,
-            rating: 5.0,
-            level: 1,
+            totalPoints: restoredPoints,
+            tokenBalance: restoredTokenBalance,
+            rating: restoredRating,
+            level: restoredLevel,
             idVerificationStatus: 'unverified',
             kycRewardClaimed: false,
             completedQuestsIds: [],
@@ -1765,7 +1837,19 @@ export default function App() {
 
   const handleDeleteStory = async (storyId: string) => {
     try {
+      const targetStory = stories.find(s => s.id === storyId);
+      if (targetStory) {
+        const isOwner = (targetStory.userId && targetStory.userId === userProfile?.id) ||
+                        (targetStory.user && targetStory.user === userProfile?.name) ||
+                        userProfile?.isAdmin ||
+                        userProfile?.role === 'admin';
+        if (!isOwner) {
+          showToast(isAr ? '⚠️ لا يمكنك حذف قصة لا تملكها' : '⚠️ You can only delete your own story');
+          return;
+        }
+      }
       await deleteDoc(doc(db, 'stories', storyId));
+      setStories(prev => prev.filter(s => s.id !== storyId));
     } catch (e) {
       handleFirestoreError(e, OperationType.WRITE, `stories/${storyId}`);
     }
@@ -2321,7 +2405,7 @@ export default function App() {
 
     // Increase user point balance, quests completed numbers, ratings and level calculations
     // Shift primary XP from static tasks to active Quest completion expenditures: Multiply booking fee tokens * 3
-    const questTokensCost = targetQuest.bookingFeeTokens || targetQuest.requiredTokens || calculateBookingFee(targetQuest.cashReward || 1000);
+    const questTokensCost = targetQuest.bookingFeeDA || targetQuest.requiredDA || calculateBookingFee(targetQuest.cashReward || 1000);
     const dynamicXPReward = questTokensCost * 3;
     const updatedPoints = userProfile.totalPoints + dynamicXPReward;
     const updatedCompletedQuestsCount = userProfile.questsCompleted + 1;
@@ -2395,8 +2479,8 @@ export default function App() {
   const handleCancelBookedQuest = (questId: string, refundedTokens: number) => {
     const targetQuest = quests.find(q => q.id === questId);
     const refundRate = 0.30;
-    const finalRefundTokens = targetQuest 
-      ? Math.round(targetQuest.bookingFeeTokens * refundRate) 
+    const finalRefundDA = targetQuest 
+      ? Math.round(targetQuest.bookingFeeDA * refundRate) 
       : Math.round(refundedTokens);
 
     const updatedQuests = quests.map(q => {
@@ -2415,12 +2499,12 @@ export default function App() {
 
     syncProfile({
       ...userProfile,
-      tokenBalance: userProfile.tokenBalance + finalRefundTokens
+      tokenBalance: userProfile.tokenBalance + finalRefundDA
     });
 
     showToast(userProfile.language === 'ar' 
-      ? `تم إلغاء الحجز بنجاح! تم إعادة 30% بقيمة (${finalRefundTokens} د.ج) لرصيد محفظتك.`
-      : `Quest booking canceled. Refunded 30% (${finalRefundTokens} DA) to your wallet balance.`
+      ? `تم إلغاء الحجز بنجاح! تم إعادة 30% بقيمة (${finalRefundDA} د.ج) لرصيد محفظتك.`
+      : `Quest booking canceled. Refunded 30% (${finalRefundDA} DA) to your wallet balance.`
     );
   };
 
@@ -2507,7 +2591,7 @@ export default function App() {
     const finalComment = comment || (userProfile && userProfile.lang === 'ar' ? 'عمل ممتاز وسريع للغاية! شكراً جزيلاً.' : 'Excellent work, fast and professional! Highly recommended.');
     const helperId = targetQuest.helperId || targetQuest.assignedRunnerId || (targetQuest.assignedRunnerIds && targetQuest.assignedRunnerIds[0]) || 'leader-1';
     const helperName = targetQuest.helperName || 'رشيد بن علي';
-    const rewardTokens = targetQuest.cashReward || 1000;
+    const rewardDA = targetQuest.cashReward || 1000;
 
     const newReview: HunterReview = {
       reviewId: `rev-${questId}`,
@@ -2530,7 +2614,7 @@ export default function App() {
       const averageRating = myReviews.reduce((sum, r) => sum + r.rating, 0) / myReviews.length;
       
       // Shift primary XP from static tasks to active Quest completion expenditures: Multiply booking fee tokens * 3
-      const questTokensCost = targetQuest.bookingFeeTokens || targetQuest.requiredTokens || calculateBookingFee(targetQuest.cashReward || 1000);
+      const questTokensCost = targetQuest.bookingFeeDA || targetQuest.requiredDA || calculateBookingFee(targetQuest.cashReward || 1000);
       const dynamicXPReward = questTokensCost * 3;
       const updatedPoints = userProfile.totalPoints + dynamicXPReward;
       const updatedCompletedQuestsCount = userProfile.questsCompleted + 1;
@@ -2553,7 +2637,7 @@ export default function App() {
         ...userProfile,
         rating: Number(averageRating.toFixed(1)),
         totalPoints: updatedPoints,
-        tokenBalance: userProfile.tokenBalance + rewardTokens,
+        tokenBalance: userProfile.tokenBalance + rewardDA,
         questsCompleted: updatedCompletedQuestsCount,
         level: calculatedLevel,
         completedQuestsIds: storedCompletedIds,
@@ -2568,7 +2652,7 @@ export default function App() {
           return {
             ...leader,
             points: leader.points + targetQuest.pointsReward,
-            tokenBalance: (leader.tokenBalance || 0) + rewardTokens,
+            tokenBalance: (leader.tokenBalance || 0) + rewardDA,
             questsCompleted: leader.questsCompleted + 1,
             rating: Number(averageRating.toFixed(1))
           };
@@ -2586,14 +2670,14 @@ export default function App() {
         if (targetLeader) {
           const currentPts = targetLeader.points || 0;
           const currentCount = targetLeader.questsCompleted || 0;
-          const currentTokens = targetLeader.tokenBalance || 0;
+          const currentDA = targetLeader.tokenBalance || 0;
           const newPts = currentPts + addedPts;
           const newCount = currentCount + 1;
-          const newTokens = currentTokens + rewardTokens;
+          const newDA = currentDA + rewardDA;
           
           setDoc(helperRef, {
             totalPoints: newPts,
-            tokenBalance: newTokens,
+            tokenBalance: newDA,
             questsCompleted: newCount,
             level: calculateLevelForPoints(newPts)
           }, { merge: true }).catch(err => {
@@ -2619,7 +2703,7 @@ export default function App() {
         category: newQuestData.category || 'أخرى',
         cashReward: newQuestData.cashReward || 50,
         pointsReward: newQuestData.pointsReward || 150,
-        bookingFeeTokens: calculateBookingFee(newQuestData.cashReward || 1000),
+        bookingFeeDA: calculateBookingFee(newQuestData.cashReward || 1000),
         urgency: newQuestData.urgency || 'normal',
         createdAt: new Date().toISOString(),
         status: 'open',
@@ -2792,7 +2876,7 @@ export default function App() {
   };
 
   // Token Refill Top-up simulation
-  const handleTopUpTokens = (amount: number) => {
+  const handleTopUpDA = (amount: number) => {
     if (!userProfile) return;
     syncProfile({
       ...userProfile,
@@ -2845,7 +2929,7 @@ export default function App() {
         unlockedBadgeIds: updatedBadges,
       });
       if (!alreadyClaimed) {
-        showToast('Approved user KYC identity! Extra 700 Quest Tokens bonus & Verified Badge unlocked successfully! ⚡🛡️');
+        showToast('Approved user KYC identity! Extra 700 DA bonus & Verified Badge unlocked successfully! ⚡🛡️');
       } else {
         showToast('Approved user KYC identity! Verified Badge unlocked successfully! 🛡️');
       }
@@ -3816,7 +3900,7 @@ export default function App() {
                     badges={badges}
                     lang={userProfile.language}
                     onUpdateProfile={handleUpdateProfile}
-                    onTopUpTokens={handleTopUpTokens}
+                    onTopUpTokens={handleTopUpDA}
                     onSubmitKYC={handleSubmitKyc}
                     showToast={showToast}
                     hunterReviews={hunterReviews}
@@ -4095,6 +4179,28 @@ export default function App() {
         onAccept={handleAcceptTerms}
         lang={userProfile?.language || getDeviceLanguage()}
       />
+
+      {/* 🚀 First-Time Login Onboarding Modal (Step 1 Phone, Step 2 Location with Wilaya & Communes) */}
+      {showOnboardingModal && userProfile && (
+        <OnboardingModal
+          userProfile={userProfile}
+          lang={userProfile.language || 'ar'}
+          onSaveProfile={(updated) => syncProfile({ ...userProfile, ...updated })}
+          showToast={showToast}
+          onClose={() => setShowOnboardingModal(false)}
+        />
+      )}
+
+      {/* 💡 Smart Step-by-Step Contextual Hints Guide */}
+      {authenticatedUser && userProfile && !showTermsConsentModal && !showOnboardingModal && (
+        <SmartContextualGuide
+          currentView={currentView}
+          lang={userProfile.language || 'ar'}
+          userId={userProfile.id}
+          onNavigate={(v) => setCurrentView(v as ViewState)}
+          onOpenCreateQuest={() => setShowGlobalCreateQuest(true)}
+        />
+      )}
 
     </div>
   );

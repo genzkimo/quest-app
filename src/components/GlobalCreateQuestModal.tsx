@@ -28,6 +28,7 @@ import { calculateBookingFee } from '../utils/fee';
 import { motion, AnimatePresence } from 'motion/react';
 import { translations } from '../data/translations';
 import { compressImage } from '../utils/imageCompressor';
+import { Geolocator } from '../utils/geolocator';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { storage } from '../utils/firebase';
 
@@ -130,6 +131,7 @@ export default function GlobalCreateQuestModal({
   const [requiredWorkers, setRequiredWorkers] = useState<number>(1);
   const [images, setImages] = useState<string[]>([]);
   const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [gpsAccuracyInfo, setGpsAccuracyInfo] = useState<string>('');
 
   // Status indicators
   const [gpsLoading, setGpsLoading] = useState(false);
@@ -162,38 +164,47 @@ export default function GlobalCreateQuestModal({
       setRequiredWorkers(1);
       setImages([]);
       setGpsCoords(null);
+      setGpsAccuracyInfo('');
     }
   }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const handleAutoGPS = () => {
+  const handleAutoGPS = async () => {
     playSound();
     if (!navigator.geolocation) {
       alert(lang === 'ar' ? '⚠️ تحديد الموقع غير مدعوم في متصفحك!' : '⚠️ Geolocation not supported!');
       return;
     }
     setGpsLoading(true);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setGpsCoords({
-          lat: position.coords.latitude,
-          lng: position.coords.longitude
-        });
-        setGpsLoading(false);
-      },
-      (err) => {
-        console.warn("GPS Warning:", err);
-        setGpsCoords(null);
-        setGpsLoading(false);
-        alert(lang === 'ar' ? '⚠️ شغل gps وفقك' : '⚠️ Please turn on your GPS');
-      },
-      { 
-        enableHighAccuracy: true, // Demands pure physical GPS hardware sensors
-        timeout: 15000, 
-        maximumAge: 0 // Disable cached network IP location entirely (always false caching)
-      }
-    );
+    setGpsAccuracyInfo(lang === 'ar' ? 'جاري الفحص والمعايرة العالية (5 ثوانٍ)...' : 'Calibrating high precision (5s)...');
+
+    try {
+      const accurate = await Geolocator.getAccuratePhysicalLocation((sampleCount, bestAcc) => {
+        setGpsAccuracyInfo(
+          lang === 'ar'
+            ? `جاري معايرة الدقة... عينات: ${sampleCount} • أفضل دقة: ±${Math.round(bestAcc)}م`
+            : `Calibrating precision... Samples: ${sampleCount} • Best accuracy: ±${Math.round(bestAcc)}m`
+        );
+      });
+
+      setGpsCoords({
+        lat: accurate.lat,
+        lng: accurate.lng
+      });
+      setGpsAccuracyInfo(
+        lang === 'ar'
+          ? `🎯 تمت معايرة الموقع بدقة فائقة (±${Math.round(accurate.accuracy)}م)`
+          : `🎯 Calibrated high precision location (±${Math.round(accurate.accuracy)}m)`
+      );
+    } catch (err) {
+      console.warn("GPS Calibration Warning:", err);
+      setGpsCoords(null);
+      setGpsAccuracyInfo('');
+      alert(lang === 'ar' ? '⚠️ يرجى تفعيل الـ GPS والتأكد من السماح بالوصول للموقع' : '⚠️ Please enable GPS and allow location access');
+    } finally {
+      setGpsLoading(false);
+    }
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -458,11 +469,23 @@ export default function GlobalCreateQuestModal({
                         <p className="text-xs font-mono font-bold text-gray-300">
                           {gpsCoords.lat.toFixed(6)}, {gpsCoords.lng.toFixed(6)}
                         </p>
+                        {gpsAccuracyInfo && (
+                          <p className="text-[11px] font-bold text-emerald-400/90 bg-emerald-500/10 px-2.5 py-1 rounded-md inline-block">
+                            {gpsAccuracyInfo}
+                          </p>
+                        )}
                       </div>
                     ) : (
-                      <p className="text-xs text-gray-400 font-bold">
-                        {lang === 'ar' ? 'لم يتم التقاط أي إحداثيات حتى الآن' : 'No coordinate tagged yet'}
-                      </p>
+                      <div className="space-y-1">
+                        <p className="text-xs text-gray-400 font-bold">
+                          {lang === 'ar' ? 'لم يتم التقاط أي إحداثيات حتى الآن' : 'No coordinate tagged yet'}
+                        </p>
+                        {gpsAccuracyInfo && (
+                          <p className="text-[11px] text-amber-400 font-bold animate-pulse">
+                            {gpsAccuracyInfo}
+                          </p>
+                        )}
+                      </div>
                     )}
 
                     <button
@@ -778,7 +801,7 @@ export default function GlobalCreateQuestModal({
                       id="global-image-picker"
                       ref={fileInputRef}
                       multiple
-                      accept="image/*"
+                      accept="image/*,image/heic,image/heif,.heic,.heif"
                       className="hidden"
                       onChange={handleFileChange}
                     />
@@ -786,7 +809,7 @@ export default function GlobalCreateQuestModal({
                       type="file"
                       id="global-camera-picker"
                       ref={cameraInputRef}
-                      accept="image/*"
+                      accept="image/*,image/heic,image/heif,.heic,.heif"
                       capture="environment"
                       className="hidden"
                       onChange={handleFileChange}

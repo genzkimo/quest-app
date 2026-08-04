@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, MapPin, Shield, Zap, Award, MessageSquare, Navigation, CheckCircle2, Trash, Edit, Lock } from 'lucide-react';
 import { Quest, UserProfile } from '../types';
 import { formatArabicDate } from '../utils/dateFormatter';
 import { calculateBookingFee } from '../utils/fee';
+import { Geolocator } from '../utils/geolocator';
 
 interface UnifiedQuestCardProps {
   quest: Quest;
@@ -48,17 +49,58 @@ export default function UnifiedQuestCard({
   const [isSubmittingDesc, setIsSubmittingDesc] = useState(false);
   const [tempDescription, setTempDescription] = useState('');
 
+  const [localUserLoc, setLocalUserLoc] = useState<{ lat: number; lng: number } | null>(() => {
+    return userLoc || Geolocator.getCachedLocation();
+  });
+
+  useEffect(() => {
+    if (userLoc) {
+      setLocalUserLoc(userLoc);
+      Geolocator.saveCachedLocation(userLoc.lat, userLoc.lng);
+    } else {
+      const cached = Geolocator.getCachedLocation();
+      if (cached) {
+        setLocalUserLoc(cached);
+      } else if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+            setLocalUserLoc(coords);
+            Geolocator.saveCachedLocation(coords.lat, coords.lng);
+          },
+          (err) => console.warn("GPS lookup in UnifiedQuestCard:", err),
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+        );
+      }
+    }
+  }, [userLoc]);
+
   // 1. Calculate user distance in km
   const calculateDistanceKm = (qLat?: number, qLng?: number) => {
-    if (!userLoc || typeof userLoc.lat !== 'number' || typeof userLoc.lng !== 'number') return 0;
-    const targetLat = qLat ?? quest?.lat ?? (quest as any)?.gpsCoords?.lat ?? 36.7538;
-    const targetLng = qLng ?? quest?.lng ?? (quest as any)?.gpsCoords?.lng ?? 3.0588;
+    const activeLoc = userLoc || localUserLoc || Geolocator.getCachedLocation();
+    if (!activeLoc || typeof activeLoc.lat !== 'number' || typeof activeLoc.lng !== 'number') return -1;
+
+    let targetLat = typeof qLat === 'number' && !isNaN(qLat) ? qLat : quest?.lat;
+    let targetLng = typeof qLng === 'number' && !isNaN(qLng) ? qLng : quest?.lng;
+
+    if (targetLat === undefined || isNaN(targetLat)) {
+      if ((quest as any)?.gpsCoords?.lat) targetLat = parseFloat((quest as any).gpsCoords.lat);
+      else if (quest?.locationCoords?.lat) targetLat = quest.locationCoords.lat;
+      else targetLat = 36.7538;
+    }
+
+    if (targetLng === undefined || isNaN(targetLng)) {
+      if ((quest as any)?.gpsCoords?.lng) targetLng = parseFloat((quest as any).gpsCoords.lng);
+      else if (quest?.locationCoords?.lng) targetLng = quest.locationCoords.lng;
+      else targetLng = 3.0588;
+    }
+
     const R = 6371; // Earth radius in km
-    const dLat = ((targetLat - userLoc.lat) * Math.PI) / 180;
-    const dLng = ((targetLng - userLoc.lng) * Math.PI) / 180;
+    const dLat = ((targetLat - activeLoc.lat) * Math.PI) / 180;
+    const dLng = ((targetLng - activeLoc.lng) * Math.PI) / 180;
     const a =
       Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos((userLoc.lat * Math.PI) / 180) *
+      Math.cos((activeLoc.lat * Math.PI) / 180) *
         Math.cos((targetLat * Math.PI) / 180) *
         Math.sin(dLng / 2) *
         Math.sin(dLng / 2);
@@ -132,7 +174,7 @@ export default function UnifiedQuestCard({
     currentTrayState = 'C';
   } else if (userProfile.isAvailable === false && !isCreator) {
     currentTrayState = 'BUSY';
-  } else if (distance > 50) {
+  } else if (distance !== -1 && distance > 50) {
     currentTrayState = 'A';
   } else {
     currentTrayState = 'B';
@@ -288,7 +330,9 @@ export default function UnifiedQuestCard({
             <div className="grid grid-cols-3 gap-2 w-full border border-slate-100 py-3 mt-4 bg-slate-50/50 rounded-2xl px-2.5">
               <div className="text-center flex flex-col justify-center items-center">
                 <span className="text-[9px] uppercase font-bold text-slate-400 block mb-0.5">📍 {lang === 'ar' ? 'المسافة' : 'Distance'}</span>
-                <span className="text-xs font-black text-slate-800">{distance} {lang === 'ar' ? 'كم' : 'km'}</span>
+                <span className="text-xs font-black text-slate-800">
+                  {distance !== -1 ? `${distance} ${lang === 'ar' ? 'كم' : 'km'}` : (lang === 'ar' ? 'غير محدد' : 'N/A')}
+                </span>
               </div>
               <div className="text-center flex flex-col justify-center items-center border-x border-slate-100">
                 <span className="text-[9px] uppercase font-bold text-slate-400 block mb-0.5">⚡ {lang === 'ar' ? 'رسوم الحجز' : 'Booking Fee'}</span>

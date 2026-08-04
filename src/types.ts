@@ -30,8 +30,8 @@ export interface Quest {
   category: QuestCategory;
   cashReward: number; // Cash payment in DZD (DA)
   pointsReward: number; // Experience points reward
-  bookingFeeTokens: number; // Platform booking fee: 5% of cashReward (minimum 35 DA, maximum 2000 DA)
-  requiredTokens?: number; // Raw required token amount
+  bookingFeeDA: number; // Platform booking fee: 5% of cashReward (minimum 35 DA, maximum 2000 DA)
+  requiredDA?: number; // Raw required token amount
   status: 'open' | 'booked' | 'active' | 'arrived' | 'pending_verification' | 'completed' | 'disputed' | 'cancelled_by_timeout' | 'cancelled' | 'stale_cleared';
   urgency: 'normal' | 'urgent' | 'featured';
   createdAt: string;
@@ -104,6 +104,7 @@ export interface UserProfile {
   preBanTokenBalance?: number; // Banned user's tokens preserved before ban
   createdAt?: string; // Account registration / joined date
   termsAccepted?: boolean; // Whether terms of service and privacy consent was accepted
+  hasCompletedOnboarding?: boolean; // First time onboarding completed
 }
 
 export class UserModel {
@@ -151,6 +152,7 @@ export class UserModel {
       preBanTokenBalance: profile.preBanTokenBalance !== undefined ? Number(profile.preBanTokenBalance) : 0,
       createdAt: profile.createdAt || new Date().toISOString(),
       termsAccepted: profile.termsAccepted !== undefined ? !!profile.termsAccepted : true,
+      hasCompletedOnboarding: !!profile.hasCompletedOnboarding,
     };
   }
 
@@ -198,6 +200,7 @@ export class UserModel {
       preBanTokenBalance: data.preBanTokenBalance !== undefined ? Number(data.preBanTokenBalance) : 0,
       createdAt: data.createdAt || data.joinedAt || new Date().toISOString(),
       termsAccepted: data.termsAccepted !== undefined ? !!data.termsAccepted : true,
+      hasCompletedOnboarding: !!data.hasCompletedOnboarding,
     };
   }
 }

@@ -2,34 +2,27 @@ import { Capacitor } from '@capacitor/core';
 import { Geolocation } from '@capacitor/geolocation';
 
 /**
- * Geolocator Utility (Final Merged: Web latest updates + Android native)
- * Strict GPS verification, location caching with 1h expiration,
- * permission-state reporting, and action-triggered hardware GPS limits.
+ * Geolocator Utility (Merged: Capacitor Native Support + Web Sampling Accuracy)
+ * Combines strict GPS verification, 5-second sampling for best accuracy,
+ * location caching (1h expiration), and native permission handling.
  */
 export class Geolocator {
+  
   /**
    * Returns current permission status ('granted' | 'prompt' | 'denied').
-   * [UPDATE from Web] — adapted for Android native via Capacitor Geolocation.
    */
   static async getPermissionState(): Promise<'granted' | 'prompt' | 'denied'> {
     try {
       if (Capacitor.isNativePlatform()) {
         const permissions = await Geolocation.checkPermissions();
-        if (
-          permissions.location === 'granted' ||
-          permissions.coarseLocation === 'granted'
-        ) {
-          return 'granted';
-        }
+        if (permissions.location === 'granted' || permissions.coarseLocation === 'granted') return 'granted';
         if (permissions.location === 'denied') return 'denied';
-        return 'prompt'; // includes 'prompt-with-rationale'
+        return 'prompt';
       }
 
       if (!navigator.geolocation) return 'denied';
       if (navigator.permissions?.query) {
-        const status = await navigator.permissions.query({
-          name: 'geolocation' as PermissionName,
-        });
+        const status = await navigator.permissions.query({ name: 'geolocation' as PermissionName });
         return status.state;
       }
       return 'prompt';
@@ -39,8 +32,7 @@ export class Geolocator {
   }
 
   /**
-   * Saves user location to localStorage with a timestamp for expiration checking.
-   * [UPDATE from Web]
+   * Saves user location to localStorage with a timestamp for 1h expiration.
    */
   static saveCachedLocation(lat: number, lng: number): void {
     try {
@@ -54,7 +46,6 @@ export class Geolocator {
 
   /**
    * Retrieves last cached user location if available and not older than 1 hour.
-   * [UPDATE from Web]
    */
   static getCachedLocation(): { lat: number; lng: number } | null {
     try {
@@ -64,7 +55,6 @@ export class Geolocator {
 
       if (!latStr || !lngStr) return null;
 
-      // Validate 1 hour expiration (3,600,000 ms)
       if (timeStr) {
         const timestamp = parseInt(timeStr, 10);
         const ONE_HOUR = 60 * 60 * 1000;
@@ -76,9 +66,7 @@ export class Geolocator {
 
       const lat = parseFloat(latStr);
       const lng = parseFloat(lngStr);
-      if (!isNaN(lat) && !isNaN(lng)) {
-        return { lat, lng };
-      }
+      if (!isNaN(lat) && !isNaN(lng)) return { lat, lng };
     } catch (e) {
       console.warn('Could not read cached location:', e);
     }
@@ -87,7 +75,6 @@ export class Geolocator {
 
   /**
    * Clears cached location entries.
-   * [UPDATE from Web]
    */
   static clearCachedLocation(): void {
     try {
@@ -101,30 +88,19 @@ export class Geolocator {
 
   /**
    * Checks if location services (GPS) are active and permissions granted.
-   * [KEPT from Android] — stronger native implementation.
    */
   static async isLocationServiceEnabled(): Promise<boolean> {
     try {
       if (Capacitor.isNativePlatform()) {
         const permissions = await Geolocation.checkPermissions();
-        if (
-          permissions.location === 'granted' ||
-          permissions.coarseLocation === 'granted'
-        ) {
-          return true;
-        }
+        if (permissions.location === 'granted' || permissions.coarseLocation === 'granted') return true;
         const request = await Geolocation.requestPermissions();
-        return (
-          request.location === 'granted' ||
-          request.coarseLocation === 'granted'
-        );
+        return request.location === 'granted' || request.coarseLocation === 'granted';
       }
 
       if (!navigator.geolocation) return false;
       if (navigator.permissions?.query) {
-        const status = await navigator.permissions.query({
-          name: 'geolocation' as PermissionName,
-        });
+        const status = await navigator.permissions.query({ name: 'geolocation' as PermissionName });
         return status.state !== 'denied';
       }
       return true;
@@ -136,65 +112,145 @@ export class Geolocator {
 
   /**
    * Fetch absolute high-accuracy real-time location.
-   * [KEPT from Android] native path + [UPDATE from Web latest] anti-mock stub + timeout 20000ms.
+   * Now uses the new 5-second sampling method to ensure the highest accuracy.
    */
   static async getCurrentPhysicalLocation(): Promise<{ lat: number; lng: number }> {
     if (Capacitor.isNativePlatform()) {
       const permission = await this.isLocationServiceEnabled();
-      if (!permission) {
-        throw new Error('LOCATION_PERMISSION_DENIED');
-      }
-
-      const position = await Geolocation.getCurrentPosition({
-        enableHighAccuracy: true,
-        timeout: 20000, // [LATEST UPDATE] Increased from 15000 to 20000 for better GPS lock
-        maximumAge: 0,
-      });
-
-      // Bypass anti-mock/anti-spoofing checks as requested by user
-      const isMocked = false;
-      if (isMocked) {
-        throw new Error('MOCK_LOCATION_DETECTED');
-      }
-
-      return {
-        lat: position.coords.latitude,
-        lng: position.coords.longitude,
-      };
+      if (!permission) throw new Error('LOCATION_PERMISSION_DENIED');
     }
 
-    return new Promise((resolve, reject) => {
-      if (!navigator.geolocation) {
-        reject(new Error('GPS_NOT_SUPPORTED'));
-        return;
+    // Bypass anti-mock/anti-spoofing checks as requested by user
+    const isMocked = false;
+    if (isMocked) throw new Error('MOCK_LOCATION_DETECTED');
+
+    const accurateLoc = await this.getAccuratePhysicalLocation();
+    return { lat: accurateLoc.lat, lng: accurateLoc.lng };
+  }
+
+  /**
+   * [NEW FEATURE MERGED]
+   * Samples location continuously over 5 seconds (collecting high-accuracy readings)
+   * and returns the reading with the best (lowest) accuracy margin in meters.
+   * Fully compatible with both Capacitor Native and Web.
+   */
+  static async getAccuratePhysicalLocation(
+    onProgress?: (sampleCount: number, bestAccuracy: number) => void
+  ): Promise<{ lat: number; lng: number; accuracy: number }> {
+    return new Promise(async (resolve, reject) => {
+      const isNative = Capacitor.isNativePlatform();
+
+      if (!isNative && !navigator.geolocation) {
+        return reject(new Error('GPS_NOT_SUPPORTED'));
       }
 
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          // Bypass anti-mock/anti-spoofing checks as requested by user
-          const isMocked = false;
-          if (isMocked) {
-            reject(new Error('MOCK_LOCATION_DETECTED'));
-            return;
+      const samples: Array<{ lat: number; lng: number; accuracy: number }> = [];
+      let watchId: string | number | null = null;
+      let timer: any = null;
+
+      const finishSampling = async () => {
+        if (timer) clearTimeout(timer);
+        if (watchId !== null) {
+          try {
+            if (isNative) {
+              await Geolocation.clearWatch({ id: watchId as string });
+            } else {
+              navigator.geolocation.clearWatch(watchId as number);
+            }
+          } catch (e) {
+            console.warn("Failed to clear watchPosition", e);
           }
-          resolve({
+          watchId = null;
+        }
+
+        if (samples.length === 0) {
+          // Fallback to single getCurrentPosition if watchPosition produced no samples
+          try {
+            const options = { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 };
+            if (isNative) {
+              const position = await Geolocation.getCurrentPosition(options);
+              resolve({
+                lat: position.coords.latitude,
+                lng: position.coords.longitude,
+                accuracy: position.coords.accuracy || 50
+              });
+            } else {
+              navigator.geolocation.getCurrentPosition(
+                (position) => resolve({
+                  lat: position.coords.latitude,
+                  lng: position.coords.longitude,
+                  accuracy: position.coords.accuracy || 50
+                }),
+                (error) => reject(error),
+                options
+              );
+            }
+          } catch (err) {
+            reject(err);
+          }
+          return;
+        }
+
+        // Sort samples by best accuracy (lowest error margin in meters)
+        samples.sort((a, b) => a.accuracy - b.accuracy);
+        resolve(samples[0]);
+      };
+
+      // Set a strict 5-second calibration window
+      timer = setTimeout(() => {
+        finishSampling();
+      }, 5000);
+
+      try {
+        const options = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 };
+        
+        const handlePosition = (position: any) => {
+          if (!position || !position.coords) return;
+          
+          const sample = {
             lat: position.coords.latitude,
             lng: position.coords.longitude,
+            accuracy: position.coords.accuracy || 999
+          };
+          samples.push(sample);
+
+          const bestAcc = Math.min(...samples.map((s) => s.accuracy));
+          if (onProgress) onProgress(samples.length, bestAcc);
+
+          // Early exit if we have at least 3 samples and accuracy is already very precise (<= 8 meters)
+          if (samples.length >= 3 && sample.accuracy <= 8) {
+            finishSampling();
+          }
+        };
+
+        if (isNative) {
+          watchId = await Geolocation.watchPosition(options, (position, err) => {
+            if (err) {
+              if (samples.length === 0) {
+                finishSampling();
+              }
+              return;
+            }
+            handlePosition(position);
           });
-        },
-        reject,
-        {
-          enableHighAccuracy: true,
-          timeout: 20000, // [LATEST UPDATE] Increased from 15000 to 20000 for better GPS lock
-          maximumAge: 0,
+        } else {
+          watchId = navigator.geolocation.watchPosition(
+            handlePosition,
+            (error) => {
+              if (samples.length === 0) finishSampling();
+            },
+            options
+          );
         }
-      );
+      } catch (err) {
+        if (timer) clearTimeout(timer);
+        reject(err);
+      }
     });
   }
 
   /**
    * Stores GPS state locally and notifies other modules.
-   * [IDENTICAL in all versions] — no change.
    */
   static async setLocationServiceEnabled(enabled: boolean): Promise<void> {
     localStorage.setItem('gps_hardware_enabled', enabled ? 'true' : 'false');
@@ -203,11 +259,8 @@ export class Geolocator {
 
   /**
    * Opens native location settings when possible.
-   * [IDENTICAL in all versions] — no change.
    */
   static async openLocationSettings(): Promise<void> {
-    // Android لا يسمح بفتح إعدادات GPS مباشرة من Capacitor Geolocation.
-    // يمكن لاحقاً إضافة Plugin مخصص إذا احتجنا لذلك.
     await this.setLocationServiceEnabled(true);
   }
 }

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { doc, setDoc, updateDoc, query, collection, where, onSnapshot, arrayUnion, getDocs, deleteDoc } from 'firebase/firestore';
 import { db } from '../utils/firebase';
+import { ALGERIA_WILAYAS } from '../data/algeriaData';
 import { 
   User, 
   Phone, 
@@ -119,8 +120,40 @@ export default function ProfileView({
   const [supportSubject, setSupportSubject] = useState('');
   const [isSubmittingSupport, setIsSubmittingSupport] = useState(false);
   const [name, setName] = useState(userProfile.name);
-  const [phone, setPhone] = useState(userProfile.phone);
+  const [phone, setPhone] = useState(userProfile.phone === '0550000000' || userProfile.phone === '0555123456' || userProfile.phone === 'غير محدد' ? '' : (userProfile.phone || ''));
   const [city, setCity] = useState(userProfile.city);
+
+  // Parse user profile location for Wilaya & Commune
+  const parseUserCityLocation = (cityStr: string = '') => {
+    if (!cityStr) return { code: '16', commune: 'الجزائر الوسطى' };
+    let matchedWilaya = ALGERIA_WILAYAS.find(w => cityStr.includes(w.code) || cityStr.includes(w.nameAr) || cityStr.includes(w.nameFr));
+    if (!matchedWilaya) {
+      matchedWilaya = ALGERIA_WILAYAS.find(w => {
+        const cleanAr = w.nameAr.replace(/^\d+\s*-\s*/, '');
+        return cityStr.includes(cleanAr);
+      });
+    }
+    const wilaya = matchedWilaya || ALGERIA_WILAYAS.find(w => w.code === '16') || ALGERIA_WILAYAS[0];
+    let matchedCommune = wilaya.communes.find(c => cityStr.includes(c));
+    const commune = matchedCommune || wilaya.communes[0] || '';
+    return { code: wilaya.code, commune };
+  };
+
+  const initialLoc = parseUserCityLocation(userProfile.city);
+  const [selectedWilayaCode, setSelectedWilayaCode] = useState(initialLoc.code);
+  const [selectedCommune, setSelectedCommune] = useState(initialLoc.commune);
+
+  const selectedWilayaObj = ALGERIA_WILAYAS.find(w => w.code === selectedWilayaCode) || ALGERIA_WILAYAS.find(w => w.code === '16') || ALGERIA_WILAYAS[0];
+
+  const handleWilayaChange = (code: string) => {
+    setSelectedWilayaCode(code);
+    const w = ALGERIA_WILAYAS.find(item => item.code === code);
+    if (w && w.communes.length > 0) {
+      setSelectedCommune(w.communes[0]);
+    } else {
+      setSelectedCommune('');
+    }
+  };
   const [selectedAvatar, setSelectedAvatar] = useState(userProfile.avatar);
   const [showAvatarChooser, setShowAvatarChooser] = useState(false);
   const [reviewToDelete, setReviewToDelete] = useState<string | null>(null);
@@ -246,6 +279,10 @@ export default function ProfileView({
   const [isSubmittingNewTicket, setIsSubmittingNewTicket] = useState(false);
   const [newTicketReplyText, setNewTicketReplyText] = useState('');
   const [isSendingTicketReply, setIsSendingTicketReply] = useState(false);
+
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('settings_toggled', { detail: showSettingsScreen }));
+  }, [showSettingsScreen]);
 
   // Rate limiting / Cooldown for AI KYC Verification and AI Refill Verification
   const currentUserId = userProfile?.id || authenticatedUser?.uid || 'guest';
@@ -531,15 +568,25 @@ export default function ProfileView({
   );
 
   const handleSaveProfile = () => {
+    const computedCity = `الجزائر - ${selectedWilayaObj.nameAr} - ${selectedCommune}`;
+
     onUpdateProfile({
-      name,
-      phone,
-      city,
+      name: name.trim() || userProfile.name,
+      phone: phone.trim() || userProfile.phone,
+      city: computedCity,
       avatar: selectedAvatar,
-      language
+      language,
+      bio: mainBio ? mainBio.trim() : (userProfile.bio || ''),
+      rating: userProfile.rating || 5.0,
+      totalPoints: userProfile.totalPoints || 0
     });
+    setCity(computedCity);
     setIsEditing(false);
-    showToast(lang === 'ar' ? '✅ تم تحديث بيانات الحساب بنجاح!' : '✅ Profile saved successfully!');
+    setActiveSubmenu('main');
+    if (onClearInitialSubmenu) {
+      onClearInitialSubmenu();
+    }
+    showToast(lang === 'ar' ? '✅ تم حفظ البيانات والمعلومات الشخصية بنجاح!' : '✅ Personal information saved successfully!');
   };
 
   const handleToggleNotifications = () => {
@@ -1049,19 +1096,49 @@ export default function ProfileView({
     try {
       if (!userProfile?.id) return;
       
-      const emailToHash = userProfile.email || 'anonymous';
-      const nidToHash = kycNid || 'no_nid';
-      const identityFingerprint = hashString(emailToHash + '_' + nidToHash);
+      try {
+        const emailToHash = (userProfile.email || '').toLowerCase().trim() || 'anonymous';
+        const nidToHash = kycNid || 'no_nid';
+        const identityFingerprint = hashString(emailToHash + '_' + nidToHash);
 
-      // Store hashed fingerprint inside "deleted_users_fingerprints" for anti-abuse soft delete
-      await setDoc(doc(db, 'deleted_users_fingerprints', identityFingerprint), {
-        hashedIdentity: identityFingerprint,
-        deletedAt: new Date().toISOString(),
-        antiAbuseEnforced: true,
-      });
+        const archiveData = {
+          email: emailToHash,
+          userId: userProfile.id,
+          totalPoints: userProfile.totalPoints || 0,
+          tokenBalance: userProfile.tokenBalance || 0,
+          questsCompleted: userProfile.questsCompleted || 0,
+          rating: userProfile.rating || 5.0,
+          level: userProfile.level || 1,
+          hashedIdentity: identityFingerprint,
+          deletedAt: new Date().toISOString(),
+          antiAbuseEnforced: true,
+        };
 
-      // Clear NID document & user profile node from Firestore
-      await deleteDoc(doc(db, 'users', userProfile.id));
+        // Store hashed fingerprint inside "deleted_users_fingerprints" for anti-abuse and stats restoration
+        await setDoc(doc(db, 'deleted_users_fingerprints', identityFingerprint), archiveData, { merge: true });
+
+        if (userProfile.id) {
+          await setDoc(doc(db, 'deleted_users_fingerprints', 'uid_' + userProfile.id), archiveData, { merge: true });
+        }
+
+        if (emailToHash && emailToHash !== 'anonymous') {
+          const emailDocId = 'email_' + hashString(emailToHash);
+          await setDoc(doc(db, 'deleted_users_fingerprints', emailDocId), archiveData, { merge: true });
+        }
+      } catch (fpErr) {
+        console.warn("Soft delete fingerprint warning:", fpErr);
+      }
+
+      // Clear user document from Firestore if ID exists
+      if (userProfile.id && userProfile.id !== 'user-current') {
+        await deleteDoc(doc(db, 'users', userProfile.id));
+      }
+
+      // Clear local storage items
+      localStorage.removeItem('quest_user_profile');
+      localStorage.removeItem('runner_portfolio_photos');
+      localStorage.removeItem('runner_portfolio_captions');
+      localStorage.clear();
 
       showToast(lang === 'ar' 
         ? '🗑️ تم وبنجاح كامل حذف كافة مستندات الهوية وسجلات الحساب والامتثال لحق النسيان!' 
@@ -1071,10 +1148,12 @@ export default function ProfileView({
       
       if (onSignOut) {
         onSignOut();
+      } else {
+        window.location.reload();
       }
     } catch (err: any) {
       console.error("Failed to delete account:", err);
-      showToast('⚠️ Error complying with account deletion: ' + err.message);
+      showToast(lang === 'ar' ? '⚠️ حدث خطأ أثناء حذف الحساب: ' + err.message : '⚠️ Error complying with account deletion: ' + err.message);
     }
   };
 
@@ -1729,7 +1808,7 @@ export default function ProfileView({
                 <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform ${isRtl ? 'rotate-180 group-hover:-translate-x-1' : 'group-hover:translate-x-1'}`} />
               </button>
 
-              {/* Free Tokens Referral & Check-in Page */}
+              {/* Free DA Referral & Check-in Page */}
               <button
                 type="button"
                 onClick={() => setActiveSubmenu('free_tokens')}
@@ -1882,7 +1961,7 @@ export default function ProfileView({
                     type="file" 
                     id="avatar-file-input"
                     ref={avatarInputRef}
-                    accept="image/*"
+                    accept="image/*,image/heic,image/heif,.heic,.heif"
                     className="hidden"
                     onChange={handleAvatarFileChange}
                   />
@@ -1890,7 +1969,7 @@ export default function ProfileView({
                     type="file" 
                     id="avatar-camera-input"
                     ref={avatarCameraInputRef}
-                    accept="image/*"
+                    accept="image/*,image/heic,image/heif,.heic,.heif"
                     capture="user"
                     className="hidden"
                     onChange={handleAvatarFileChange}
@@ -1948,35 +2027,60 @@ export default function ProfileView({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] font-extrabold uppercase text-gray-400 block mb-1 text-right">
-                    {lang === 'ar' ? 'المدينة والولاية' : 'City / State'}
-                  </label>
-                  <div className="relative">
-                    <input 
-                      type="text" 
-                      value={city} 
-                      onChange={(e) => setCity(e.target.value)} 
-                      className="w-full text-xs font-semibold py-2.5 px-3 bg-gray-50 border border-gray-150 rounded-xl focus:border-[#4FC3F7] focus:outline-none text-right"
-                    />
-                    <MapPin className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
+              {/* Residence Structure (Wilaya & Commune) */}
+              <div className="space-y-2 bg-slate-50 p-3 rounded-2xl border border-gray-150">
+                <label className="text-[10px] font-extrabold uppercase text-gray-500 block text-right flex items-center justify-end gap-1">
+                  <span>{lang === 'ar' ? 'مكان الإقامة (الولاية والبلدية)' : 'Location (Wilaya & Commune)'}</span>
+                  <MapPin className="w-3.5 h-3.5 text-[#FF3B7C]" />
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[9px] font-bold text-gray-400 block mb-1 text-right">
+                      {lang === 'ar' ? 'البلدية' : 'Commune'}
+                    </label>
+                    <select
+                      value={selectedCommune}
+                      onChange={(e) => setSelectedCommune(e.target.value)}
+                      className="w-full text-xs font-semibold py-2 px-2 bg-white border border-gray-200 rounded-xl focus:border-[#4FC3F7] focus:outline-none text-right cursor-pointer"
+                    >
+                      {selectedWilayaObj.communes.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold text-gray-400 block mb-1 text-right">
+                      {lang === 'ar' ? 'الولاية' : 'Wilaya'}
+                    </label>
+                    <select
+                      value={selectedWilayaCode}
+                      onChange={(e) => handleWilayaChange(e.target.value)}
+                      className="w-full text-xs font-semibold py-2 px-2 bg-white border border-gray-200 rounded-xl focus:border-[#4FC3F7] focus:outline-none text-right cursor-pointer"
+                    >
+                      {ALGERIA_WILAYAS.map((w) => (
+                        <option key={w.code} value={w.code}>
+                          {lang === 'ar' ? w.nameAr : w.nameFr}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
+              </div>
 
-                <div>
-                  <label className="text-[10px] font-extrabold uppercase text-gray-400 block mb-1 text-right">
-                    {lang === 'ar' ? 'رقم الهاتف المعتمد' : 'Registered Phone'}
-                  </label>
-                  <div className="relative font-mono">
-                    <input 
-                      type="text" 
-                      value={phone} 
-                      onChange={(e) => setPhone(e.target.value)} 
-                      className="w-full text-xs font-semibold py-2.5 px-3 bg-gray-50 border border-gray-150 rounded-xl focus:border-[#4FC3F7] focus:outline-none text-center"
-                    />
-                    <Phone className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
-                  </div>
+              <div>
+                <label className="text-[10px] font-extrabold uppercase text-gray-400 block mb-1 text-right">
+                  {lang === 'ar' ? 'رقم الهاتف المعتمد' : 'Registered Phone'}
+                </label>
+                <div className="relative font-mono">
+                  <input 
+                    type="text" 
+                    value={phone} 
+                    onChange={(e) => setPhone(e.target.value)} 
+                    className="w-full text-xs font-semibold py-2.5 px-3 bg-gray-50 border border-gray-150 rounded-xl focus:border-[#4FC3F7] focus:outline-none text-center"
+                  />
+                  <Phone className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
                 </div>
               </div>
 
@@ -2131,14 +2235,14 @@ export default function ProfileView({
                     type="file" 
                     id="kyc-front-file"
                     ref={nidFrontInputRef}
-                    accept="image/*"
+                    accept="image/*,image/heic,image/heif,.heic,.heif"
                     className="hidden"
                     onChange={handleNIDFrontFileChange}
                   />
                   <input 
                     type="file" 
                     id="kyc-front-camera-file"
-                    accept="image/*"
+                    accept="image/*,image/heic,image/heif,.heic,.heif"
                     capture="environment"
                     className="hidden"
                     onChange={handleNIDFrontFileChange}
@@ -2147,14 +2251,14 @@ export default function ProfileView({
                     type="file" 
                     id="kyc-back-file"
                     ref={nidBackInputRef}
-                    accept="image/*"
+                    accept="image/*,image/heic,image/heif,.heic,.heif"
                     className="hidden"
                     onChange={handleNIDBackFileChange}
                   />
                   <input 
                     type="file" 
                     id="kyc-back-camera-file"
-                    accept="image/*"
+                    accept="image/*,image/heic,image/heif,.heic,.heif"
                     capture="environment"
                     className="hidden"
                     onChange={handleNIDBackFileChange}
@@ -2414,14 +2518,14 @@ export default function ProfileView({
                 id="receipt-proof-file"
                 ref={receiptInputRef} 
                 onChange={handleReceiptFileChange} 
-                accept="image/*" 
+                accept="image/*,image/heic,image/heif,.heic,.heif" 
                 className="hidden" 
               />
               <input 
                 type="file" 
                 id="receipt-proof-camera-file"
                 onChange={handleReceiptFileChange} 
-                accept="image/*" 
+                accept="image/*,image/heic,image/heif,.heic,.heif" 
                 capture="environment"
                 className="hidden" 
               />
@@ -2903,6 +3007,36 @@ export default function ProfileView({
                     </button>
                   );
                 })}
+              </div>
+            </div>
+
+            {/* Smart Contextual Guidance Reset */}
+            <div className={`p-4 flex justify-between items-center border-b border-gray-100 ${isRtl ? '' : 'flex-row-reverse'}`}>
+              <button
+                onClick={() => {
+                  if (userProfile?.id) {
+                    localStorage.removeItem(`hint_home_feed_${userProfile.id}`);
+                    localStorage.removeItem(`hint_home_create_${userProfile.id}`);
+                    localStorage.removeItem(`hint_map_view_${userProfile.id}`);
+                    localStorage.removeItem(`hint_my_quests_${userProfile.id}`);
+                    localStorage.removeItem(`hint_inbox_view_${userProfile.id}`);
+                    localStorage.removeItem(`hint_profile_stats_${userProfile.id}`);
+                    localStorage.removeItem(`hint_profile_portfolio_${userProfile.id}`);
+                    localStorage.removeItem(`hint_settings_view_${userProfile.id}`);
+                    window.dispatchEvent(new Event('hints_reset'));
+                  }
+                }}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[10px] font-black rounded-xl transition-all shadow-xs cursor-pointer flex items-center gap-1 active:scale-95"
+              >
+                <span>{lang === 'ar' ? 'إعادة التفعيل 💡' : 'Re-enable 💡'}</span>
+              </button>
+              <div className={`space-y-0.5 ${isRtl ? 'text-right' : 'text-left'}`}>
+                <h5 className="font-extrabold text-xs text-[#1F2A44]">
+                  {lang === 'ar' ? 'التلميحات الذكية للمستخدم' : lang === 'fr' ? 'Astuces intelligentes' : 'Smart Contextual Hints'}
+                </h5>
+                <p className="text-[9px] text-gray-400 font-semibold">
+                  {lang === 'ar' ? 'إعادة إظهار التلميحات التفاعلية في شاشات التطبيق' : 'Show interactive contextual tips again'}
+                </p>
               </div>
             </div>
 
@@ -3817,7 +3951,7 @@ export default function ProfileView({
                 type="file" 
                 id="profile-avatar-gallery-picker"
                 ref={avatarInputRef}
-                accept="image/*"
+                accept="image/*,image/heic,image/heif,.heic,.heif"
                 className="hidden"
                 onChange={handleAvatarFileChange}
               />
@@ -3825,7 +3959,7 @@ export default function ProfileView({
                 type="file" 
                 id="profile-avatar-camera-picker"
                 ref={avatarCameraInputRef}
-                accept="image/*"
+                accept="image/*,image/heic,image/heif,.heic,.heif"
                 capture="user"
                 className="hidden"
                 onChange={handleAvatarFileChange}
@@ -3873,18 +4007,47 @@ export default function ProfileView({
                   onChange={(e) => setName(e.target.value)} 
                   className="w-full text-center py-2 px-3 bg-gray-50 border border-gray-150 rounded-xl text-xs font-black"
                 />
-                <div className="grid grid-cols-2 gap-2">
-                  <input 
-                    type="text" 
-                    value={city} 
-                    onChange={(e) => setCity(e.target.value)} 
-                    className="w-full text-center py-2 px-3 bg-gray-50 border border-gray-150 rounded-xl text-xs font-black"
-                  />
+                <div className="space-y-2 bg-slate-50 p-2.5 rounded-xl border border-gray-150">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[9px] font-bold text-gray-400 block mb-1 text-right">
+                        {lang === 'ar' ? 'البلدية' : 'Commune'}
+                      </label>
+                      <select
+                        value={selectedCommune}
+                        onChange={(e) => setSelectedCommune(e.target.value)}
+                        className="w-full text-xs font-semibold py-1.5 px-2 bg-white border border-gray-200 rounded-xl focus:border-[#4FC3F7] focus:outline-none text-right cursor-pointer"
+                      >
+                        {selectedWilayaObj.communes.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[9px] font-bold text-gray-400 block mb-1 text-right">
+                        {lang === 'ar' ? 'الولاية' : 'Wilaya'}
+                      </label>
+                      <select
+                        value={selectedWilayaCode}
+                        onChange={(e) => handleWilayaChange(e.target.value)}
+                        className="w-full text-xs font-semibold py-1.5 px-2 bg-white border border-gray-200 rounded-xl focus:border-[#4FC3F7] focus:outline-none text-right cursor-pointer"
+                      >
+                        {ALGERIA_WILAYAS.map((w) => (
+                          <option key={w.code} value={w.code}>
+                            {lang === 'ar' ? w.nameAr : w.nameFr}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
                   <input 
                     type="text" 
                     value={phone} 
                     onChange={(e) => setPhone(e.target.value)} 
-                    className="w-full text-center py-2 px-3 bg-gray-50 border border-gray-150 rounded-xl text-xs font-black font-mono"
+                    placeholder={lang === 'ar' ? 'رقم الهاتف' : 'Phone'}
+                    className="w-full text-center py-1.5 px-3 bg-white border border-gray-150 rounded-xl text-xs font-black font-mono"
                   />
                 </div>
               </div>
@@ -4406,7 +4569,7 @@ export default function ProfileView({
                 type="file" 
                 id="portfolio-gallery-input"
                 ref={portfolioInputRef}
-                accept="image/*"
+                accept="image/*,image/heic,image/heif,.heic,.heif"
                 className="hidden"
                 onChange={handlePortfolioFileChange}
               />
@@ -4414,7 +4577,7 @@ export default function ProfileView({
                 type="file" 
                 id="portfolio-camera-input"
                 ref={portfolioCameraInputRef}
-                accept="image/*"
+                accept="image/*,image/heic,image/heif,.heic,.heif"
                 capture="environment"
                 className="hidden"
                 onChange={handlePortfolioFileChange}
@@ -4550,7 +4713,7 @@ export default function ProfileView({
 
       {/* 🛑 Confirm Deletion Modal Dialog */}
       {showDeleteConfirm && (
-        <div className="fixed inset-0 z-55 flex items-center justify-center bg-red-950/40 backdrop-blur-xs p-4">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-red-950/40 backdrop-blur-xs p-4">
           <motion.div 
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
@@ -4596,7 +4759,7 @@ export default function ProfileView({
       <AnimatePresence>
         {lightboxUrl && (
           <div 
-            className="fixed inset-0 bg-slate-950/95 z-55 flex flex-col items-center justify-center p-4 cursor-zoom-out animate-fadeIn"
+            className="fixed inset-0 bg-slate-950/95 z-[60] flex flex-col items-center justify-center p-4 cursor-zoom-out animate-fadeIn"
             onClick={() => setLightboxUrl(null)}
           >
             <div className="absolute top-4 right-4 z-50">

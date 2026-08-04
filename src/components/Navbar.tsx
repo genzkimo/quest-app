@@ -124,9 +124,13 @@ export default function Navbar({
   return (
     <>
       {/* Top Main Brand Header Bar - Styled in refined borderless pure white background */}
-      <header 
-        style={{ direction: isRtl ? 'rtl' : 'ltr' }}
-        className="fixed top-0 left-0 right-0 h-16 bg-[#FFFFFF] z-40 flex items-center justify-between px-4 md:px-8 select-none"
+                  <header 
+        style={{ 
+          direction: isRtl ? 'rtl' : 'ltr',
+          paddingTop: '28px',
+          height: 'calc(4rem + 21px)'
+        }}
+        className="fixed top-0 left-0 right-0 bg-[rgba(255, 255, 255, 0.25)] z-40 flex items-center justify-between px-4 md:px-8 select-none"
       >
         
         {/* Brand Name Logo on the left */}
@@ -234,12 +238,13 @@ export default function Navbar({
       </header>
 
       {/* Bottom bar in glassmorphic transparent white backdrop-filter */}
-      <nav 
+            <nav 
         style={{ 
           direction: isRtl ? 'rtl' : 'ltr',
           backdropFilter: 'blur(10px)',
           WebkitBackdropFilter: 'blur(10px)',
-          backgroundColor: 'rgba(255, 255, 255, 0.25)'
+          backgroundColor: 'rgba(255, 255, 255, 0.25)',
+          paddingBottom: 'env(safe-area-inset-bottom)'
         }}
         className="fixed bottom-0 left-0 right-0 z-40 px-2 lg:px-24"
       >

@@ -450,6 +450,21 @@ export default function HomeView({
     return Array.from(groupsMap.values());
   }, [stories]);
 
+  const isMyStoryGroup = React.useCallback((group: { userId?: string; user: string }) => {
+    if (!userProfile) return false;
+    if (group.userId && group.userId !== 'mock' && group.userId === userProfile.id) return true;
+    if (group.user && userProfile.name && userProfile.name.trim().length > 0 && group.user.trim().toLowerCase() === userProfile.name.trim().toLowerCase()) return true;
+    return false;
+  }, [userProfile]);
+
+  const myStoryGroup = React.useMemo(() => {
+    return userStoryGroups.find(isMyStoryGroup);
+  }, [userStoryGroups, isMyStoryGroup]);
+
+  const otherStoryGroups = React.useMemo(() => {
+    return userStoryGroups.filter(g => !isMyStoryGroup(g));
+  }, [userStoryGroups, isMyStoryGroup]);
+
   const activeStory = activeStoryGroup
     ? (activeStoryGroup.stories[activeStoryIndex] || activeStoryGroup.stories[0])
     : null;
@@ -535,8 +550,8 @@ export default function HomeView({
   const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 1500 * 1024) {
-        showToast(lang === 'ar' ? '⚠️ حجم الصورة كبير! يرجى اختيار صورة أقل من 1.5 ميغابايت.' : '⚠️ Image is too large! Please choose an image under 1.5MB.');
+      if (file.size > 25 * 1024 * 1024) {
+        showToast(lang === 'ar' ? '⚠️ حجم الملف كبير جداً! يرجى اختيار صورة أقل من 25 ميغابايت.' : '⚠️ File is too large! Please choose an image under 25MB.');
         return;
       }
       setStoryUploading(true);
@@ -561,33 +576,65 @@ export default function HomeView({
     setStoryUploading(true);
     setStoryUploadProgress(15);
 
-    const userUploadedStory: Partial<QuestStory> = {
+    const newStoryId = 'story-' + Date.now();
+    const userUploadedStory: QuestStory = {
+      id: newStoryId,
+      userId: userProfile.id,
+      user: userProfile.name,
+      userAvatar: userProfile.avatar,
       image: storySelectedImage || '',
       proofImage: storySelectedImage || '',
       bgGradient: storySelectedImage ? undefined : storyBgGradient,
       caption: storyCaption.trim() || (lang === 'ar' ? 'قصة كويست جديدة ✨🇩🇿' : 'New Quest Story ✨🇩🇿'),
-      textColor: storyTextColor,
-      textBg: storyTextBg,
-      textPosition: storyTextPosition as 'top' | 'middle' | 'bottom',
-      fontSize: storyFontSize,
-      sticker: storySticker,
+      textColor: storyTextColor || '#ffffff',
+      textBg: storyTextBg || 'rgba(15, 23, 42, 0.85)',
+      textPosition: (storyTextPosition || 'middle') as 'top' | 'middle' | 'bottom',
+      fontSize: storyFontSize || 'md',
+      sticker: storySticker || '🎯 إثبات عمل',
       createdAt: new Date().toISOString(),
       views: 1
     };
 
     setStoryUploadProgress(40);
 
+    const finishPublishing = () => {
+      const currentStories = stories || [];
+      const updatedStoriesList = [userUploadedStory, ...currentStories];
+      if (setStories) {
+        setStories(updatedStoriesList);
+      }
+
+      const existingUserStories = currentStories.filter(s => 
+        (s.userId && s.userId !== 'mock' && s.userId === userProfile.id) ||
+        (s.user && userProfile.name && s.user.trim().toLowerCase() === userProfile.name.trim().toLowerCase())
+      );
+      const myGroup = {
+        userKey: userProfile.id,
+        user: userProfile.name,
+        userAvatar: userProfile.avatar,
+        userId: userProfile.id,
+        stories: [userUploadedStory, ...existingUserStories]
+      };
+
+      setStoryUploadProgress(100);
+      setTimeout(() => {
+        setStoryUploading(false);
+        setStoryUploadProgress(0);
+        setIsCreatingStory(false);
+        showToast(lang === 'ar' ? '🔥 تم نشر قصتك بنجاح! جاري عرض المعاينة...' : '🔥 Story published successfully!');
+        playConfirmSound(true);
+
+        // Instantly preview author's newly published story
+        setActiveStoryGroup(myGroup);
+        setActiveStoryIndex(0);
+        setStoryTimer(0);
+      }, 300);
+    };
+
     if (onPublishStory) {
       onPublishStory(userUploadedStory)
         .then(() => {
-          setStoryUploadProgress(100);
-          setTimeout(() => {
-            setStoryUploading(false);
-            setStoryUploadProgress(0);
-            setIsCreatingStory(false);
-            showToast(lang === 'ar' ? '🔥 تم بنجاح نشر قصتك!' : '🔥 Fast Quest Story updated!');
-            playConfirmSound(true);
-          }, 300);
+          finishPublishing();
         })
         .catch((err) => {
           console.error("Story publish failed:", err);
@@ -596,12 +643,7 @@ export default function HomeView({
           showToast(lang === 'ar' ? '⚠️ فشل نشر القصة!' : '⚠️ Failed to publish story!');
         });
     } else {
-      setStoryUploadProgress(100);
-      setTimeout(() => {
-        setStoryUploading(false);
-        setStoryUploadProgress(0);
-        showToast(lang === 'ar' ? '⚠️ ميزة النشر معطلة حالياً.' : '⚠️ Publishing is currently offline.');
-      }, 300);
+      finishPublishing();
     }
   };
 
@@ -924,17 +966,36 @@ export default function HomeView({
         {/* Stories Horizontal Scrolling Track */}
         <div className="flex gap-4 overflow-x-auto pb-1.5 no-scrollbar pt-1.5 scroll-smooth relative z-10">
           
-          {/* Real simulated story uploader with Hot Pink Plus Badge */}
-          <button
-            onClick={handleStoryUpload}
-            className="flex flex-col items-center gap-1.5 focus:outline-none shrink-0 group cursor-pointer text-center"
-            disabled={storyUploading}
-          >
-            <div className="relative">
+          {/* My Story Avatar Button - Instagram/Snapchat style */}
+          <div className="flex flex-col items-center gap-1.5 shrink-0 text-center">
+            <div 
+              onClick={() => {
+                if (myStoryGroup && myStoryGroup.stories.length > 0) {
+                  const firstStory = myStoryGroup.stories[0];
+                  if (onIncrementStoryView && firstStory) {
+                    onIncrementStoryView(firstStory.id);
+                  }
+                  if (firstStory) {
+                    setStoryViewsMap(prev => ({
+                      ...prev,
+                      [firstStory.id]: (prev[firstStory.id] || 0) + 1
+                    }));
+                  }
+                  setActiveStoryGroup(myStoryGroup);
+                  setActiveStoryIndex(0);
+                  setStoryTimer(0);
+                } else {
+                  handleStoryUpload();
+                }
+              }}
+              className="relative cursor-pointer group"
+            >
               <div className={`w-16 h-16 rounded-full p-0.5 transition-all flex items-center justify-center ${
                 storyUploading 
                   ? 'bg-gradient-to-tr from-[#FF3B7C] via-gray-300 to-[#4FC3F7] animate-spin' 
-                  : 'bg-slate-100 ring-1 ring-gray-200 hover:scale-105'
+                  : (myStoryGroup && myStoryGroup.stories.length > 0)
+                    ? 'bg-gradient-to-tr from-[#FF3B7C] via-[#FFD34D] to-[#4FC3F7] ring-2 ring-[#FF3B7C] ring-offset-2 hover:scale-105'
+                    : 'bg-slate-100 ring-1 ring-gray-200 hover:scale-105'
               }`}>
                 <div className="w-full h-full bg-white rounded-full p-0.5 relative overflow-hidden flex items-center justify-center">
                   {storyUploading ? (
@@ -950,18 +1011,38 @@ export default function HomeView({
                   />
                 </div>
               </div>
-              {/* Hot Pink plus badge */}
-              <span className="absolute -bottom-1 right-0 bg-[#FF3B7C] text-white text-[10px] w-5 h-5 rounded-full font-black flex items-center justify-center shadow-md select-none">
-                +
-              </span>
-            </div>
-            <span className="text-[10px] font-bold text-gray-400">
-              {storyUploading ? (lang === 'ar' ? 'جاري الرفع...' : 'Filing...') : (lang === 'ar' ? 'قصتك' : 'My Story')}
-            </span>
-          </button>
 
-          {/* Map Instagram style grouped user stories */}
-          {userStoryGroups.map(group => {
+              {/* Hot Pink Plus Badge - always opens story creation modal */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleStoryUpload();
+                }}
+                title={lang === 'ar' ? 'أضف قصة جديدة' : 'Add new story'}
+                className="absolute -bottom-1 right-0 bg-[#FF3B7C] hover:bg-[#FF3B7C]/90 text-white text-[11px] w-5 h-5 rounded-full font-black flex items-center justify-center shadow-md select-none border-2 border-white transition-transform active:scale-90 cursor-pointer"
+              >
+                +
+              </button>
+
+              {(myStoryGroup && myStoryGroup.stories.length > 1) && (
+                <span className="absolute -top-1 -right-1 bg-[#1F2A44] text-white text-[9px] px-1.5 py-0.5 rounded-full font-black border-2 border-white shadow-sm">
+                  {myStoryGroup.stories.length}
+                </span>
+              )}
+            </div>
+            <span className="text-[10px] font-extrabold text-gray-700">
+              {storyUploading 
+                ? (lang === 'ar' ? 'جاري الرفع...' : 'Filing...') 
+                : (myStoryGroup && myStoryGroup.stories.length > 0)
+                  ? (lang === 'ar' ? 'قصتك 👁️' : 'My Story 👁️')
+                  : (lang === 'ar' ? 'قصتك' : 'My Story')
+              }
+            </span>
+          </div>
+
+          {/* Map Instagram style grouped user stories (excluding my own story to avoid duplicate) */}
+          {otherStoryGroups.map(group => {
             const firstStory = group.stories[0];
             const storyCount = group.stories.length;
 
@@ -1717,16 +1798,30 @@ export default function HomeView({
                         )
                       );
                       return isStoryOwner ? (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setShowDeleteConfirm(true);
-                          }}
-                          className="text-white hover:text-rose-500 bg-rose-600/80 hover:bg-rose-600 p-1.5 rounded-full cursor-pointer flex items-center justify-center transition animate-pulse"
-                          title={lang === 'ar' ? 'حذف القصة' : 'Delete Story'}
-                        >
-                          <Trash className="w-3.5 h-3.5" />
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveStoryGroup(null);
+                              handleStoryUpload();
+                            }}
+                            className="bg-[#FF3B7C] hover:bg-[#FF3B7C]/90 text-white text-[10px] font-black px-2.5 py-1 rounded-full cursor-pointer flex items-center gap-1 transition shadow-md border-none"
+                            title={lang === 'ar' ? 'نشر قصة جديدة' : 'Post new story'}
+                          >
+                            <Plus className="w-3 h-3" />
+                            <span>{lang === 'ar' ? 'قصة جديدة' : 'Add'}</span>
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setShowDeleteConfirm(true);
+                            }}
+                            className="text-white hover:text-rose-500 bg-rose-600/80 hover:bg-rose-600 p-1.5 rounded-full cursor-pointer flex items-center justify-center transition"
+                            title={lang === 'ar' ? 'حذف القصة' : 'Delete Story'}
+                          >
+                            <Trash className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       ) : null;
                     })()}
                     <button 
@@ -1906,7 +2001,7 @@ export default function HomeView({
         )}
       </AnimatePresence>
 
-      {/* STORY CREATION & CUSTOMIZATION MODAL - FULL FREEDOM EDITOR */}
+      {/* STORY CREATION & CUSTOMIZATION MODAL - ULTRA SMOOTH SINGLE SCREEN STUDIO */}
       <AnimatePresence>
         {isCreatingStory && (
           <div className="fixed inset-0 bg-[#0b0f1a]/85 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
@@ -1917,13 +2012,14 @@ export default function HomeView({
               className="bg-white w-full max-w-4xl rounded-3xl overflow-hidden shadow-2xl flex flex-col md:flex-row border-2 border-gray-100 font-sans text-right my-auto max-h-[92vh]"
               style={{ direction: isRtl ? 'rtl' : 'ltr' }}
             >
-              {/* Left Column: Live Interactive Preview */}
+              {/* Left Column: Live Interactive Smartphone Preview */}
               <div className="md:w-5/12 bg-slate-950 p-4 sm:p-6 flex flex-col items-center justify-center border-b md:border-b-0 md:border-r border-slate-800 relative min-h-[380px] md:min-h-[500px]">
-                <div className="absolute top-3 left-3 z-10 text-white/70 text-[10px] font-black uppercase tracking-widest bg-black/50 px-2.5 py-1 rounded-full backdrop-blur border border-white/10">
-                  📱 {isRtl ? 'معاينة حية للقصة' : 'Live Preview'}
+                <div className="absolute top-3 left-3 z-10 text-white/80 text-[10px] font-black uppercase tracking-widest bg-black/60 px-2.5 py-1 rounded-full backdrop-blur border border-white/10 flex items-center gap-1">
+                  <Sparkles className="w-3 h-3 text-[#FF3B7C]" />
+                  <span>{isRtl ? 'معاينة القصة' : 'Story Preview'}</span>
                 </div>
 
-                {/* Clear Photo / Reset button if image exists */}
+                {/* Reset Photo button if image loaded */}
                 {storySelectedImage && (
                   <button
                     type="button"
@@ -1937,18 +2033,18 @@ export default function HomeView({
 
                 {/* Simulated Smartphone Frame */}
                 <div 
-                  className="w-full max-w-[250px] sm:max-w-[270px] aspect-[9/16] rounded-[2.2rem] overflow-hidden shadow-2xl border-4 border-slate-700 bg-black relative flex flex-col justify-between p-3.5 transition-all"
+                  className="w-full max-w-[240px] sm:max-w-[260px] aspect-[9/16] rounded-[2.2rem] overflow-hidden shadow-2xl border-4 border-slate-700 bg-black relative flex flex-col justify-between p-3.5 transition-all"
                   style={
                     storySelectedImage
                       ? { backgroundImage: `url(${storySelectedImage})`, backgroundSize: 'cover', backgroundPosition: 'center' }
                       : { background: storyBgGradient }
                   }
                 >
-                  {/* Subtle Screen Overlay Gradients */}
+                  {/* Screen Gradient Overlays */}
                   <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-black/60 to-transparent z-0 pointer-events-none"></div>
                   <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-black/70 to-transparent z-0 pointer-events-none"></div>
 
-                  {/* Header user info bar */}
+                  {/* Header Author Info */}
                   <div className="relative z-10 flex items-center gap-2">
                     <img
                       src={userProfile.avatar}
@@ -1961,7 +2057,7 @@ export default function HomeView({
                     </div>
                   </div>
 
-                  {/* Sticker Stamp Badge if set */}
+                  {/* Sticker Stamp Badge */}
                   {storySticker && (
                     <div className="relative z-10 mx-auto bg-black/40 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/20 flex items-center gap-1 shadow-lg animate-pulse">
                       <Shield className="w-2.5 h-2.5 text-[#FFD34D]" />
@@ -1969,35 +2065,18 @@ export default function HomeView({
                     </div>
                   )}
 
-                  {/* Custom caption text box aligned based on position */}
-                  <div 
-                    className="relative z-10 w-full mb-1"
-                    style={{
-                      marginTop: storyTextPosition === 'top' ? '8px' : 'auto',
-                      marginBottom: storyTextPosition === 'bottom' ? '8px' : 'auto',
-                      transform: storyTextPosition === 'middle' ? 'translateY(-15%)' : 'none'
-                    }}
-                  >
-                    <div 
-                      className="p-3 rounded-2xl border border-white/10 shadow-xl text-center backdrop-blur-md transition-all break-words"
-                      style={{ 
-                        backgroundColor: storyTextBg, 
-                        color: storyTextColor 
-                      }}
-                    >
-                      <p className={`font-extrabold leading-relaxed whitespace-pre-wrap ${
-                        storyFontSize === 'sm' ? 'text-[10px]' :
-                        storyFontSize === 'lg' ? 'text-sm font-black' :
-                        storyFontSize === 'xl' ? 'text-base font-black' : 'text-xs'
-                      }`}>
-                        {storyCaption.trim() || (isRtl ? 'اكتب نصك الرائع للقصة هنا...' : 'Type your story caption here...')}
+                  {/* Caption Overlay */}
+                  <div className="relative z-10 w-full mb-1">
+                    <div className="p-3 rounded-2xl border border-white/10 shadow-xl text-center backdrop-blur-md bg-slate-900/85 text-white break-words">
+                      <p className="font-extrabold text-xs leading-relaxed whitespace-pre-wrap">
+                        {storyCaption.trim() || (isRtl ? 'اكتب نص القصة الرائع هنا...' : 'Type your story caption here...')}
                       </p>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Right Column: Complete Freedom Editor Controls */}
+              {/* Right Column: Unified Fast Editor Controls */}
               <div className="md:w-7/12 p-5 sm:p-6 flex flex-col justify-between overflow-y-auto space-y-4">
                 <div className="space-y-4">
                   {/* Modal Header */}
@@ -2012,347 +2091,192 @@ export default function HomeView({
                     <div className="text-right">
                       <h3 className="text-sm font-black text-[#1F2A44] flex items-center gap-1.5 justify-end">
                         <Sparkles className="w-4 h-4 text-[#FF3B7C] fill-[#FF337C]/15" />
-                        <span>{isRtl ? 'استوديو تصميم ونشر القصة 📸🎨' : 'Story Design Studio 📸🎨'}</span>
+                        <span>{isRtl ? 'استوديو نشر القصة السريع 📸✨' : 'Fast Story Studio 📸✨'}</span>
                       </h3>
                       <p className="text-[10px] text-gray-400 font-bold mt-0.5">
-                        {isRtl ? 'حرية كاملة: ارفع صورتك الخاصة أو اصنع قصة نصية خلفيتها ملونة' : 'Full freedom: Upload your photo or create colorful text stories'}
+                        {isRtl ? 'التقط صورة، اختر ملصقاً واكتب نصك ثم انشر في ثانية واحدة' : 'Snap photo, add caption and publish seamlessly'}
                       </p>
                     </div>
                   </div>
 
-                  {/* Tab Navigation */}
-                  <div className="flex bg-slate-100 p-1 rounded-2xl gap-1">
-                    {[
-                      { id: 'media', label: isRtl ? '🖼️ الوسائط والخلفية' : '🖼️ Media' },
-                      { id: 'style', label: isRtl ? '✍️ النص والتنسيق' : '✍️ Text' },
-                      { id: 'sticker', label: isRtl ? '🏷️ الشارات والملصق' : '🏷️ Sticker' },
-                    ].map((tab) => (
-                      <button
-                        key={tab.id}
-                        type="button"
-                        onClick={() => setStoryActiveTab(tab.id as any)}
-                        className={`flex-1 py-2 rounded-xl text-xs font-black transition-all cursor-pointer border-none ${
-                          storyActiveTab === tab.id
-                            ? 'bg-white text-[#1F2A44] shadow-sm'
-                            : 'text-slate-500 hover:text-slate-800'
-                        }`}
-                      >
-                        {tab.label}
-                      </button>
-                    ))}
+                  {/* Hidden File Inputs */}
+                  <input
+                    id="story-file-uploader"
+                    type="file"
+                    accept="image/*,image/heic,image/heif,.heic,.heif"
+                    onChange={handleImageFileChange}
+                    className="hidden"
+                  />
+                  <input
+                    id="story-camera-uploader"
+                    type="file"
+                    accept="image/*,image/heic,image/heif,.heic,.heif"
+                    capture="environment"
+                    onChange={handleImageFileChange}
+                    className="hidden"
+                  />
+
+                  {/* Media Picker Section */}
+                  <div className="space-y-2">
+                    <label className="block text-xs font-black text-slate-700 uppercase">
+                      {isRtl ? '📸 اختيار الصورة:' : '📸 Select Photo:'}
+                    </label>
+
+                    {storySelectedImage ? (
+                      <div className="bg-emerald-50 border border-emerald-200 p-2.5 rounded-2xl flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-10 h-10 rounded-xl overflow-hidden border border-emerald-300 shrink-0">
+                            <img src={storySelectedImage} className="w-full h-full object-cover" alt="Selected" />
+                          </div>
+                          <div className="text-right">
+                            <span className="text-xs font-black text-emerald-800 block">{isRtl ? 'تم اختيار الصورة! 📸' : 'Photo selected!'}</span>
+                            <span className="text-[10px] font-bold text-emerald-600">{isRtl ? 'جاهزة للنشر في القصة' : 'Ready to publish'}</span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setStorySelectedImage('')}
+                          className="text-xs text-rose-600 font-black hover:bg-rose-100 px-3 py-1.5 rounded-xl transition cursor-pointer border-none"
+                        >
+                          {isRtl ? 'إزالة 🗑️' : 'Remove 🗑️'}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <label
+                          htmlFor="story-camera-uploader"
+                          className="flex items-center justify-center gap-2 border-2 border-dashed border-[#FF3B7C]/40 hover:border-[#FF3B7C] cursor-pointer p-3 rounded-2xl transition-all bg-[#FF3B7C]/5 hover:bg-[#FF3B7C]/10 text-center active:scale-98"
+                        >
+                          <Camera className="w-4 h-4 text-[#FF3B7C]" />
+                          <span className="text-xs font-black text-slate-800">
+                            {isRtl ? '📷 الكاميرا' : '📷 Camera'}
+                          </span>
+                        </label>
+
+                        <label
+                          htmlFor="story-file-uploader"
+                          className="flex items-center justify-center gap-2 border-2 border-dashed border-sky-300 hover:border-sky-500 cursor-pointer p-3 rounded-2xl transition-all bg-sky-50/50 hover:bg-sky-50 text-center active:scale-98"
+                        >
+                          <ImageIcon className="w-4 h-4 text-sky-600" />
+                          <span className="text-xs font-black text-slate-800">
+                            {isRtl ? '🖼️ المعرض' : '🖼️ Gallery'}
+                          </span>
+                        </label>
+                      </div>
+                    )}
                   </div>
 
-                  {/* TAB 1: MEDIA & BACKGROUND */}
-                  {storyActiveTab === 'media' && (
-                    <div className="space-y-4 animate-fadeIn">
-                      {/* Upload Device Photo Section */}
-                      <div className="space-y-2">
-                        <label className="block text-xs font-black text-slate-600 uppercase">
-                          {isRtl ? '📁 ارفع صورة من جهازك (اختياري):' : '📁 Upload photo from device:'}
-                        </label>
-
-                        {storySelectedImage ? (
-                          <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-2xl flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <div className="w-10 h-10 rounded-lg overflow-hidden border border-emerald-300 shrink-0">
-                                <img src={storySelectedImage} className="w-full h-full object-cover" alt="Preview" />
-                              </div>
-                              <div className="text-right">
-                                <span className="text-xs font-black text-emerald-800 block">{isRtl ? 'تم رفع وتعريف الصورة! 📸' : 'Photo set!'}</span>
-                                <span className="text-[10px] font-bold text-emerald-600">{isRtl ? 'الصورة جاهزة للعرض بالقصة' : 'Ready for publication'}</span>
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => setStorySelectedImage('')}
-                              className="text-xs text-rose-600 font-black hover:bg-rose-100 p-2 rounded-xl transition cursor-pointer border-none"
-                            >
-                              {isRtl ? 'تغيير/حذف 🗑️' : 'Remove 🗑️'}
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="space-y-2">
-                            <input
-                              id="story-file-uploader"
-                              type="file"
-                              accept="image/*,image/heic,image/heif,.heic,.heif"
-                              onChange={handleImageFileChange}
-                              className="hidden"
-                            />
-                            <input
-                              id="story-camera-uploader"
-                              type="file"
-                              accept="image/*,image/heic,image/heif,.heic,.heif"
-                              capture="environment"
-                              onChange={handleImageFileChange}
-                              className="hidden"
-                            />
-
-                            <div className="grid grid-cols-2 gap-2.5">
-                              {/* Direct Live Camera Capture */}
-                              <label
-                                htmlFor="story-camera-uploader"
-                                className="flex flex-col items-center justify-center gap-1.5 border-2 border-dashed border-[#FF3B7C]/40 hover:border-[#FF3B7C] cursor-pointer p-3.5 rounded-2xl transition-all bg-[#FF3B7C]/5 hover:bg-[#FF3B7C]/10 text-center group active:scale-98"
-                              >
-                                <div className="bg-[#FF3B7C]/15 p-2.5 rounded-full group-hover:scale-110 transition-transform">
-                                  <Camera className="w-5 h-5 text-[#FF3B7C]" />
-                                </div>
-                                <span className="text-[11px] font-black text-slate-800 block">
-                                  {isRtl ? '📷 التقاط بالكاميرا' : '📷 Take Photo'}
-                                </span>
-                                <span className="text-[9px] text-gray-500 font-bold block">
-                                  {isRtl ? 'فتح الكاميرا فوراً' : 'Live Camera'}
-                                </span>
-                              </label>
-
-                              {/* Gallery Picker */}
-                              <label
-                                htmlFor="story-file-uploader"
-                                className="flex flex-col items-center justify-center gap-1.5 border-2 border-dashed border-sky-300 hover:border-sky-500 cursor-pointer p-3.5 rounded-2xl transition-all bg-sky-50/50 hover:bg-sky-50 text-center group active:scale-98"
-                              >
-                                <div className="bg-sky-100 p-2.5 rounded-full group-hover:scale-110 transition-transform">
-                                  <ImageIcon className="w-5 h-5 text-sky-600" />
-                                </div>
-                                <span className="text-[11px] font-black text-slate-800 block">
-                                  {isRtl ? '🖼️ معرض الصور' : '🖼️ Gallery'}
-                                </span>
-                                <span className="text-[9px] text-gray-500 font-bold block">
-                                  {isRtl ? 'من ملفات الهاتف' : 'Stored Files'}
-                                </span>
-                              </label>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Text Story Gradient Themes if no photo */}
-                      {!storySelectedImage && (
-                        <div className="space-y-2 pt-2 border-t border-gray-100">
-                          <label className="block text-xs font-black text-slate-600 uppercase">
-                            {isRtl ? '🎨 أو اختر خلفية متدرجة ملونة للقصة النصية:' : '🎨 Or choose gradient for text story:'}
-                          </label>
-                          <div className="grid grid-cols-3 gap-2">
-                            {[
-                              { name: isRtl ? '🌌 ليلي كحلي' : 'Navy', grad: 'linear-gradient(135deg, #0F172A 0%, #1E1B4B 50%, #312E81 100%)' },
-                              { name: isRtl ? '🌸 غروب وردي' : 'Sunset', grad: 'linear-gradient(135deg, #FF3B7C 0%, #7C3AED 100%)' },
-                              { name: isRtl ? '🟢 زمردي' : 'Emerald', grad: 'linear-gradient(135deg, #064E3B 0%, #047857 50%, #10B981 100%)' },
-                              { name: isRtl ? '☀️ ذهبي' : 'Golden', grad: 'linear-gradient(135deg, #D97706 0%, #B45309 50%, #78350F 100%)' },
-                              { name: isRtl ? '🔵 محيط أزرق' : 'Ocean', grad: 'linear-gradient(135deg, #0284C7 0%, #1E3A8A 100%)' },
-                              { name: isRtl ? '🖤 فحم داكن' : 'Carbon', grad: 'linear-gradient(135deg, #18181B 0%, #27272A 100%)' },
-                            ].map((g) => (
-                              <button
-                                key={g.name}
-                                type="button"
-                                onClick={() => setStoryBgGradient(g.grad)}
-                                className={`h-12 rounded-xl border-2 transition-all cursor-pointer flex items-center justify-center p-1.5 shadow-sm text-[10px] font-black text-white ${
-                                  storyBgGradient === g.grad ? 'border-[#FF3B7C] ring-2 ring-[#FF3B7C]/30 scale-102' : 'border-transparent opacity-85 hover:opacity-100'
-                                }`}
-                                style={{ background: g.grad }}
-                              >
-                                <span>{g.name}</span>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* TAB 2: TEXT & STYLE */}
-                  {storyActiveTab === 'style' && (
-                    <div className="space-y-3 animate-fadeIn">
-                      {/* Caption Text area */}
-                      <div className="space-y-1">
-                        <label className="block text-xs font-black text-slate-600 uppercase">
-                          {isRtl ? '✍️ اكتب نص القصة بحرية:' : '✍️ Write story text:'}
-                        </label>
-                        <textarea
-                          rows={3}
-                          maxLength={180}
-                          value={storyCaption}
-                          onChange={(e) => setStoryCaption(e.target.value)}
-                          placeholder={isRtl ? 'اكتب ما تريد مشاركته في القصة... (مثال: تم إنهاء صيانة الكابلات بنجاح!)' : 'Write what you want to share...'}
-                          className="w-full bg-slate-50 border border-gray-200 rounded-2xl p-3 text-xs font-bold placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#1F2A44] focus:bg-white transition-all text-right"
-                        />
-                        <div className="flex justify-between items-center text-[10px] text-gray-400 font-bold px-1">
-                          <span>{180 - storyCaption.length} {isRtl ? 'حرف متبقي' : 'chars left'}</span>
-                          <span>{isRtl ? 'الحد الأقصى: 180 حرف' : 'Max 180 chars'}</span>
-                        </div>
-                      </div>
-
-                      {/* Text Controls Grid */}
-                      <div className="grid grid-cols-2 gap-3">
-                        {/* Font Size */}
-                        <div className="space-y-1">
-                          <label className="block text-[10px] font-black text-slate-500 uppercase">
-                            {isRtl ? '📏 حجم الخط:' : '📏 Font Size:'}
-                          </label>
-                          <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
-                            {[
-                              { id: 'sm', label: 'S' },
-                              { id: 'md', label: 'M' },
-                              { id: 'lg', label: 'L' },
-                              { id: 'xl', label: 'XL' },
-                            ].map((sz) => (
-                              <button
-                                key={sz.id}
-                                type="button"
-                                onClick={() => setStoryFontSize(sz.id as any)}
-                                className={`flex-1 py-1 text-xs font-black rounded-lg cursor-pointer transition border-none ${
-                                  storyFontSize === sz.id ? 'bg-[#1F2A44] text-white' : 'text-slate-600 hover:bg-slate-200'
-                                }`}
-                              >
-                                {sz.label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Text Position */}
-                        <div className="space-y-1">
-                          <label className="block text-[10px] font-black text-slate-500 uppercase">
-                            {isRtl ? '📍 الموضع:' : '📍 Position:'}
-                          </label>
-                          <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
-                            {[
-                              { id: 'top', label: isRtl ? 'أعلى 🔝' : 'Top' },
-                              { id: 'middle', label: isRtl ? 'وسط 🎯' : 'Mid' },
-                              { id: 'bottom', label: isRtl ? 'أسفل ⬇️' : 'Bot' },
-                            ].map((pos) => (
-                              <button
-                                key={pos.id}
-                                type="button"
-                                onClick={() => setStoryTextPosition(pos.id as any)}
-                                className={`flex-1 py-1 text-[10px] font-black rounded-lg cursor-pointer transition border-none ${
-                                  storyTextPosition === pos.id ? 'bg-[#FF3B7C] text-white' : 'text-slate-600 hover:bg-slate-200'
-                                }`}
-                              >
-                                {pos.label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Font Color Picker */}
-                      <div className="space-y-1">
-                        <label className="block text-[10px] font-black text-slate-500 uppercase">
-                          {isRtl ? '🎨 لون خط النص:' : '🎨 Font Color:'}
-                        </label>
-                        <div className="flex flex-wrap gap-1.5">
-                          {[
-                            { value: '#ffffff', label: 'أبيض' },
-                            { value: '#FFD34D', label: 'أصفر' },
-                            { value: '#4FC3F7', label: 'سماوي' },
-                            { value: '#2ecc71', label: 'أخضر' },
-                            { value: '#FF3B7C', label: 'وردي' },
-                            { value: '#FF9800', label: 'برتقالي' },
-                            { value: '#0f172a', label: 'أسود' },
-                          ].map((c) => (
-                            <button
-                              key={c.value}
-                              type="button"
-                              onClick={() => setStoryTextColor(c.value)}
-                              className={`px-2.5 py-1 rounded-lg border text-[10px] font-black cursor-pointer transition flex items-center gap-1 ${
-                                storyTextColor === c.value ? 'bg-slate-900 text-white border-slate-900 ring-2 ring-slate-400' : 'bg-slate-50 text-slate-700 border-gray-200'
-                              }`}
-                            >
-                              <span className="w-2.5 h-2.5 rounded-full border border-black/20" style={{ backgroundColor: c.value }}></span>
-                              <span>{c.label}</span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Box Background Overlay */}
-                      <div className="space-y-1">
-                        <label className="block text-[10px] font-black text-slate-500 uppercase">
-                          {isRtl ? '🌌 خلفية صندوق النص:' : '🌌 Text Box Style:'}
-                        </label>
-                        <div className="flex flex-wrap gap-1.5">
-                          {[
-                            { value: 'rgba(15, 23, 42, 0.85)', label: isRtl ? 'زجاجي داكن' : 'Dark Glass' },
-                            { value: 'rgba(30, 58, 138, 0.85)', label: isRtl ? 'كحلي' : 'Navy' },
-                            { value: 'rgba(6, 78, 59, 0.85)', label: isRtl ? 'زمردي' : 'Forest' },
-                            { value: 'rgba(190, 24, 74, 0.85)', label: isRtl ? 'وردي' : 'Rose' },
-                            { value: '#ffffff', label: isRtl ? 'أبيض ناصع' : 'White' },
-                            { value: 'transparent', label: isRtl ? 'بدون صندوق' : 'Clear' },
-                          ].map((bg) => (
-                            <button
-                              key={bg.value}
-                              type="button"
-                              onClick={() => {
-                                setStoryTextBg(bg.value);
-                                if (bg.value === '#ffffff') setStoryTextColor('#0f172a');
-                              }}
-                              className={`px-2.5 py-1 rounded-lg border text-[10px] font-black cursor-pointer transition ${
-                                storyTextBg === bg.value ? 'bg-[#1F2A44] text-white border-[#1F2A44]' : 'bg-slate-50 text-slate-600 border-gray-200'
-                              }`}
-                            >
-                              {bg.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* TAB 3: STICKERS & STAMPS */}
-                  {storyActiveTab === 'sticker' && (
-                    <div className="space-y-3 animate-fadeIn">
-                      <label className="block text-xs font-black text-slate-600 uppercase">
-                        {isRtl ? '🏷️ اختر شارة أو ملصق للختم على القصة:' : '🏷️ Choose sticker stamp:'}
+                  {/* Color Gradients Palette (if no image) */}
+                  {!storySelectedImage && (
+                    <div className="space-y-1.5">
+                      <label className="block text-[11px] font-black text-slate-600 uppercase">
+                        {isRtl ? '🎨 أو اختر خلفية متدرجة ملونة:' : '🎨 Or choose gradient:'}
                       </label>
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="grid grid-cols-5 gap-2">
                         {[
-                          '🎯 إثبات عمل',
-                          '✅ تم الإنجاز',
-                          '⚡ كويست سريع',
-                          '🇩🇿 100% جزائري',
-                          '🔥 تجربة ممتازة',
-                          '💼 عمل احترافي',
-                          '⭐ موثوق رسمياً',
-                          'بدون شارة'
-                        ].map((st) => {
-                          const val = st === 'بدون شارة' ? '' : st;
-                          const isSelected = storySticker === val;
-                          return (
-                            <button
-                              key={st}
-                              type="button"
-                              onClick={() => setStorySticker(val)}
-                              className={`p-2.5 rounded-xl border text-xs font-black transition cursor-pointer text-center ${
-                                isSelected 
-                                  ? 'bg-[#1F2A44] text-white border-[#1F2A44] shadow-md ring-2 ring-[#1F2A44]/20'
-                                  : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-gray-200'
-                              }`}
-                            >
-                              {st}
-                            </button>
-                          );
-                        })}
+                          { name: 'ليلي', grad: 'linear-gradient(135deg, #0F172A 0%, #1E1B4B 50%, #312E81 100%)' },
+                          { name: 'غروب', grad: 'linear-gradient(135deg, #FF3B7C 0%, #7C3AED 100%)' },
+                          { name: 'زمردي', grad: 'linear-gradient(135deg, #064E3B 0%, #047857 50%, #10B981 100%)' },
+                          { name: 'ذهبي', grad: 'linear-gradient(135deg, #D97706 0%, #B45309 50%, #78350F 100%)' },
+                          { name: 'محيط', grad: 'linear-gradient(135deg, #0284C7 0%, #1E3A8A 100%)' },
+                        ].map((g) => (
+                          <button
+                            key={g.name}
+                            type="button"
+                            onClick={() => setStoryBgGradient(g.grad)}
+                            className={`h-9 rounded-xl border-2 transition-all cursor-pointer flex items-center justify-center text-[9px] font-black text-white ${
+                              storyBgGradient === g.grad ? 'border-[#FF3B7C] ring-2 ring-[#FF3B7C]/30 scale-105' : 'border-transparent opacity-85 hover:opacity-100'
+                            }`}
+                            style={{ background: g.grad }}
+                          >
+                            <span>{g.name}</span>
+                          </button>
+                        ))}
                       </div>
                     </div>
                   )}
+
+                  {/* Caption Input */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between items-center">
+                      <label className="block text-xs font-black text-slate-700 uppercase">
+                        {isRtl ? '✍️ وصف القصة:' : '✍️ Story Caption:'}
+                      </label>
+                      <span className="text-[10px] text-gray-400 font-mono">
+                        {180 - storyCaption.length} {isRtl ? 'حرف' : 'left'}
+                      </span>
+                    </div>
+                    <textarea
+                      rows={2}
+                      maxLength={180}
+                      value={storyCaption}
+                      onChange={(e) => setStoryCaption(e.target.value)}
+                      placeholder={isRtl ? 'اكتب تفاصيل القصة هنا... (مثال: تم إنجاز المهمة بنجاح!)' : 'Write story caption...'}
+                      className="w-full bg-slate-50 border border-gray-200 rounded-2xl p-2.5 text-xs font-bold placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FF3B7C] focus:bg-white transition-all text-right resize-none"
+                    />
+                  </div>
+
+                  {/* Quick Stickers */}
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-black text-slate-700 uppercase">
+                      {isRtl ? '🏷️ شارة القصة:' : '🏷️ Story Sticker:'}
+                    </label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        '🎯 إثبات عمل',
+                        '🏆 إنجاز',
+                        '⚡ تحدي',
+                        '📍 ميداني',
+                        'بدون شارة'
+                      ].map((st) => {
+                        const val = st === 'بدون شارة' ? '' : st;
+                        const isSelected = storySticker === val;
+                        return (
+                          <button
+                            key={st}
+                            type="button"
+                            onClick={() => setStorySticker(val)}
+                            className={`px-3 py-1.5 rounded-xl border text-xs font-black transition cursor-pointer ${
+                              isSelected 
+                                ? 'bg-[#1F2A44] text-white border-[#1F2A44] shadow-sm'
+                                : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-gray-200'
+                            }`}
+                          >
+                            {st}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
 
-                {/* Footer Buttons */}
-                <div className="flex gap-3 pt-4 border-t border-gray-100 mt-4">
+                {/* Main Action Buttons */}
+                <div className="pt-3 border-t border-gray-100 mt-2 space-y-2">
                   <button
                     type="button"
-                    onClick={() => setIsCreatingStory(false)}
-                    className="flex-1 py-3 border border-gray-200 hover:bg-slate-50 text-slate-600 font-extrabold text-xs rounded-xl cursor-pointer transition active:scale-98"
+                    onClick={executePublishStory}
+                    disabled={storyUploading}
+                    className="w-full py-3.5 bg-gradient-to-r from-[#FF3B7C] via-[#FF8008] to-[#FFD34D] hover:opacity-95 text-white font-black text-sm rounded-2xl cursor-pointer shadow-lg transition transform active:scale-98 flex items-center justify-center gap-2 border-none"
                   >
-                    {isRtl ? 'إلغاء وتراجع' : 'Cancel'}
+                    {storyUploading ? (
+                      <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        <span>{isRtl ? `جاري النشر (${storyUploadProgress}%)...` : 'Publishing...'}</span>
+                      </div>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4 text-white fill-white" />
+                        <span>{isRtl ? 'نشر القصة الآن 🚀✨' : 'Publish Story Now 🚀✨'}</span>
+                      </>
+                    )}
                   </button>
 
                   <button
                     type="button"
-                    onClick={executePublishStory}
-                    className="flex-1.5 py-3 bg-gradient-to-r from-[#FF3B7C] via-[#FF8008] to-[#FFD34D] hover:opacity-95 text-white font-black text-xs rounded-xl cursor-pointer shadow-md transition transform active:scale-98 flex items-center justify-center gap-1.5 border-none"
+                    onClick={() => setIsCreatingStory(false)}
+                    className="w-full py-2 text-slate-400 hover:text-slate-600 font-bold text-xs cursor-pointer transition border-none text-center"
                   >
-                    <Sparkles className="w-4 h-4 text-emerald-100 fill-white" />
-                    <span>{isRtl ? 'نشر قصتك الآن 🚀🔥' : 'Publish Story Now 🚀🔥'}</span>
+                    {isRtl ? 'إلغاء' : 'Cancel'}
                   </button>
                 </div>
               </div>

@@ -124,14 +124,12 @@ export default function Navbar({
   return (
     <>
       {/* Top Main Brand Header Bar - Styled in refined borderless pure white background */}
-                        <header 
+      <header 
         style={{ 
           direction: isRtl ? 'rtl' : 'ltr',
           paddingTop: '28px',
           height: 'calc(4rem + 28px)',
-          backgroundColor: 'rgba(255, 255, 255, 0.25)',
-          backdropFilter: 'blur(10px)',
-          WebkitBackdropFilter: 'blur(10px)'
+          background: 'linear-gradient(to bottom, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.6) 55%, rgba(255,255,255,0) 100%)'
         }}
         className="fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 md:px-8 select-none"
       >
@@ -241,13 +239,11 @@ export default function Navbar({
       </header>
 
       {/* Bottom bar in glassmorphic transparent white backdrop-filter */}
-            <nav 
+      <nav 
         style={{ 
           direction: isRtl ? 'rtl' : 'ltr',
-          backdropFilter: 'blur(10px)',
-          WebkitBackdropFilter: 'blur(10px)',
-          backgroundColor: 'rgba(255, 255, 255, 0.25)',
-          paddingBottom: 'env(safe-area-inset-bottom)'
+          paddingBottom: 'env(safe-area-inset-bottom)',
+          background: 'linear-gradient(to top, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.6) 55%, rgba(255,255,255,0) 100%)'
         }}
         className="fixed bottom-0 left-0 right-0 z-40 px-2 lg:px-24"
       >

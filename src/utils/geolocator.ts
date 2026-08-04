@@ -2,15 +2,14 @@ import { Capacitor } from '@capacitor/core';
 import { Geolocation } from '@capacitor/geolocation';
 
 /**
- * Geolocator Utility (Merged: Capacitor Native Support + Web Sampling Accuracy)
- * Combines strict GPS verification, 5-second sampling for best accuracy,
- * location caching (1h expiration), and native permission handling.
+ * Geolocator Utility (FINAL: Reliable Cold-Start + High-Accuracy Sampling)
+ * Combines:
+ *   - Native Capacitor support (works on Android/iOS)
+ *   - 5-second accuracy sampling (best reading selection)
+ *   - 20-second cold-start grace period (fixes the "no fix" issue)
  */
 export class Geolocator {
   
-  /**
-   * Returns current permission status ('granted' | 'prompt' | 'denied').
-   */
   static async getPermissionState(): Promise<'granted' | 'prompt' | 'denied'> {
     try {
       if (Capacitor.isNativePlatform()) {
@@ -19,7 +18,6 @@ export class Geolocator {
         if (permissions.location === 'denied') return 'denied';
         return 'prompt';
       }
-
       if (!navigator.geolocation) return 'denied';
       if (navigator.permissions?.query) {
         const status = await navigator.permissions.query({ name: 'geolocation' as PermissionName });
@@ -31,9 +29,6 @@ export class Geolocator {
     }
   }
 
-  /**
-   * Saves user location to localStorage with a timestamp for 1h expiration.
-   */
   static saveCachedLocation(lat: number, lng: number): void {
     try {
       localStorage.setItem('last_user_lat', lat.toString());
@@ -44,17 +39,12 @@ export class Geolocator {
     }
   }
 
-  /**
-   * Retrieves last cached user location if available and not older than 1 hour.
-   */
   static getCachedLocation(): { lat: number; lng: number } | null {
     try {
       const latStr = localStorage.getItem('last_user_lat');
       const lngStr = localStorage.getItem('last_user_lng');
       const timeStr = localStorage.getItem('last_user_loc_timestamp');
-
       if (!latStr || !lngStr) return null;
-
       if (timeStr) {
         const timestamp = parseInt(timeStr, 10);
         const ONE_HOUR = 60 * 60 * 1000;
@@ -63,7 +53,6 @@ export class Geolocator {
           return null;
         }
       }
-
       const lat = parseFloat(latStr);
       const lng = parseFloat(lngStr);
       if (!isNaN(lat) && !isNaN(lng)) return { lat, lng };
@@ -73,9 +62,6 @@ export class Geolocator {
     return null;
   }
 
-  /**
-   * Clears cached location entries.
-   */
   static clearCachedLocation(): void {
     try {
       localStorage.removeItem('last_user_lat');
@@ -86,9 +72,6 @@ export class Geolocator {
     }
   }
 
-  /**
-   * Checks if location services (GPS) are active and permissions granted.
-   */
   static async isLocationServiceEnabled(): Promise<boolean> {
     try {
       if (Capacitor.isNativePlatform()) {
@@ -97,7 +80,6 @@ export class Geolocator {
         const request = await Geolocation.requestPermissions();
         return request.location === 'granted' || request.coarseLocation === 'granted';
       }
-
       if (!navigator.geolocation) return false;
       if (navigator.permissions?.query) {
         const status = await navigator.permissions.query({ name: 'geolocation' as PermissionName });
@@ -110,29 +92,20 @@ export class Geolocator {
     }
   }
 
-  /**
-   * Fetch absolute high-accuracy real-time location.
-   * Now uses the new 5-second sampling method to ensure the highest accuracy.
-   */
   static async getCurrentPhysicalLocation(): Promise<{ lat: number; lng: number }> {
     if (Capacitor.isNativePlatform()) {
       const permission = await this.isLocationServiceEnabled();
       if (!permission) throw new Error('LOCATION_PERMISSION_DENIED');
     }
-
-    // Bypass anti-mock/anti-spoofing checks as requested by user
     const isMocked = false;
     if (isMocked) throw new Error('MOCK_LOCATION_DETECTED');
-
     const accurateLoc = await this.getAccuratePhysicalLocation();
     return { lat: accurateLoc.lat, lng: accurateLoc.lng };
   }
 
   /**
-   * [NEW FEATURE MERGED]
-   * Samples location continuously over 5 seconds (collecting high-accuracy readings)
-   * and returns the reading with the best (lowest) accuracy margin in meters.
-   * Fully compatible with both Capacitor Native and Web.
+   * FIXED: Waits up to 20s for the FIRST GPS fix (cold-start safe),
+   * then runs a 5s calibration window and returns the most accurate sample.
    */
   static async getAccuratePhysicalLocation(
     onProgress?: (sampleCount: number, bestAccuracy: number) => void
@@ -146,10 +119,13 @@ export class Geolocator {
 
       const samples: Array<{ lat: number; lng: number; accuracy: number }> = [];
       let watchId: string | number | null = null;
-      let timer: any = null;
+      let firstFixTimer: any = null;
+      let calibrationTimer: any = null;
+      let settled = false;
 
-      const finishSampling = async () => {
-        if (timer) clearTimeout(timer);
+      const cleanup = async () => {
+        if (firstFixTimer) clearTimeout(firstFixTimer);
+        if (calibrationTimer) clearTimeout(calibrationTimer);
         if (watchId !== null) {
           try {
             if (isNative) {
@@ -158,108 +134,94 @@ export class Geolocator {
               navigator.geolocation.clearWatch(watchId as number);
             }
           } catch (e) {
-            console.warn("Failed to clear watchPosition", e);
+            console.warn('Failed to clear watchPosition', e);
           }
           watchId = null;
         }
+      };
 
+      const finishWithBest = async () => {
+        if (settled) return;
+        settled = true;
+        await cleanup();
         if (samples.length === 0) {
-          // Fallback to single getCurrentPosition if watchPosition produced no samples
-          try {
-            const options = { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 };
-            if (isNative) {
-              const position = await Geolocation.getCurrentPosition(options);
-              resolve({
-                lat: position.coords.latitude,
-                lng: position.coords.longitude,
-                accuracy: position.coords.accuracy || 50
-              });
-            } else {
-              navigator.geolocation.getCurrentPosition(
-                (position) => resolve({
-                  lat: position.coords.latitude,
-                  lng: position.coords.longitude,
-                  accuracy: position.coords.accuracy || 50
-                }),
-                (error) => reject(error),
-                options
-              );
-            }
-          } catch (err) {
-            reject(err);
-          }
+          reject(new Error('GPS_TIMEOUT_NO_FIX'));
           return;
         }
-
-        // Sort samples by best accuracy (lowest error margin in meters)
         samples.sort((a, b) => a.accuracy - b.accuracy);
         resolve(samples[0]);
       };
 
-      // Set a strict 5-second calibration window
-      timer = setTimeout(() => {
-        finishSampling();
-      }, 5000);
+      const fail = async (error: any) => {
+        if (settled) return;
+        settled = true;
+        await cleanup();
+        reject(error);
+      };
+
+      // مهلة 20 ثانية لأول قراءة (مثل الملف القديم الذي يعمل)
+      firstFixTimer = setTimeout(() => {
+        fail(new Error('GPS_TIMEOUT_NO_FIX'));
+      }, 20000);
+
+      const handlePosition = (position: any) => {
+        if (settled || !position || !position.coords) return;
+
+        const sample = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+          accuracy: position.coords.accuracy || 999
+        };
+        samples.push(sample);
+
+        const bestAcc = Math.min(...samples.map((s) => s.accuracy));
+        if (onProgress) onProgress(samples.length, bestAcc);
+
+        // جاءت أول قراءة: أوقف مهلة الـ 20 وابدأ معايرة الـ 5 ثوانٍ
+        if (samples.length === 1) {
+          if (firstFixTimer) clearTimeout(firstFixTimer);
+          calibrationTimer = setTimeout(() => finishWithBest(), 5000);
+        }
+
+        // خروج مبكر: 3 قراءات + دقة عالية جداً
+        if (samples.length >= 3 && sample.accuracy <= 8) {
+          finishWithBest();
+        }
+      };
+
+      const handleError = (err: any) => {
+        const msg = String((err && err.message) || '');
+        const code = err && err.code;
+        if (code === 1 || /permission|denied|unauthorized/i.test(msg)) {
+          fail(new Error('LOCATION_PERMISSION_DENIED'));
+        }
+      };
 
       try {
-        const options = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 };
-        
-        const handlePosition = (position: any) => {
-          if (!position || !position.coords) return;
-          
-          const sample = {
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-            accuracy: position.coords.accuracy || 999
-          };
-          samples.push(sample);
-
-          const bestAcc = Math.min(...samples.map((s) => s.accuracy));
-          if (onProgress) onProgress(samples.length, bestAcc);
-
-          // Early exit if we have at least 3 samples and accuracy is already very precise (<= 8 meters)
-          if (samples.length >= 3 && sample.accuracy <= 8) {
-            finishSampling();
-          }
-        };
+        const options = { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 };
 
         if (isNative) {
           watchId = await Geolocation.watchPosition(options, (position, err) => {
             if (err) {
-              if (samples.length === 0) {
-                finishSampling();
-              }
+              handleError(err);
               return;
             }
             handlePosition(position);
           });
         } else {
-          watchId = navigator.geolocation.watchPosition(
-            handlePosition,
-            (error) => {
-              if (samples.length === 0) finishSampling();
-            },
-            options
-          );
+          watchId = navigator.geolocation.watchPosition(handlePosition, handleError, options);
         }
       } catch (err) {
-        if (timer) clearTimeout(timer);
-        reject(err);
+        fail(err);
       }
     });
   }
 
-  /**
-   * Stores GPS state locally and notifies other modules.
-   */
   static async setLocationServiceEnabled(enabled: boolean): Promise<void> {
     localStorage.setItem('gps_hardware_enabled', enabled ? 'true' : 'false');
     window.dispatchEvent(new CustomEvent('gps_status_changed', { detail: { enabled } }));
   }
 
-  /**
-   * Opens native location settings when possible.
-   */
   static async openLocationSettings(): Promise<void> {
     await this.setLocationServiceEnabled(true);
   }

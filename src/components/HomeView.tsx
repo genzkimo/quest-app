@@ -1706,18 +1706,29 @@ export default function HomeView({
                     <span className="text-[8px] bg-emerald-600 text-white font-black px-2 py-0.5 rounded uppercase tracking-wider">
                       Proof Uploaded
                     </span>
-                    {((activeStory.userId && activeStory.userId === userProfile.id) || activeStory.user === userProfile.name || userProfile.isAdmin || userProfile.role === 'admin') && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setShowDeleteConfirm(true);
-                        }}
-                        className="text-white hover:text-rose-500 bg-rose-600/80 hover:bg-rose-600 p-1.5 rounded-full cursor-pointer flex items-center justify-center transition animate-pulse"
-                        title={lang === 'ar' ? 'حذف القصة' : 'Delete Story'}
-                      >
-                        <Trash className="w-3.5 h-3.5" />
-                      </button>
-                    )}
+                    {(() => {
+                      const isStoryOwner = Boolean(
+                        userProfile &&
+                        activeStory && (
+                          userProfile.isAdmin ||
+                          userProfile.role === 'admin' ||
+                          (activeStory.userId && activeStory.userId !== 'mock' && activeStory.userId === userProfile.id) ||
+                          (activeStory.user && userProfile.name && userProfile.name.trim().length > 0 && activeStory.user.trim().toLowerCase() === userProfile.name.trim().toLowerCase())
+                        )
+                      );
+                      return isStoryOwner ? (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowDeleteConfirm(true);
+                          }}
+                          className="text-white hover:text-rose-500 bg-rose-600/80 hover:bg-rose-600 p-1.5 rounded-full cursor-pointer flex items-center justify-center transition animate-pulse"
+                          title={lang === 'ar' ? 'حذف القصة' : 'Delete Story'}
+                        >
+                          <Trash className="w-3.5 h-3.5" />
+                        </button>
+                      ) : null;
+                    })()}
                     <button 
                       onClick={(e) => {
                         e.stopPropagation();

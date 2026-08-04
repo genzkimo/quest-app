@@ -28,6 +28,7 @@ import MapView from './components/MapView';
 import LeaderboardView from './components/LeaderboardView';
 import MyQuestsView from './components/MyQuestsView';
 import ProfileView from './components/ProfileView';
+
 import PublicProfileView from './components/PublicProfileView';
 import ReciprocalRatingModal from './components/ReciprocalRatingModal';
 import NotificationScreen, { NotificationDoc } from './components/NotificationScreen';
@@ -174,7 +175,8 @@ export default function App() {
   useEffect(() => {
     if (userProfile && authenticatedUser && !showTermsConsentModal) {
       const localCompleted = localStorage.getItem('onboarding_completed_' + userProfile.id);
-      const isMissingInfo = !userProfile.phone || userProfile.phone === 'غير محدد' || !userProfile.city || userProfile.city === 'Alger' || userProfile.city.trim() === '';
+      const nameVal = (userProfile.name || '').toLowerCase().trim();
+      const isMissingInfo = !userProfile.name || nameVal === 'ياسين بلقاسم' || nameVal === 'omrani akram' || nameVal === 'akram omrani' || !userProfile.phone || userProfile.phone === 'غير محدد' || !userProfile.city || userProfile.city === 'Alger' || userProfile.city.trim() === '';
       if (!userProfile.hasCompletedOnboarding && (localCompleted !== 'true' || isMissingInfo)) {
         setShowOnboardingModal(true);
       }
@@ -813,9 +815,12 @@ export default function App() {
             console.warn("Could not check archived stats for returning user:", archErr);
           }
 
+          const rawDisplayName = firebaseUser.displayName || '';
+          const isPresetDisplayName = rawDisplayName.toLowerCase().trim() === 'omrani akram' || rawDisplayName.toLowerCase().trim() === 'akram omrani' || rawDisplayName.toLowerCase().trim() === 'ياسين بلقاسم';
+          
           profileToUse = {
             id: firebaseUser.uid,
-            name: firebaseUser.displayName || 'صياد كويست',
+            name: isPresetDisplayName ? '' : (rawDisplayName || ''),
             phone: firebaseUser.phoneNumber || '',
             city: '',
             avatar: firebaseUser.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
@@ -1839,10 +1844,14 @@ export default function App() {
     try {
       const targetStory = stories.find(s => s.id === storyId);
       if (targetStory) {
-        const isOwner = (targetStory.userId && targetStory.userId === userProfile?.id) ||
-                        (targetStory.user && targetStory.user === userProfile?.name) ||
-                        userProfile?.isAdmin ||
-                        userProfile?.role === 'admin';
+        const isOwner = Boolean(
+          userProfile && (
+            userProfile.isAdmin ||
+            userProfile.role === 'admin' ||
+            (targetStory.userId && targetStory.userId !== 'mock' && targetStory.userId === userProfile.id) ||
+            (targetStory.user && userProfile.name && userProfile.name.trim().length > 0 && targetStory.user.trim().toLowerCase() === userProfile.name.trim().toLowerCase())
+          )
+        );
         if (!isOwner) {
           showToast(isAr ? '⚠️ لا يمكنك حذف قصة لا تملكها' : '⚠️ You can only delete your own story');
           return;

@@ -25,7 +25,22 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   const [step, setStep] = useState<1 | 2 | 3>(1);
   
   // Name State
-  const initialName = userProfile.name && !userProfile.name.includes('@') && userProfile.name !== 'مستخدم المستكشف' ? userProfile.name : '';
+  const isDummyName = (n?: string) => {
+    if (!n) return true;
+    const lower = n.trim().toLowerCase();
+    return (
+      lower === '' ||
+      lower === 'ياسين بلقاسم' ||
+      lower === 'omrani akram' ||
+      lower === 'akram omrani' ||
+      lower === 'صياد كويست' ||
+      lower === 'مستخدم المستكشف' ||
+      lower === 'مستخدم مجهول' ||
+      lower === 'مستخدم كويست' ||
+      lower.includes('@')
+    );
+  };
+  const initialName = userProfile.name && !isDummyName(userProfile.name) ? userProfile.name : '';
   const [realName, setRealName] = useState(initialName);
 
   // Phone State

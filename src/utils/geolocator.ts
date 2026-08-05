@@ -2,14 +2,19 @@ import { Capacitor } from '@capacitor/core';
 import { Geolocation } from '@capacitor/geolocation';
 
 /**
- * Geolocator Utility (FINAL: Reliable Cold-Start + High-Accuracy Sampling)
- * Combines:
- *   - Native Capacitor support (works on Android/iOS)
- *   - 5-second accuracy sampling (best reading selection)
- *   - 20-second cold-start grace period (fixes the "no fix" issue)
+ * Geolocator Utility (ADAPTIVE ACCURACY - FINAL)
+ * - Fast first fix via getCurrentPosition (works on ALL devices)
+ * - Adaptive calibration: keeps sampling until accuracy <= 12m (max 10s)
+ * - Instant exit when excellent accuracy (<= 8m) reached
+ * - Safety net: network/Wi-Fi fallback if GPS fails completely
  */
 export class Geolocator {
-  
+
+  /** الدقة المستهدفة المقبولة (متر) */
+  static readonly TARGET_ACCURACY = 12;
+  /** الحد الأقصى لمدة المعايرة (ملي ثانية) */
+  static readonly MAX_CALIBRATION_MS = 10000;
+
   static async getPermissionState(): Promise<'granted' | 'prompt' | 'denied'> {
     try {
       if (Capacitor.isNativePlatform()) {
@@ -104,8 +109,11 @@ export class Geolocator {
   }
 
   /**
-   * FIXED: Waits up to 20s for the FIRST GPS fix (cold-start safe),
-   * then runs a 5s calibration window and returns the most accurate sample.
+   * ADAPTIVE HYBRID:
+   * - Backbone: getCurrentPosition (guarantees a fix on every device)
+   * - Enhancement: watchPosition sampling with adaptive calibration
+   *   → keeps improving until <= 12m (max 10s), instant exit at <= 8m
+   * - Safety net: network fallback if GPS hardware fails
    */
   static async getAccuratePhysicalLocation(
     onProgress?: (sampleCount: number, bestAccuracy: number) => void
@@ -119,20 +127,18 @@ export class Geolocator {
 
       const samples: Array<{ lat: number; lng: number; accuracy: number }> = [];
       let watchId: string | number | null = null;
-      let firstFixTimer: any = null;
       let calibrationTimer: any = null;
+      let hardTimer: any = null;
       let settled = false;
+      let firstFixReceived = false;
 
       const cleanup = async () => {
-        if (firstFixTimer) clearTimeout(firstFixTimer);
         if (calibrationTimer) clearTimeout(calibrationTimer);
+        if (hardTimer) clearTimeout(hardTimer);
         if (watchId !== null) {
           try {
-            if (isNative) {
-              await Geolocation.clearWatch({ id: watchId as string });
-            } else {
-              navigator.geolocation.clearWatch(watchId as number);
-            }
+            if (isNative) await Geolocation.clearWatch({ id: watchId as string });
+            else navigator.geolocation.clearWatch(watchId as number);
           } catch (e) {
             console.warn('Failed to clear watchPosition', e);
           }
@@ -144,10 +150,6 @@ export class Geolocator {
         if (settled) return;
         settled = true;
         await cleanup();
-        if (samples.length === 0) {
-          reject(new Error('GPS_TIMEOUT_NO_FIX'));
-          return;
-        }
         samples.sort((a, b) => a.accuracy - b.accuracy);
         resolve(samples[0]);
       };
@@ -159,13 +161,16 @@ export class Geolocator {
         reject(error);
       };
 
-      // مهلة 20 ثانية لأول قراءة (مثل الملف القديم الذي يعمل)
-      firstFixTimer = setTimeout(() => {
-        fail(new Error('GPS_TIMEOUT_NO_FIX'));
-      }, 20000);
+      const isValid = (position: any): boolean => {
+        if (!position || !position.coords) return false;
+        const { latitude, longitude } = position.coords;
+        if (isNaN(latitude) || isNaN(longitude)) return false;
+        if (latitude === 0 && longitude === 0) return false;
+        return true;
+      };
 
-      const handlePosition = (position: any) => {
-        if (settled || !position || !position.coords) return;
+      const addSample = (position: any) => {
+        if (settled || !isValid(position)) return;
 
         const sample = {
           lat: position.coords.latitude,
@@ -177,15 +182,22 @@ export class Geolocator {
         const bestAcc = Math.min(...samples.map((s) => s.accuracy));
         if (onProgress) onProgress(samples.length, bestAcc);
 
-        // جاءت أول قراءة: أوقف مهلة الـ 20 وابدأ معايرة الـ 5 ثوانٍ
-        if (samples.length === 1) {
-          if (firstFixTimer) clearTimeout(firstFixTimer);
-          calibrationTimer = setTimeout(() => finishWithBest(), 5000);
+        // أول قراءة → بدء نافذة المعايرة التكيفية (10 ثوانٍ كحد أقصى)
+        if (!firstFixReceived) {
+          firstFixReceived = true;
+          calibrationTimer = setTimeout(() => finishWithBest(), this.MAX_CALIBRATION_MS);
         }
 
-        // خروج مبكر: 3 قراءات + دقة عالية جداً
-        if (samples.length >= 3 && sample.accuracy <= 8) {
+        // خروج فوري: دقة ممتازة (≤ 8م)
+        if (bestAcc <= 8) {
           finishWithBest();
+          return;
+        }
+
+        // خروج عند الوصول للدقة المستهدفة (≤ 12م) مع قراءتين على الأقل
+        if (bestAcc <= this.TARGET_ACCURACY && samples.length >= 2) {
+          finishWithBest();
+          return;
         }
       };
 
@@ -195,25 +207,81 @@ export class Geolocator {
         if (code === 1 || /permission|denied|unauthorized/i.test(msg)) {
           fail(new Error('LOCATION_PERMISSION_DENIED'));
         }
+        // أي خطأ آخر نتجاهله: العمود الفقري سيقرر
       };
 
-      try {
-        const options = { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 };
-
+      // شبكة أمان: موقع الشبكة/Wi-Fi إذا فشل GPS تماماً
+      const tryLowAccuracyFallback = () => {
+        const opts = { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 };
         if (isNative) {
-          watchId = await Geolocation.watchPosition(options, (position, err) => {
-            if (err) {
-              handleError(err);
-              return;
-            }
-            handlePosition(position);
+          Geolocation.getCurrentPosition(opts)
+            .then((pos) => {
+              if (settled) return;
+              settled = true;
+              cleanup();
+              resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy || 150 });
+            })
+            .catch(() => fail(new Error('GPS_TIMEOUT_NO_FIX')));
+        } else {
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              if (settled) return;
+              settled = true;
+              cleanup();
+              resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy || 150 });
+            },
+            () => fail(new Error('GPS_TIMEOUT_NO_FIX')),
+            opts
+          );
+        }
+      };
+
+      // (1) التحسين: watchPosition لجمع قراءات متعددة وتحسين الدقة
+      try {
+        const watchOpts = { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 };
+        if (isNative) {
+          watchId = await Geolocation.watchPosition(watchOpts, (position, err) => {
+            if (err) { handleError(err); return; }
+            addSample(position);
           });
         } else {
-          watchId = navigator.geolocation.watchPosition(handlePosition, handleError, options);
+          watchId = navigator.geolocation.watchPosition(addSample, handleError, watchOpts);
         }
-      } catch (err) {
-        fail(err);
+      } catch (e) {
+        console.warn('watchPosition unavailable', e);
       }
+
+      // (2) العمود الفقري: قراءة سريعة لضمان العمل على كل الأجهزة
+      const baseOpts = { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 };
+      if (isNative) {
+        Geolocation.getCurrentPosition(baseOpts)
+          .then((pos) => addSample(pos))
+          .catch(() => {
+            setTimeout(() => {
+              if (samples.length === 0 && !firstFixReceived) {
+                tryLowAccuracyFallback();
+              }
+            }, 20000);
+          });
+      } else {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => addSample(pos),
+          () => {
+            setTimeout(() => {
+              if (samples.length === 0 && !firstFixReceived) {
+                tryLowAccuracyFallback();
+              }
+            }, 20000);
+          },
+          baseOpts
+        );
+      }
+
+      // (3) سقف أخير: 35 ثانية إجمالاً
+      hardTimer = setTimeout(() => {
+        if (samples.length > 0) finishWithBest();
+        else fail(new Error('GPS_TIMEOUT_NO_FIX'));
+      }, 35000);
     });
   }
 

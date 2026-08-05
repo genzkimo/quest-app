@@ -312,7 +312,11 @@ export default function GlobalCreateQuestModal({
         style={{ direction: isRtl ? 'rtl' : 'ltr' }}
       >
         {/* Modern Header Navigation */}
-        <div className="flex justify-between items-center px-6 py-5 border-b border-white/5 bg-slate-900/40 relative z-20">
+                {/* Modern Header Navigation */}
+        <div 
+          className="flex justify-between items-center px-6 py-5 border-b border-white/5 bg-slate-900/40 relative z-20"
+          style={{ paddingTop: 'calc(1.25rem + min(env(safe-area-inset-top, 0px), 28px))' }}
+        >
           <div className="flex items-center gap-3">
             <span className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-[#FF3B7C] to-[#4FC3F7] flex items-center justify-center text-white text-lg font-black shadow-lg shadow-[#FF3B7C]/15 select-none">
               +

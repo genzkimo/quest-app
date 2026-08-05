@@ -32,7 +32,9 @@ import {
   Eye,
   Plus,
   Lock,
-  ChevronDown
+  ChevronDown,
+  Compass,
+  RefreshCw
 } from 'lucide-react';
 import { Quest, QuestCategory, UserProfile, QuestStory } from '../types';
 import { Geolocator } from '../utils/geolocator';
@@ -351,34 +353,58 @@ export default function HomeView({
   });
   const [gpsDenied, setGpsDenied] = useState<boolean>(false);
   const [isGpsRequesting, setIsGpsRequesting] = useState<boolean>(false);
+  const [isGpsServiceEnabled, setIsGpsServiceEnabled] = useState<boolean>(true);
   const [visibleCount, setVisibleCount] = useState<number>(30);
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
 
-  const requestHomeLocation = () => {
-    if (!navigator.geolocation) {
-      setGpsDenied(true);
-      return;
-    }
-    setIsGpsRequesting(true);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const newLoc = { lat: position.coords.latitude, lng: position.coords.longitude };
-        setUserLoc(newLoc);
-        Geolocator.saveCachedLocation(newLoc.lat, newLoc.lng);
-        setGpsDenied(false);
-        setIsGpsRequesting(false);
-      },
-      (error) => {
-        console.warn("HomeView GPS tracking error: ", error);
-        setGpsDenied(true);
-        setIsGpsRequesting(false);
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 20000,
-        maximumAge: 0
+  useEffect(() => {
+    const checkService = async () => {
+      const enabled = await Geolocator.isLocationServiceEnabled();
+      setIsGpsServiceEnabled(enabled);
+    };
+    checkService();
+
+    const handleGpsStatusEvent = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail && typeof detail.enabled === 'boolean') {
+        setIsGpsServiceEnabled(detail.enabled);
       }
-    );
+    };
+    window.addEventListener('gps_status_changed', handleGpsStatusEvent);
+    return () => {
+      window.removeEventListener('gps_status_changed', handleGpsStatusEvent);
+    };
+  }, []);
+
+  const handleEnableLocationFromSystem = async () => {
+    setIsGpsRequesting(true);
+    try {
+      await Geolocator.openLocationSettings();
+      const accurate = await Geolocator.getAccuratePhysicalLocation();
+      const newLoc = { lat: accurate.lat, lng: accurate.lng };
+      setUserLoc(newLoc);
+      Geolocator.saveCachedLocation(newLoc.lat, newLoc.lng);
+      setGpsDenied(false);
+      setIsGpsServiceEnabled(true);
+      if (showToast) {
+        showToast(lang === 'ar' ? '🎯 تم تشغيل خدمة الموقع من النظام وتحديد موقعك الجغرافي بنجاح!' : '🎯 Location service enabled and position updated!');
+      }
+    } catch (err) {
+      console.warn("HomeView location enable error:", err);
+      setGpsDenied(true);
+      setIsGpsServiceEnabled(false);
+      alert(
+        lang === 'ar'
+          ? '⚠️ تعذر الوصول للموقع. يرجى تفعيل خيار الـ GPS من إعدادات الهاتف والسماح للمتصفح بالوصول.'
+          : '⚠️ Location unavailable. Please enable GPS in system settings and allow browser access.'
+      );
+    } finally {
+      setIsGpsRequesting(false);
+    }
+  };
+
+  const requestHomeLocation = () => {
+    handleEnableLocationFromSystem();
   };
 
   // Do not auto-trigger location on mount - wait for user to click button or enter Map view
@@ -1095,6 +1121,50 @@ export default function HomeView({
           })}
         </div>
       </div>
+
+      {/* Interactive System Location Request Banner when GPS is Disabled or Inactive */}
+      {(gpsDenied || !isGpsServiceEnabled || !userLoc) && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-amber-500 text-slate-950 border-2 border-amber-300 rounded-3xl p-4 md:p-5 shadow-lg flex flex-col sm:flex-row items-center justify-between gap-4 text-start relative overflow-hidden"
+        >
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-slate-950/15 border border-slate-950/20 text-slate-950 flex items-center justify-center shrink-0">
+              <MapPin className="w-6 h-6 animate-bounce text-slate-950" />
+            </div>
+            <div className="space-y-1">
+              <h4 className="text-xs font-black text-slate-950 flex items-center gap-1.5">
+                <span>{lang === 'ar' ? 'تحديد الموقع (GPS) غير مفعّل على الهاتف 📍' : 'Phone Location Service (GPS) Disabled 📍'}</span>
+              </h4>
+              <p className="text-[11px] text-slate-900 font-extrabold leading-relaxed max-w-lg">
+                {lang === 'ar'
+                  ? 'يلزم تفعيل ميزة الموقع من النظام لاستدعاء مستشعرات الهاتف وإظهار المهام القريبة منك بدقة.'
+                  : 'Enabling phone GPS location is required to accurately discover nearby quests and organize tasks.'}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleEnableLocationFromSystem}
+            disabled={isGpsRequesting}
+            className="w-full sm:w-auto px-5 py-3 bg-slate-950 hover:bg-slate-900 active:scale-95 text-amber-400 font-black text-xs rounded-2xl shadow-xl transition-all cursor-pointer flex items-center justify-center gap-2 shrink-0 border border-slate-800 disabled:opacity-60"
+          >
+            {isGpsRequesting ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin text-amber-400" />
+                <span>{lang === 'ar' ? 'جاري الاستدعاء من النظام...' : 'Requesting System GPS...'}</span>
+              </>
+            ) : (
+              <>
+                <Compass className="w-4 h-4 text-amber-400" />
+                <span>{lang === 'ar' ? '⚡ تشغيل خدمة الموقع من النظام' : '⚡ Enable System Location'}</span>
+              </>
+            )}
+          </button>
+        </motion.div>
+      )}
 
       {/* VERTICAL PREMIUM SOCIAL FEED PLAYGROUND */}
       <div id="social-media-feed-track" className="space-y-6">

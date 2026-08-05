@@ -180,6 +180,7 @@ export default function GlobalCreateQuestModal({
     setGpsAccuracyInfo(lang === 'ar' ? 'جاري الفحص والمعايرة العالية (5 ثوانٍ)...' : 'Calibrating high precision (5s)...');
 
     try {
+      await Geolocator.openLocationSettings();
       const accurate = await Geolocator.getAccuratePhysicalLocation((sampleCount, bestAcc) => {
         setGpsAccuracyInfo(
           lang === 'ar'
@@ -201,7 +202,7 @@ export default function GlobalCreateQuestModal({
       console.warn("GPS Calibration Warning:", err);
       setGpsCoords(null);
       setGpsAccuracyInfo('');
-      alert(lang === 'ar' ? '⚠️ يرجى تفعيل الـ GPS والتأكد من السماح بالوصول للموقع' : '⚠️ Please enable GPS and allow location access');
+      alert(lang === 'ar' ? '⚠️ يرجى تفعيل الـ GPS والتأكد من السماح بالوصول للموقع من إعدادات الهاتف' : '⚠️ Please enable GPS and allow location access in phone settings');
     } finally {
       setGpsLoading(false);
     }
@@ -312,8 +313,7 @@ export default function GlobalCreateQuestModal({
         style={{ direction: isRtl ? 'rtl' : 'ltr' }}
       >
         {/* Modern Header Navigation */}
-                {/* Modern Header Navigation */}
-        <div 
+                <div 
           className="flex justify-between items-center px-6 py-5 border-b border-white/5 bg-slate-900/40 relative z-20"
           style={{ paddingTop: 'calc(1.25rem + min(env(safe-area-inset-top, 0px), 28px))' }}
         >

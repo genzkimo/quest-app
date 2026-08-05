@@ -1302,22 +1302,58 @@ export default function MapView({
           <div className="absolute top-20 md:top-24 left-1/2 -translate-x-1/2 z-[10020] w-[92%] max-w-md bg-amber-500 text-slate-950 border-2 border-amber-300 p-4 rounded-2xl shadow-2xl flex flex-col items-center text-center gap-3 animate-in fade-in duration-100">
             <div className="flex items-center gap-2 text-slate-950 font-black text-xs">
               <MapPin className="w-4 h-4 text-slate-950 animate-bounce" />
-              <span>{lang === 'ar' ? 'تحديد الموقع (GPS) غير مفعّل 📍' : 'GPS Location Disabled 📍'}</span>
+              <span>{lang === 'ar' ? 'تحديد الموقع (GPS) غير مفعّل على الهاتف 📍' : 'Phone GPS Location Disabled 📍'}</span>
             </div>
             <p className="text-[11px] font-extrabold text-slate-900 leading-snug">
               {lang === 'ar'
-                ? 'يرجى تفعيل خدمة تحديد الموقع (GPS) لتحديد موقعك واستعراض المهام القريبة منك على الخريطة.'
-                : 'Please enable GPS location services to pinpoint your position and view nearby tasks.'}
+                ? 'يرجى تفعيل خدمة تحديد الموقع (GPS) من الهاتف وتسهيل الوصول لتحديد موقعك واستعراض المهام القريبة.'
+                : 'Please enable GPS location services from phone system settings to pinpoint position & view tasks.'}
             </p>
             <button
-              onClick={() => {
-                setGpsDenied(false);
-                setIsGpsServiceEnabled(true);
-                triggerGPSGet(true);
+              onClick={async () => {
+                setIsLocating(true);
+                try {
+                  await Geolocator.openLocationSettings();
+                  const accurate = await Geolocator.getAccuratePhysicalLocation();
+                  const newLoc = { lat: accurate.lat, lng: accurate.lng };
+                  setUserLoc(newLoc);
+                  setUserLocAccuracy(Math.round(accurate.accuracy));
+                  setGpsActive(true);
+                  setGpsDenied(false);
+                  setIsGpsServiceEnabled(true);
+                  setIsGpsLost(false);
+                  Geolocator.saveCachedLocation(newLoc.lat, newLoc.lng);
+                  if (mapInstanceRef.current) {
+                    mapInstanceRef.current.flyTo([newLoc.lat, newLoc.lng], 15, { animate: true, duration: 1 });
+                  }
+                  showToast(lang === 'ar' ? '🎯 تم تفعيل خدمة الموقع وتحديد موقعك على الخريطة بنجاح!' : '🎯 GPS enabled & position centered!');
+                } catch (err) {
+                  console.warn("MapView location request error:", err);
+                  setGpsDenied(true);
+                  setIsGpsServiceEnabled(false);
+                  alert(
+                    lang === 'ar'
+                      ? '⚠️ يرجى تفعيل الـ GPS والتأكد من السماح بالوصول للموقع من إعدادات الهاتف'
+                      : '⚠️ Please enable GPS and allow location access in phone settings'
+                  );
+                } finally {
+                  setIsLocating(false);
+                }
               }}
-              className="w-full py-2.5 bg-slate-950 hover:bg-slate-900 active:scale-95 text-amber-400 rounded-xl text-xs font-black shadow-lg cursor-pointer transition-transform flex items-center justify-center gap-2"
+              disabled={isLocating}
+              className="w-full py-2.5 bg-slate-950 hover:bg-slate-900 active:scale-95 text-amber-400 rounded-xl text-xs font-black shadow-lg cursor-pointer transition-transform flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              <span>{lang === 'ar' ? 'تفعيل الـ GPS وتحديد موقعي على الخريطة 📍' : 'Enable GPS & Center My Location 📍'}</span>
+              {isLocating ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin text-amber-400" />
+                  <span>{lang === 'ar' ? 'جاري الفحص والاستدعاء من النظام...' : 'Requesting System GPS...'}</span>
+                </>
+              ) : (
+                <>
+                  <Compass className="w-4 h-4 text-amber-400" />
+                  <span>{lang === 'ar' ? '⚡ تشغيل خدمة الموقع من النظام وتحديد موقعي 📍' : '⚡ Enable System GPS & Center Location 📍'}</span>
+                </>
+              )}
             </button>
           </div>
         )}

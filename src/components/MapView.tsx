@@ -519,13 +519,44 @@ export default function MapView({
     );
   }, []);
 
-  const triggerGPSGet = (isManualReset = false) => {
+  const triggerGPSGet = async (isManualReset = false) => {
     setIsLocating(true);
     if (isManualReset) {
-      // Reset update count on manual reset/re-center button so user gets 3 fast updates again
+      // Reset update count on manual reset/re-center button so user gets fast updates
       updateCountRef.current = 0;
       lastLocUpdateTimeRef.current = Date.now();
+
+      try {
+        await Geolocator.openLocationSettings();
+        const accurate = await Geolocator.getAccuratePhysicalLocation();
+        const fetchedLoc = { lat: accurate.lat, lng: accurate.lng };
+        const accuracy = accurate.accuracy ? Math.round(accurate.accuracy) : 15;
+
+        setUserLoc(fetchedLoc);
+        setUserLocAccuracy(accuracy);
+        setGpsActive(true);
+        setIsLocating(false);
+        setHasCenteredGPS(true);
+        setGpsDenied(false);
+        setIsGpsServiceEnabled(true);
+        setIsGpsLost(false);
+        Geolocator.saveCachedLocation(fetchedLoc.lat, fetchedLoc.lng);
+
+        userHasMovedCameraRef.current = false;
+        setIsUserInteracting(false);
+        isUserInteractingRef.current = false;
+
+        if (mapInstanceRef.current) {
+          mapInstanceRef.current.flyTo([fetchedLoc.lat, fetchedLoc.lng], 15, { animate: true, duration: 1 });
+        }
+        showToast(lang === 'ar' ? '🎯 تم تفعيل خدمة الموقع وتحديد موقعك الفعلي بنجاح!' : '🎯 GPS location enabled & position centered!');
+        startGpsWatch();
+        return;
+      } catch (err) {
+        console.warn("MapView manual GPS request attempt fallback:", err);
+      }
     }
+
     startGpsWatch();
 
     if (navigator.geolocation) {
@@ -574,7 +605,11 @@ export default function MapView({
             setGpsActive(false);
             setGpsDenied(true);
             setIsGpsServiceEnabled(false);
-            showToast(lang === 'ar' ? '⚠️ تم رفض إذن الـ GPS' : '⚠️ GPS permission denied');
+            alert(
+              lang === 'ar'
+                ? '⚠️ يرجى تفعيل خيار تحديد الموقع (GPS) من إعدادات الهاتف والسماح للمتصفح بالوصول'
+                : '⚠️ Please enable GPS in phone settings and allow browser access'
+            );
           } else {
             setIsGpsServiceEnabled(true);
             setGpsDenied(false);
@@ -1262,7 +1297,7 @@ export default function MapView({
 
         {/* Satellite trigger */}
         <button 
-          onClick={triggerGPSGet}
+          onClick={() => triggerGPSGet(true)}
           disabled={isLocating}
           className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-2xl text-xs font-extrabold bg-[#1F2A44] hover:bg-[#1F2A44]/90 text-white cursor-pointer transition-all duration-200 shadow-sm shrink-0"
         >
@@ -1310,36 +1345,7 @@ export default function MapView({
                 : 'Please enable GPS location services from phone system settings to pinpoint position & view tasks.'}
             </p>
             <button
-              onClick={async () => {
-                setIsLocating(true);
-                try {
-                  await Geolocator.openLocationSettings();
-                  const accurate = await Geolocator.getAccuratePhysicalLocation();
-                  const newLoc = { lat: accurate.lat, lng: accurate.lng };
-                  setUserLoc(newLoc);
-                  setUserLocAccuracy(Math.round(accurate.accuracy));
-                  setGpsActive(true);
-                  setGpsDenied(false);
-                  setIsGpsServiceEnabled(true);
-                  setIsGpsLost(false);
-                  Geolocator.saveCachedLocation(newLoc.lat, newLoc.lng);
-                  if (mapInstanceRef.current) {
-                    mapInstanceRef.current.flyTo([newLoc.lat, newLoc.lng], 15, { animate: true, duration: 1 });
-                  }
-                  showToast(lang === 'ar' ? '🎯 تم تفعيل خدمة الموقع وتحديد موقعك على الخريطة بنجاح!' : '🎯 GPS enabled & position centered!');
-                } catch (err) {
-                  console.warn("MapView location request error:", err);
-                  setGpsDenied(true);
-                  setIsGpsServiceEnabled(false);
-                  alert(
-                    lang === 'ar'
-                      ? '⚠️ يرجى تفعيل الـ GPS والتأكد من السماح بالوصول للموقع من إعدادات الهاتف'
-                      : '⚠️ Please enable GPS and allow location access in phone settings'
-                  );
-                } finally {
-                  setIsLocating(false);
-                }
-              }}
+              onClick={() => triggerGPSGet(true)}
               disabled={isLocating}
               className="w-full py-2.5 bg-slate-950 hover:bg-slate-900 active:scale-95 text-amber-400 rounded-xl text-xs font-black shadow-lg cursor-pointer transition-transform flex items-center justify-center gap-2 disabled:opacity-50"
             >

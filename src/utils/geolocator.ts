@@ -1,6 +1,7 @@
 import { Capacitor } from '@capacitor/core';
 import { Geolocation as CapGeolocation } from '@capacitor/geolocation';
 import { NativeSettings, AndroidSettings, IOSSettings } from 'capacitor-native-settings';
+import LocationAccuracy from './nativeLocationAccuracy';
 
 /**
  * Geolocator Utility
@@ -153,6 +154,13 @@ export class Geolocator {
         const permStatus = await CapGeolocation.requestPermissions();
         if (permStatus.location === 'denied') {
           throw new Error('PERMISSION_DENIED');
+        }
+
+        // Try Google Play Services SettingsClient dialog first to ensure GPS is active before getting position
+        try {
+          await LocationAccuracy.requestHighAccuracy();
+        } catch (accErr) {
+          console.warn("Native LocationAccuracy check warning:", accErr);
         }
 
         const position = await CapGeolocation.getCurrentPosition({
@@ -313,22 +321,26 @@ export class Geolocator {
           return;
         }
 
-        // 1. Attempt high-accuracy position request to trigger Android Google Location Accuracy system prompt ("Turn on location?")
+        // 1. Invoke Google Play Services SettingsClient Native Plugin prompt ("Turn on location?")
         try {
-          const promptPos = await CapGeolocation.getCurrentPosition({
-            enableHighAccuracy: true,
-            timeout: 6000,
-            maximumAge: 0
-          });
-          if (promptPos && promptPos.coords) {
-            this.saveCachedLocation(promptPos.coords.latitude, promptPos.coords.longitude);
-            return; // Successfully enabled via native dialog without leaving app
+          const accRes = await LocationAccuracy.requestHighAccuracy();
+          if (accRes && accRes.success) {
+            // User enabled GPS directly from native system dialog without leaving app!
+            const promptPos = await CapGeolocation.getCurrentPosition({
+              enableHighAccuracy: true,
+              timeout: 6000,
+              maximumAge: 0
+            });
+            if (promptPos && promptPos.coords) {
+              this.saveCachedLocation(promptPos.coords.latitude, promptPos.coords.longitude);
+            }
+            return;
           }
         } catch (promptErr: any) {
-          console.warn("Native Google Location Accuracy prompt check failed, proceeding to settings screen:", promptErr);
+          console.warn("LocationAccuracy native prompt failed or declined, proceeding to settings screen:", promptErr);
         }
 
-        // 2. Open native Android/iOS system Location (GPS) settings toggle screen if prompt failed or skipped
+        // 2. Open native Android/iOS system Location (GPS) settings toggle screen if prompt was declined or unavailable
         await NativeSettings.open({
           optionAndroid: AndroidSettings.Location,
           optionIOS: IOSSettings.LocationServices

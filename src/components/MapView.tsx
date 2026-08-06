@@ -548,7 +548,9 @@ export default function MapView({
       isUserInteractingRef.current = false;
 
       if (mapInstanceRef.current) {
-        mapInstanceRef.current.flyTo([fetchedLoc.lat, fetchedLoc.lng], 15, { animate: true, duration: 1 });
+        const currentZoom = mapInstanceRef.current.getZoom();
+        const targetZoom = Math.max(currentZoom, 15);
+        mapInstanceRef.current.flyTo([fetchedLoc.lat, fetchedLoc.lng], targetZoom, { animate: true, duration: 1 });
       }
       showToast(lang === 'ar' ? '🎯 تم تحديد موقعك الفعلي بنجاح وتوسيط الخريطة!' : '🎯 GPS location synced & centered!');
       startGpsWatch();
@@ -812,9 +814,10 @@ export default function MapView({
     }
   }, [selectedQuest, getQuestCoords]);
 
-  // Update map center smoothly when user position is updated, adapting to fit bounds if navigating
+  // Update map center smoothly when user position is updated, preserving user zoom scale
   useEffect(() => {
     if (mapInstanceRef.current) {
+      const currentZoom = mapInstanceRef.current.getZoom();
       if (navigatingQuest) {
         // Only run automatic fitBounds if the user isn't interacting right now and GPS is verified
         if (!isUserInteractingRef.current) {
@@ -826,14 +829,14 @@ export default function MapView({
             ]);
             mapInstanceRef.current.fitBounds(bounds, { padding: [60, 60] });
           } else {
-            // If GPS is not active yet, only center on the quest marker so we don't snap to Algiers fallback!
-            mapInstanceRef.current.setView([navCoords.lat, navCoords.lng], 13);
+            // If GPS is not active yet, only center on the quest marker preserving zoom level
+            mapInstanceRef.current.setView([navCoords.lat, navCoords.lng], currentZoom);
           }
         }
       } else if (hasCenteredGPS && gpsActive && userLoc) {
-        // ONLY auto-center/zoom if the user is NOT interacting and hasn't manually adjusted their map view
+        // ONLY auto-center/pan if the user is NOT interacting and hasn't manually adjusted their map view
         if (!isUserInteractingRef.current && !userHasMovedCameraRef.current) {
-          mapInstanceRef.current.setView([userLoc.lat, userLoc.lng], 13);
+          mapInstanceRef.current.setView([userLoc.lat, userLoc.lng], currentZoom);
         }
       }
     }
@@ -1269,49 +1272,7 @@ export default function MapView({
           className="absolute inset-0 w-full h-full z-10 transition-all duration-300" 
         />
 
-        {/* GPS Signal Loss Recovery Notification Banner - Positioned cleanly below top header bar (z-[10020]) */}
-        {isGpsLost && (
-          <div className="absolute top-20 md:top-24 left-1/2 -translate-x-1/2 z-[10020] w-[90%] max-w-md bg-amber-500 text-slate-950 px-4 py-2.5 rounded-2xl text-xs font-black shadow-2xl flex items-center justify-center gap-2 border-2 border-amber-300 animate-bounce">
-            <RefreshCw className="w-4 h-4 animate-spin text-slate-950 shrink-0" />
-            <span className="text-center leading-tight">
-              {lang === 'ar'
-                ? '⚠️ انقطع اتصال الـ GPS — جاري المحاولة واستعادة الإشارة تلقائياً...'
-                : '⚠️ GPS Signal Lost — Auto-reconnecting continuously...'}
-            </span>
-          </div>
-        )}
 
-        {/* Immediate Orange Notice Banner when Location Services are Disabled or Inactive */}
-        {(gpsDenied || !isGpsServiceEnabled || (!gpsActive && !userLoc)) && (
-          <div className="absolute top-20 md:top-24 left-1/2 -translate-x-1/2 z-[10020] w-[92%] max-w-md bg-amber-500 text-slate-950 border-2 border-amber-300 p-4 rounded-2xl shadow-2xl flex flex-col items-center text-center gap-3 animate-in fade-in duration-100">
-            <div className="flex items-center gap-2 text-slate-950 font-black text-xs">
-              <MapPin className="w-4 h-4 text-slate-950 animate-bounce" />
-              <span>{lang === 'ar' ? 'تحديد الموقع (GPS) غير مفعّل على الهاتف 📍' : 'Phone GPS Location Disabled 📍'}</span>
-            </div>
-            <p className="text-[11px] font-extrabold text-slate-900 leading-snug">
-              {lang === 'ar'
-                ? 'يرجى تفعيل خدمة تحديد الموقع (GPS) من الهاتف وتسهيل الوصول لتحديد موقعك واستعراض المهام القريبة.'
-                : 'Please enable GPS location services from phone system settings to pinpoint position & view tasks.'}
-            </p>
-            <button
-              onClick={() => triggerGPSGet(true)}
-              disabled={isLocating}
-              className="w-full py-2.5 bg-slate-950 hover:bg-slate-900 active:scale-95 text-amber-400 rounded-xl text-xs font-black shadow-lg cursor-pointer transition-transform flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              {isLocating ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin text-amber-400" />
-                  <span>{lang === 'ar' ? 'جاري الفحص والاستدعاء من النظام...' : 'Requesting System GPS...'}</span>
-                </>
-              ) : (
-                <>
-                  <Compass className="w-4 h-4 text-amber-400" />
-                  <span>{lang === 'ar' ? '⚡ تشغيل خدمة الموقع من النظام وتحديد موقعي 📍' : '⚡ Enable System GPS & Center Location 📍'}</span>
-                </>
-              )}
-            </button>
-          </div>
-        )}
 
         {/* Full-screen Toggle FAB and Top Region Action Bar */}
         {isFullScreen ? (

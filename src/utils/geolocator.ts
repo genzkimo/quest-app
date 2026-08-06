@@ -9,6 +9,11 @@ import { NativeSettings, AndroidSettings, IOSSettings } from 'capacitor-native-s
  * Supports both Native Capacitor (Android/iOS) and standard Web Browser environments.
  */
 export class Geolocator {
+
+  // متغير لتتبع حالة محاولة فتح الإعدادات (لإعادة المحاولة عند العودة)
+  private static _pendingSettingsRetry: boolean = false;
+  private static _retryCallback: (() => void) | null = null;
+
   /**
    * Returns current browser permission status for geolocation ('granted' | 'prompt' | 'denied').
    */
@@ -16,7 +21,7 @@ export class Geolocator {
     try {
       if (Capacitor.isNativePlatform()) {
         const perm = await CapGeolocation.checkPermissions();
-        if (perm.location === 'granted') return 'granted';
+        if (perm.location === 'granted' || perm.coarseLocation === 'granted') return 'granted';
         if (perm.location === 'denied') return 'denied';
         return 'prompt';
       }
@@ -56,7 +61,6 @@ export class Geolocator {
 
       if (!latStr || !lngStr) return null;
 
-      // Validate 1 hour expiration (3,600,000 ms)
       if (timeStr) {
         const timestamp = parseInt(timeStr, 10);
         const ONE_HOUR = 60 * 60 * 1000;
@@ -97,7 +101,7 @@ export class Geolocator {
     try {
       if (Capacitor.isNativePlatform()) {
         const perm = await CapGeolocation.checkPermissions();
-        if (perm.location === 'denied') return false;
+        if (perm.location === 'denied' && perm.coarseLocation === 'denied') return false;
 
         // Verify native location availability by attempting a quick low-power position check
         try {
@@ -109,8 +113,10 @@ export class Geolocator {
           return !!(pos && pos.coords);
         } catch (e: any) {
           const msg = String(e?.message || e || '').toLowerCase();
+          const code = e?.code;
           // If error is purely a timeout (e.g. user indoors) but permission is granted, location service is enabled
-          if ((msg.includes('timeout') || e?.code === 3) && perm.location === 'granted') {
+          if ((msg.includes('timeout') || code === 3) &&
+              (perm.location === 'granted' || perm.coarseLocation === 'granted')) {
             return true;
           }
           // Explicit location service disabled/unavailable errors
@@ -129,8 +135,7 @@ export class Geolocator {
   }
 
   /**
-   * Fetch absolute high-accuracy real-time location (LocationAccuracy.bestForNavigation equivalent).
-   * Bypasses VPN/IP approximation, demands physical hardware GPS stream, and queries spoofing flags.
+   * Fetch absolute high-accuracy real-time location.
    */
   static async getCurrentPhysicalLocation(): Promise<{ lat: number; lng: number }> {
     const accurateLoc = await this.getAccuratePhysicalLocation();
@@ -140,8 +145,6 @@ export class Geolocator {
   /**
    * Samples location continuously over 5 seconds (collecting 3+ high-accuracy readings)
    * and returns the reading with the best (lowest) accuracy margin in meters.
-   * Uses Native Capacitor Geolocation plugin on mobile devices (Android/iOS) to trigger
-   * native Android permissions & Google Location Accuracy system popups reliably across Android versions (e.g. Android 14/16).
    */
   static async getAccuratePhysicalLocation(
     onProgress?: (sampleCount: number, bestAccuracy: number) => void
@@ -151,13 +154,13 @@ export class Geolocator {
       try {
         // Explicitly request Native Android/iOS runtime permissions
         const permStatus = await CapGeolocation.requestPermissions();
-        if (permStatus.location === 'denied') {
+        if (permStatus.location === 'denied' && permStatus.coarseLocation === 'denied') {
           throw new Error('PERMISSION_DENIED');
         }
 
         const position = await CapGeolocation.getCurrentPosition({
           enableHighAccuracy: true,
-          timeout: 12000,
+          timeout: 15000,
           maximumAge: 0
         });
 
@@ -166,17 +169,22 @@ export class Geolocator {
         const accuracy = position.coords.accuracy || 15;
 
         if (onProgress) onProgress(1, accuracy);
+        this.saveCachedLocation(lat, lng);
         return { lat, lng, accuracy };
       } catch (nativeErr: any) {
         console.warn("Native Capacitor Geolocation attempt failed:", nativeErr);
         const msg = String(nativeErr?.message || nativeErr || '').toLowerCase();
-        if (msg.includes('denied') || msg.includes('permission')) {
+        const code = nativeErr?.code;
+
+        if (msg.includes('denied') || msg.includes('permission') || code === 1) {
           throw new Error('PERMISSION_DENIED');
         }
-        if (msg.includes('disabled') || msg.includes('unavailable') || msg.includes('location services') || msg.includes('provider')) {
+        // timeout (code 3) or position unavailable (code 2) or other = GPS probably disabled
+        if (msg.includes('disabled') || msg.includes('unavailable') ||
+            msg.includes('location services') || msg.includes('provider') ||
+            msg.includes('timeout') || code === 2 || code === 3) {
           throw new Error('LOCATION_DISABLED');
         }
-        // Always re-throw native exceptions so native execution path never leaks into Web fallback
         throw nativeErr;
       }
     }
@@ -194,16 +202,11 @@ export class Geolocator {
       const finishSampling = () => {
         if (timer) clearTimeout(timer);
         if (watchId !== null) {
-          try {
-            navigator.geolocation.clearWatch(watchId);
-          } catch (e) {
-            console.warn("Failed to clear watchPosition", e);
-          }
+          try { navigator.geolocation.clearWatch(watchId); } catch (e) {}
           watchId = null;
         }
 
         if (samples.length === 0) {
-          // Fallback to getCurrentPosition if watchPosition produced no samples
           navigator.geolocation.getCurrentPosition(
             (position) => {
               resolve({
@@ -218,15 +221,11 @@ export class Geolocator {
           return;
         }
 
-        // Sort samples by best accuracy (lowest error margin in meters)
         samples.sort((a, b) => a.accuracy - b.accuracy);
         resolve(samples[0]);
       };
 
-      // Set a strict 5-second calibration window
-      timer = setTimeout(() => {
-        finishSampling();
-      }, 5000);
+      timer = setTimeout(() => { finishSampling(); }, 5000);
 
       try {
         watchId = navigator.geolocation.watchPosition(
@@ -239,38 +238,28 @@ export class Geolocator {
             samples.push(sample);
 
             const bestAcc = Math.min(...samples.map((s) => s.accuracy));
-            if (onProgress) {
-              onProgress(samples.length, bestAcc);
-            }
+            if (onProgress) onProgress(samples.length, bestAcc);
 
-            // Early exit if we have at least 3 samples and accuracy is already very precise (<= 8 meters)
             if (samples.length >= 3 && sample.accuracy <= 8) {
               finishSampling();
             }
           },
           (error) => {
             if (samples.length === 0) {
-              // Try fallback single fix
               if (timer) clearTimeout(timer);
-              if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+              if (watchId !== null) { try { navigator.geolocation.clearWatch(watchId); } catch (e) {} }
               navigator.geolocation.getCurrentPosition(
-                (position) => {
-                  resolve({
-                    lat: position.coords.latitude,
-                    lng: position.coords.longitude,
-                    accuracy: position.coords.accuracy || 50
-                  });
-                },
+                (position) => resolve({
+                  lat: position.coords.latitude,
+                  lng: position.coords.longitude,
+                  accuracy: position.coords.accuracy || 50
+                }),
                 (err) => reject(err),
                 { enableHighAccuracy: false, timeout: 10000, maximumAge: 30000 }
               );
             }
           },
-          {
-            enableHighAccuracy: true,
-            timeout: 15000,
-            maximumAge: 0
-          }
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
         );
       } catch (err) {
         if (timer) clearTimeout(timer);
@@ -281,55 +270,189 @@ export class Geolocator {
 
   /**
    * Updates application-level state preference and dispatches custom event for GPS status listeners.
-   * Note: This manages app UI state notifications; it does not directly toggle hardware GPS on the physical device.
    */
   static async setLocationServiceEnabled(enabled: boolean): Promise<void> {
     localStorage.setItem('gps_hardware_enabled', enabled ? 'true' : 'false');
     window.dispatchEvent(new CustomEvent('gps_status_changed', { detail: { enabled } }));
   }
 
-  /**
-   * Alias for setLocationServiceEnabled to clearly indicate broadcasting UI status changes.
-   */
   static async notifyGpsStatusChanged(enabled: boolean): Promise<void> {
     await this.setLocationServiceEnabled(enabled);
   }
 
   /**
-   * Directly opens native device location settings (GPS toggle) or App Details settings if permissions are denied.
+   * 🆕 يُسجّل إعادة محاولة تلقائية بعد عودة المستخدم من الإعدادات.
+   * استخدمه من واجهة المستخدم لتمرير دالة تُستدعى عندما يرجع المستخدم.
+   */
+  static setReturnFromSettingsCallback(callback: () => void): void {
+    this._retryCallback = callback;
+    this._pendingSettingsRetry = true;
+
+    // استمع لحدث "استئناف التطبيق" (resume) من Capacitor
+    if (Capacitor.isNativePlatform()) {
+      // Capacitor App plugin يرسل 'appStateChange' عند العودة
+      const handler = (state: { isActive: boolean }) => {
+        if (state.isActive && this._pendingSettingsRetry) {
+          this._pendingSettingsRetry = false;
+          // تأخير قصير لضمان استقرار الحالة
+          setTimeout(() => {
+            if (this._retryCallback) {
+              this._retryCallback();
+              this._retryCallback = null;
+            }
+          }, 500);
+        }
+      };
+      // استيراد ديناميكي لتجنب مشاكل الاستيراد العلوي
+      import('@capacitor/app').then(({ App }) => {
+        App.addListener('appStateChange', handler);
+      }).catch(() => {});
+    } else {
+      // Web fallback: استمع لـ visibilitychange
+      const handler = () => {
+        if (document.visibilityState === 'visible' && this._pendingSettingsRetry) {
+          this._pendingSettingsRetry = false;
+          setTimeout(() => {
+            if (this._retryCallback) {
+              this._retryCallback();
+              this._retryCallback = null;
+            }
+          }, 500);
+        }
+      };
+      document.addEventListener('visibilitychange', handler);
+    }
+  }
+
+  /**
+   * 🆕 يفتح إعدادات الموقع الأصلية ويعيد المحاولة تلقائياً عند العودة.
+   * هذه هي الدالة الرئيسية التي يجب استدعاؤها من واجهة المستخدم.
+   * 
+   * @param retryCallback - دالة تُستدعى عند عودة المستخدم (عادة نفس دالة جلب الموقع)
+   * @param reason - سبب فتح الإعدادات
+   */
+  static async openLocationSettingsAndRetry(
+    retryCallback: () => void,
+    reason: 'PERMISSION_DENIED' | 'LOCATION_DISABLED' = 'LOCATION_DISABLED'
+  ): Promise<void> {
+    // سجّل الـ callback ليتم استدعاؤه عند العودة
+    this.setReturnFromSettingsCallback(retryCallback);
+    // افتح الإعدادات
+    await this.openLocationSettings(reason);
+  }
+
+  /**
+   * Directly opens native device location settings (GPS toggle) or App Details settings.
+   * محسّن: يحاول عدة طرق لضمان الفتح على كل إصدارات أندرويد.
    */
   static async openLocationSettings(reason?: 'PERMISSION_DENIED' | 'LOCATION_DISABLED'): Promise<void> {
     await this.setLocationServiceEnabled(true);
+
     if (Capacitor.isNativePlatform()) {
+      const permStatus = await CapGeolocation.checkPermissions().catch(() => ({
+        location: 'prompt' as const,
+        coarseLocation: 'prompt' as const
+      }));
+
+      const permissionDenied = (permStatus.location === 'denied' && permStatus.coarseLocation === 'denied')
+                               || reason === 'PERMISSION_DENIED';
+
+      // محاولة 1: NativeSettings.open بالطريقة الحديثة
       try {
-        const permStatus = await CapGeolocation.checkPermissions();
-        if (permStatus.location === 'denied' || reason === 'PERMISSION_DENIED') {
-          // Open App Details screen directly if permission is denied
+        if (permissionDenied) {
           await NativeSettings.open({
             optionAndroid: AndroidSettings.ApplicationDetails,
             optionIOS: IOSSettings.App
           });
+        } else {
+          await NativeSettings.open({
+            optionAndroid: AndroidSettings.Location,
+            optionIOS: IOSSettings.LocationServices
+          });
+        }
+        return;
+      } catch (e) {
+        console.warn("openLocationSettings attempt 1 failed:", e);
+      }
+
+      // محاولة 2: استخدام cast لتجاوز أي اختلافات في الإصدارات
+      try {
+        const ns = NativeSettings as any;
+        if (typeof ns.open === 'function') {
+          if (permissionDenied) {
+            await ns.open({ optionAndroid: 'application_details', optionIOS: 'app' });
+          } else {
+            await ns.open({ optionAndroid: 'location', optionIOS: 'location_services' });
+          }
           return;
         }
-
-        // Open native Android/iOS system Location (GPS) settings toggle screen
-        await NativeSettings.open({
-          optionAndroid: AndroidSettings.Location,
-          optionIOS: IOSSettings.LocationServices
-        });
       } catch (e) {
-        console.warn("Could not open native settings via plugin:", e);
+        console.warn("openLocationSettings attempt 2 failed:", e);
       }
+
+      // محاولة 3: استدعاء الطريقة القديمة إن وجدت
+      try {
+        const ns = NativeSettings as any;
+        if (typeof ns.openSettings === 'function') {
+          if (permissionDenied) {
+            await ns.openSettings({ option: 'application_details' });
+          } else {
+            await ns.openSettings({ option: 'location_source' });
+          }
+          return;
+        }
+      } catch (e) {
+        console.warn("openLocationSettings attempt 3 failed:", e);
+      }
+
+      console.error("Could not open native location settings through any method.");
     } else {
+      // Web fallback
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           () => {},
-          (err) => {
-            console.warn("Web geolocation request error:", err);
-          },
+          (err) => { console.warn("Web geolocation request error:", err); },
           { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
         );
       }
     }
+  }
+
+  /**
+   * 🆕 طريقة شاملة ذكية: تجلب الموقع، وإذا فشل تفتح الإعدادات وتعيد المحاولة تلقائياً.
+   * استخدمها من زر "تحديد الموقع" في واجهة المستخدم للحصول على تجربة مستخدم ممتازة.
+   * 
+   * @param onSuccess - تُستدعى عند النجاح مع الموقع
+   * @param onError - تُستدعى عند فشل نهائي (بعد إعادة المحاولة)
+   */
+  static async getLocationWithAutoSettingsRetry(
+    onSuccess: (loc: { lat: number; lng: number; accuracy: number }) => void,
+    onError?: (error: Error) => void
+  ): Promise<void> {
+    const tryGetLocation = async (): Promise<void> => {
+      try {
+        const loc = await this.getAccuratePhysicalLocation();
+        onSuccess(loc);
+      } catch (err: any) {
+        const msg = String(err?.message || err || '');
+
+        if (msg.includes('PERMISSION_DENIED')) {
+          // إذن مرفوض → افتح إعدادات التطبيق
+          await this.openLocationSettingsAndRetry(tryGetLocation, 'PERMISSION_DENIED');
+          return;
+        }
+
+        if (msg.includes('LOCATION_DISABLED') || msg.includes('LOCATION')) {
+          // GPS معطل → افتح إعدادات الموقع
+          await this.openLocationSettingsAndRetry(tryGetLocation, 'LOCATION_DISABLED');
+          return;
+        }
+
+        // خطأ آخر: استدعِ onError
+        if (onError) onError(err instanceof Error ? err : new Error(msg));
+      }
+    };
+
+    await tryGetLocation();
   }
 }

@@ -1122,50 +1122,6 @@ export default function HomeView({
         </div>
       </div>
 
-      {/* Interactive System Location Request Banner when GPS is Disabled or Inactive */}
-      {(gpsDenied || !isGpsServiceEnabled || !userLoc) && (
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-amber-500 text-slate-950 border-2 border-amber-300 rounded-3xl p-4 md:p-5 shadow-lg flex flex-col sm:flex-row items-center justify-between gap-4 text-start relative overflow-hidden"
-        >
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-slate-950/15 border border-slate-950/20 text-slate-950 flex items-center justify-center shrink-0">
-              <MapPin className="w-6 h-6 animate-bounce text-slate-950" />
-            </div>
-            <div className="space-y-1">
-              <h4 className="text-xs font-black text-slate-950 flex items-center gap-1.5">
-                <span>{lang === 'ar' ? 'تحديد الموقع (GPS) غير مفعّل على الهاتف 📍' : 'Phone Location Service (GPS) Disabled 📍'}</span>
-              </h4>
-              <p className="text-[11px] text-slate-900 font-extrabold leading-relaxed max-w-lg">
-                {lang === 'ar'
-                  ? 'يلزم تفعيل ميزة الموقع من النظام لاستدعاء مستشعرات الهاتف وإظهار المهام القريبة منك بدقة.'
-                  : 'Enabling phone GPS location is required to accurately discover nearby quests and organize tasks.'}
-              </p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleEnableLocationFromSystem}
-            disabled={isGpsRequesting}
-            className="w-full sm:w-auto px-5 py-3 bg-slate-950 hover:bg-slate-900 active:scale-95 text-amber-400 font-black text-xs rounded-2xl shadow-xl transition-all cursor-pointer flex items-center justify-center gap-2 shrink-0 border border-slate-800 disabled:opacity-60"
-          >
-            {isGpsRequesting ? (
-              <>
-                <RefreshCw className="w-4 h-4 animate-spin text-amber-400" />
-                <span>{lang === 'ar' ? 'جاري الاستدعاء من النظام...' : 'Requesting System GPS...'}</span>
-              </>
-            ) : (
-              <>
-                <Compass className="w-4 h-4 text-amber-400" />
-                <span>{lang === 'ar' ? '⚡ تشغيل خدمة الموقع من النظام' : '⚡ Enable System Location'}</span>
-              </>
-            )}
-          </button>
-        </motion.div>
-      )}
-
       {/* VERTICAL PREMIUM SOCIAL FEED PLAYGROUND */}
       <div id="social-media-feed-track" className="space-y-6">
         

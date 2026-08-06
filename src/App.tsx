@@ -18,6 +18,7 @@ import { onAuthStateChanged, signInWithPopup, signInWithRedirect, getRedirectRes
 import { onSnapshot, doc, setDoc, updateDoc, deleteDoc, collection, getDoc, query, where, orderBy, limit, getDocs, increment } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType, cleanData } from './utils/firebase';
 import { Capacitor } from '@capacitor/core';
+import { App as CapApp } from '@capacitor/app';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { triggerPhoneDeviceNotification } from './utils/phoneNotifications';
@@ -28,7 +29,6 @@ import MapView from './components/MapView';
 import LeaderboardView from './components/LeaderboardView';
 import MyQuestsView from './components/MyQuestsView';
 import ProfileView from './components/ProfileView';
-
 import PublicProfileView from './components/PublicProfileView';
 import ReciprocalRatingModal from './components/ReciprocalRatingModal';
 import NotificationScreen, { NotificationDoc } from './components/NotificationScreen';
@@ -343,7 +343,7 @@ export default function App() {
 
   const navigateToQuestDetail = (questId: string) => {
     setNavigationHistory(prev => [
-      ...prev,
+      ...prev.slice(-15),
       { view: currentView, questDetailId: globalQuestDetailId, selectedPublicProfileId }
     ]);
     setGlobalQuestDetailId(questId);
@@ -359,15 +359,158 @@ export default function App() {
       setSelectedPublicProfileId(previous.selectedPublicProfileId);
     } else {
       setGlobalQuestDetailId(null);
+      setSelectedPublicProfileId(null);
     }
   };
 
   const handleViewNavigation = async (view: ViewState) => {
-    // Rule 1: Allow seamless browsing and map navigation without launch/modal GPS gates
+    if (view !== currentView) {
+      setNavigationHistory(prev => [
+        ...prev.slice(-15),
+        { view: currentView, questDetailId: globalQuestDetailId, selectedPublicProfileId }
+      ]);
+    }
     setCurrentView(view);
     setSelectedPublicProfileId(null);
     setGlobalQuestDetailId(null);
   };
+
+  // Hardware/System Back Button Navigation Controller
+  const handleHardwareBack = (): boolean => {
+    if (lightboxBlockedImageUrl) {
+      setLightboxBlockedImageUrl(null);
+      return true;
+    }
+    if (activeRatingQuestId) {
+      setActiveRatingQuestId(null);
+      return true;
+    }
+    if (gpsAlertOpen) {
+      setGpsAlertOpen(false);
+      return true;
+    }
+    if (showKycRefillPromptModal) {
+      setShowKycRefillPromptModal(false);
+      return true;
+    }
+    if (showGlobalCreateQuest) {
+      setShowGlobalCreateQuest(false);
+      return true;
+    }
+    if (showNotifications) {
+      setShowNotifications(false);
+      return true;
+    }
+    if (showTermsConsentModal) {
+      setShowTermsConsentModal(false);
+      return true;
+    }
+    if (showOnboardingModal) {
+      setShowOnboardingModal(false);
+      return true;
+    }
+    if (activeArrivalAlert) {
+      setActiveArrivalAlert(null);
+      return true;
+    }
+    if (activeMessagesChatId) {
+      setActiveMessagesChatId(null);
+      return true;
+    }
+    if (profileSubmenu && profileSubmenu !== 'main') {
+      setProfileSubmenu('main');
+      return true;
+    }
+    if (globalQuestDetailId) {
+      navigateBack();
+      return true;
+    }
+    if (selectedPublicProfileId) {
+      navigateBack();
+      return true;
+    }
+    if (navigationHistory.length > 0) {
+      const previous = navigationHistory[navigationHistory.length - 1];
+      setNavigationHistory(prev => prev.slice(0, -1));
+      setCurrentView(previous.view);
+      setGlobalQuestDetailId(previous.questDetailId);
+      setSelectedPublicProfileId(previous.selectedPublicProfileId);
+      return true;
+    }
+    if (currentView !== 'home') {
+      setCurrentView('home');
+      return true;
+    }
+
+    if (Capacitor.isNativePlatform()) {
+      CapApp.exitApp();
+    }
+    return false;
+  };
+
+  useEffect(() => {
+    let backListener: any = null;
+
+    if (Capacitor.isNativePlatform()) {
+      CapApp.addListener('backButton', () => {
+        handleHardwareBack();
+      }).then(l => {
+        backListener = l;
+      }).catch(err => console.warn("CapApp backButton error:", err));
+    }
+
+    const handlePopState = (e: PopStateEvent) => {
+      e.preventDefault();
+      handleHardwareBack();
+    };
+
+    window.addEventListener('popstate', handlePopState);
+
+    return () => {
+      if (backListener) {
+        backListener.remove().catch(() => {});
+      }
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [
+    lightboxBlockedImageUrl,
+    activeRatingQuestId,
+    gpsAlertOpen,
+    showKycRefillPromptModal,
+    showGlobalCreateQuest,
+    showNotifications,
+    showTermsConsentModal,
+    showOnboardingModal,
+    activeArrivalAlert,
+    activeMessagesChatId,
+    profileSubmenu,
+    globalQuestDetailId,
+    selectedPublicProfileId,
+    navigationHistory,
+    currentView
+  ]);
+
+  useEffect(() => {
+    if (
+      currentView !== 'home' ||
+      globalQuestDetailId ||
+      selectedPublicProfileId ||
+      showNotifications ||
+      showGlobalCreateQuest ||
+      activeMessagesChatId ||
+      profileSubmenu
+    ) {
+      window.history.pushState({ appNav: true }, '');
+    }
+  }, [
+    currentView,
+    globalQuestDetailId,
+    selectedPublicProfileId,
+    showNotifications,
+    showGlobalCreateQuest,
+    activeMessagesChatId,
+    profileSubmenu
+  ]);
   
   // Real-time hardware GPS level tracking coordinates
   const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(() => Geolocator.getCachedLocation());

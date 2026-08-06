@@ -1,5 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import { Geolocation as CapGeolocation } from '@capacitor/geolocation';
+import { NativeSettings, AndroidSettings, IOSSettings } from 'capacitor-native-settings';
 
 /**
  * Geolocator Utility
@@ -122,7 +123,7 @@ export class Geolocator {
    * Samples location continuously over 5 seconds (collecting 3+ high-accuracy readings)
    * and returns the reading with the best (lowest) accuracy margin in meters.
    * Uses Native Capacitor Geolocation plugin on mobile devices (Android/iOS) to trigger
-   * native Android permissions & Google Location Accuracy system popups reliably across Android versions (e.g. Android 14).
+   * native Android permissions & Google Location Accuracy system popups reliably across Android versions (e.g. Android 14/16).
    */
   static async getAccuratePhysicalLocation(
     onProgress?: (sampleCount: number, bestAccuracy: number) => void
@@ -138,7 +139,7 @@ export class Geolocator {
 
         const position = await CapGeolocation.getCurrentPosition({
           enableHighAccuracy: true,
-          timeout: 15000,
+          timeout: 12000,
           maximumAge: 0
         });
 
@@ -148,8 +149,15 @@ export class Geolocator {
 
         if (onProgress) onProgress(1, accuracy);
         return { lat, lng, accuracy };
-      } catch (nativeErr) {
-        console.warn("Native Capacitor Geolocation attempt failed, falling back to web API:", nativeErr);
+      } catch (nativeErr: any) {
+        console.warn("Native Capacitor Geolocation attempt failed:", nativeErr);
+        const msg = String(nativeErr?.message || nativeErr || '').toLowerCase();
+        if (msg.includes('denied') || msg.includes('permission')) {
+          throw new Error('PERMISSION_DENIED');
+        }
+        if (msg.includes('disabled') || msg.includes('unavailable') || msg.includes('location services')) {
+          throw new Error('LOCATION_DISABLED');
+        }
       }
     }
 
@@ -261,16 +269,46 @@ export class Geolocator {
   }
 
   /**
-   * Automatically redirects the user to the device's native location settings screen
-   * or requests native permissions when running in Capacitor.
+   * Triggers native permission popups and Google Location Accuracy system prompt if GPS is disabled,
+   * or alerts user with clear instructions to swipe down and enable GPS in system quick settings.
    */
   static async openLocationSettings(): Promise<void> {
     await this.setLocationServiceEnabled(true);
     if (Capacitor.isNativePlatform()) {
       try {
-        await CapGeolocation.requestPermissions();
+        // Request runtime permissions first if missing
+        const permStatus = await CapGeolocation.requestPermissions();
+        if (permStatus.location === 'denied') {
+          // Open App Details screen directly if permission is denied
+          await NativeSettings.open({
+            optionAndroid: AndroidSettings.ApplicationDetails,
+            optionIOS: IOSSettings.App
+          });
+          return;
+        }
+
+        // Directly open Android/iOS native system Location (GPS) settings toggle screen
+        await NativeSettings.open({
+          optionAndroid: AndroidSettings.Location,
+          optionIOS: IOSSettings.LocationServices
+        });
       } catch (e) {
-        console.warn("Could not request Capacitor location permissions:", e);
+        console.warn("Could not open native settings via plugin:", e);
+        alert("⚠️ يرجى تفعيل خيار تحديد الموقع (GPS) من إعدادات النظام أعلى الهاتف.");
+      }
+    } else {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          () => {},
+          (err) => {
+            if (err.code === err.PERMISSION_DENIED) {
+              alert("⚠️ تم رفض إذن الموقع. يرجى التفعيل من إعدادات المتصفح.");
+            } else {
+              alert("⚠️ يرجى التأكد من تشغيل خيار تحديد الموقع (GPS) في هاتفك ليتسنى عرض الكويستات القريبة.");
+            }
+          },
+          { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+        );
       }
     }
   }

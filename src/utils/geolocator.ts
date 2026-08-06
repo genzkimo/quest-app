@@ -174,6 +174,24 @@ export class Geolocator {
           throw new Error('PERMISSION_DENIED');
         }
         if (msg.includes('disabled') || msg.includes('unavailable') || msg.includes('location services') || msg.includes('provider')) {
+          // Attempt Google Play Services native location dialog ("Turn on location?")
+          const dialogOk = await this.requestNativeGpsDialog();
+          if (dialogOk) {
+            try {
+              const retryPosition = await CapGeolocation.getCurrentPosition({
+                enableHighAccuracy: true,
+                timeout: 10000,
+                maximumAge: 0
+              });
+              const lat = retryPosition.coords.latitude;
+              const lng = retryPosition.coords.longitude;
+              const accuracy = retryPosition.coords.accuracy || 15;
+              if (onProgress) onProgress(1, accuracy);
+              return { lat, lng, accuracy };
+            } catch (retryErr) {
+              console.warn("Retry after Google GPS dialog failed:", retryErr);
+            }
+          }
           throw new Error('LOCATION_DISABLED');
         }
         // Always re-throw native exceptions so native execution path never leaks into Web fallback
@@ -296,8 +314,49 @@ export class Geolocator {
   }
 
   /**
+   * Triggers native Android Google Play Services "Turn on location?" popup dialog directly inside the app.
+   * Uses LocationAccuracy native plugin to invoke Google SettingsClient without leaving the app.
+   */
+  static async requestNativeGpsDialog(): Promise<boolean> {
+    if (!Capacitor.isNativePlatform()) return false;
+
+    // 1. Try @awesome-cordova-plugins/location-accuracy wrapper
+    try {
+      const { LocationAccuracy } = await import('@awesome-cordova-plugins/location-accuracy');
+      if (LocationAccuracy) {
+        try {
+          await LocationAccuracy.request(LocationAccuracy.REQUEST_PRIORITY_HIGH_ACCURACY);
+          return true;
+        } catch (err: any) {
+          console.warn("LocationAccuracy wrapper call failed:", err);
+        }
+      }
+    } catch (importErr) {
+      console.warn("Could not load LocationAccuracy wrapper:", importErr);
+    }
+
+    // 2. Fallback to direct window.cordova window object
+    try {
+      const cordovaObj = (window as any).cordova;
+      if (cordovaObj?.plugins?.locationAccuracy) {
+        return new Promise<boolean>((resolve) => {
+          cordovaObj.plugins.locationAccuracy.request(
+            () => resolve(true),
+            () => resolve(false),
+            3 // REQUEST_PRIORITY_HIGH_ACCURACY
+          );
+        });
+      }
+    } catch (err) {
+      console.warn("Direct cordova locationAccuracy call failed:", err);
+    }
+
+    return false;
+  }
+
+  /**
    * Directly opens native device location settings (GPS toggle) or App Details settings if permissions are denied.
-   * On native Android/iOS, attempts Google Location Accuracy prompt first before opening system settings page.
+   * On native Android/iOS, attempts Google Location Accuracy system dialog ("Turn on location?") first before opening system settings page.
    */
   static async openLocationSettings(reason?: 'PERMISSION_DENIED' | 'LOCATION_DISABLED'): Promise<void> {
     await this.setLocationServiceEnabled(true);
@@ -313,22 +372,26 @@ export class Geolocator {
           return;
         }
 
-        // 1. Attempt high-accuracy position request to trigger Android Google Location Accuracy system prompt ("Turn on location?")
-        try {
-          const promptPos = await CapGeolocation.getCurrentPosition({
-            enableHighAccuracy: true,
-            timeout: 6000,
-            maximumAge: 0
-          });
-          if (promptPos && promptPos.coords) {
-            this.saveCachedLocation(promptPos.coords.latitude, promptPos.coords.longitude);
-            return; // Successfully enabled via native dialog without leaving app
+        // 1. Trigger Google Play Services native Location Accuracy popup dialog directly inside app
+        const dialogSuccess = await this.requestNativeGpsDialog();
+        if (dialogSuccess) {
+          // Re-attempt getting position immediately after user accepted native Google prompt
+          try {
+            const promptPos = await CapGeolocation.getCurrentPosition({
+              enableHighAccuracy: true,
+              timeout: 6000,
+              maximumAge: 0
+            });
+            if (promptPos && promptPos.coords) {
+              this.saveCachedLocation(promptPos.coords.latitude, promptPos.coords.longitude);
+              return; // Successfully enabled via native dialog without opening settings page!
+            }
+          } catch (posErr) {
+            console.warn("Post-dialog location fetch failed:", posErr);
           }
-        } catch (promptErr: any) {
-          console.warn("Native Google Location Accuracy prompt check failed, proceeding to settings screen:", promptErr);
         }
 
-        // 2. Open native Android/iOS system Location (GPS) settings toggle screen if prompt failed or skipped
+        // 2. Open native Android/iOS system Location (GPS) settings toggle screen if prompt failed or was dismissed
         await NativeSettings.open({
           optionAndroid: AndroidSettings.Location,
           optionIOS: IOSSettings.LocationServices

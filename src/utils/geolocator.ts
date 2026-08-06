@@ -99,30 +99,32 @@ export class Geolocator {
         const perm = await CapGeolocation.checkPermissions();
         if (perm.location === 'denied') return false;
 
-        // Verify native location availability
+        // Verify native location availability by attempting a quick low-power position check
         try {
           const pos = await CapGeolocation.getCurrentPosition({
             enableHighAccuracy: false,
-            timeout: 3000,
+            timeout: 4000,
             maximumAge: 60000
           });
-          return !!pos;
+          return !!(pos && pos.coords);
         } catch (e: any) {
           const msg = String(e?.message || e || '').toLowerCase();
-          if (msg.includes('disabled') || msg.includes('unavailable') || msg.includes('location services')) {
-            return false;
+          // If error is purely a timeout (e.g. user indoors) but permission is granted, location service is enabled
+          if ((msg.includes('timeout') || e?.code === 3) && perm.location === 'granted') {
+            return true;
           }
-          return perm.location === 'granted';
+          // Explicit location service disabled/unavailable errors
+          return false;
         }
       }
       if (!navigator.geolocation) return false;
       if (typeof navigator.permissions !== 'undefined' && navigator.permissions.query) {
         const permissionStatus = await navigator.permissions.query({ name: 'geolocation' as PermissionName });
-        return permissionStatus.state !== 'denied';
+        return permissionStatus.state === 'granted';
       }
       return true;
     } catch {
-      return true;
+      return false;
     }
   }
 
@@ -171,9 +173,11 @@ export class Geolocator {
         if (msg.includes('denied') || msg.includes('permission')) {
           throw new Error('PERMISSION_DENIED');
         }
-        if (msg.includes('disabled') || msg.includes('unavailable') || msg.includes('location services')) {
+        if (msg.includes('disabled') || msg.includes('unavailable') || msg.includes('location services') || msg.includes('provider')) {
           throw new Error('LOCATION_DISABLED');
         }
+        // Always re-throw native exceptions so native execution path never leaks into Web fallback
+        throw nativeErr;
       }
     }
 
@@ -276,12 +280,19 @@ export class Geolocator {
   }
 
   /**
-   * Sets the state of the device location services (GPS).
+   * Updates application-level state preference and dispatches custom event for GPS status listeners.
+   * Note: This manages app UI state notifications; it does not directly toggle hardware GPS on the physical device.
    */
   static async setLocationServiceEnabled(enabled: boolean): Promise<void> {
     localStorage.setItem('gps_hardware_enabled', enabled ? 'true' : 'false');
-    // Trigger custom window event to notify other modules in the application
     window.dispatchEvent(new CustomEvent('gps_status_changed', { detail: { enabled } }));
+  }
+
+  /**
+   * Alias for setLocationServiceEnabled to clearly indicate broadcasting UI status changes.
+   */
+  static async notifyGpsStatusChanged(enabled: boolean): Promise<void> {
+    await this.setLocationServiceEnabled(enabled);
   }
 
   /**

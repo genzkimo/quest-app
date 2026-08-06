@@ -38,6 +38,7 @@ import {
 } from 'lucide-react';
 import { Quest, QuestCategory, UserProfile, QuestStory } from '../types';
 import { Geolocator } from '../utils/geolocator';
+import { Capacitor } from '@capacitor/core';
 import { calculateBookingFee } from '../utils/fee';
 import { db } from '../utils/firebase';
 import { doc, updateDoc, arrayUnion, setDoc, collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
@@ -379,7 +380,7 @@ export default function HomeView({
   const handleEnableLocationFromSystem = async () => {
     setIsGpsRequesting(true);
     try {
-      await Geolocator.openLocationSettings();
+      // 1. First, attempt to get high-accuracy physical position directly
       const accurate = await Geolocator.getAccuratePhysicalLocation();
       const newLoc = { lat: accurate.lat, lng: accurate.lng };
       setUserLoc(newLoc);
@@ -387,17 +388,30 @@ export default function HomeView({
       setGpsDenied(false);
       setIsGpsServiceEnabled(true);
       if (showToast) {
-        showToast(lang === 'ar' ? '🎯 تم تشغيل خدمة الموقع من النظام وتحديد موقعك الجغرافي بنجاح!' : '🎯 Location service enabled and position updated!');
+        showToast(lang === 'ar' ? '🎯 تم تحديد موقعك الجغرافي بنجاح!' : '🎯 Position updated successfully!');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.warn("HomeView location enable error:", err);
       setGpsDenied(true);
       setIsGpsServiceEnabled(false);
-      alert(
-        lang === 'ar'
-          ? '⚠️ تعذر الوصول للموقع. يرجى تفعيل خيار الـ GPS من إعدادات الهاتف والسماح للمتصفح بالوصول.'
-          : '⚠️ Location unavailable. Please enable GPS in system settings and allow browser access.'
-      );
+
+      // 2. If location fetch failed because GPS is disabled or permission denied, open native system settings on native app
+      if (Capacitor.isNativePlatform()) {
+        const errorMsg = String(err?.message || '').toUpperCase();
+        if (errorMsg.includes('PERMISSION_DENIED')) {
+          await Geolocator.openLocationSettings('PERMISSION_DENIED');
+        } else {
+          await Geolocator.openLocationSettings('LOCATION_DISABLED');
+        }
+      } else {
+        if (showToast) {
+          showToast(
+            lang === 'ar'
+              ? '⚠️ يرجى تفعيل خيار تحديد الموقع (GPS) من إعدادات الهاتف لتحديد موقعك'
+              : '⚠️ Please enable Location (GPS) in phone settings'
+          );
+        }
+      }
     } finally {
       setIsGpsRequesting(false);
     }

@@ -269,16 +269,14 @@ export class Geolocator {
   }
 
   /**
-   * Triggers native permission popups and Google Location Accuracy system prompt if GPS is disabled,
-   * or alerts user with clear instructions to swipe down and enable GPS in system quick settings.
+   * Directly opens native device location settings (GPS toggle) or App Details settings if permissions are denied.
    */
-  static async openLocationSettings(): Promise<void> {
+  static async openLocationSettings(reason?: 'PERMISSION_DENIED' | 'LOCATION_DISABLED'): Promise<void> {
     await this.setLocationServiceEnabled(true);
     if (Capacitor.isNativePlatform()) {
       try {
-        // Request runtime permissions first if missing
-        const permStatus = await CapGeolocation.requestPermissions();
-        if (permStatus.location === 'denied') {
+        const permStatus = await CapGeolocation.checkPermissions();
+        if (permStatus.location === 'denied' || reason === 'PERMISSION_DENIED') {
           // Open App Details screen directly if permission is denied
           await NativeSettings.open({
             optionAndroid: AndroidSettings.ApplicationDetails,
@@ -287,25 +285,20 @@ export class Geolocator {
           return;
         }
 
-        // Directly open Android/iOS native system Location (GPS) settings toggle screen
+        // Open native Android/iOS system Location (GPS) settings toggle screen
         await NativeSettings.open({
           optionAndroid: AndroidSettings.Location,
           optionIOS: IOSSettings.LocationServices
         });
       } catch (e) {
         console.warn("Could not open native settings via plugin:", e);
-        alert("⚠️ يرجى تفعيل خيار تحديد الموقع (GPS) من إعدادات النظام أعلى الهاتف.");
       }
     } else {
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           () => {},
           (err) => {
-            if (err.code === err.PERMISSION_DENIED) {
-              alert("⚠️ تم رفض إذن الموقع. يرجى التفعيل من إعدادات المتصفح.");
-            } else {
-              alert("⚠️ يرجى التأكد من تشغيل خيار تحديد الموقع (GPS) في هاتفك ليتسنى عرض الكويستات القريبة.");
-            }
+            console.warn("Web geolocation request error:", err);
           },
           { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
         );

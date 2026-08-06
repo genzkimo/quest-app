@@ -28,6 +28,7 @@ import UnifiedQuestCard from './UnifiedQuestCard';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Geolocator } from '../utils/geolocator';
+import { Capacitor } from '@capacitor/core';
 
 interface MapViewProps {
   quests: Quest[];
@@ -522,111 +523,59 @@ export default function MapView({
   const triggerGPSGet = async (isManualReset = false) => {
     setIsLocating(true);
     if (isManualReset) {
-      // Reset update count on manual reset/re-center button so user gets fast updates
       updateCountRef.current = 0;
       lastLocUpdateTimeRef.current = Date.now();
-
-      try {
-        await Geolocator.openLocationSettings();
-        const accurate = await Geolocator.getAccuratePhysicalLocation();
-        const fetchedLoc = { lat: accurate.lat, lng: accurate.lng };
-        const accuracy = accurate.accuracy ? Math.round(accurate.accuracy) : 15;
-
-        setUserLoc(fetchedLoc);
-        setUserLocAccuracy(accuracy);
-        setGpsActive(true);
-        setIsLocating(false);
-        setHasCenteredGPS(true);
-        setGpsDenied(false);
-        setIsGpsServiceEnabled(true);
-        setIsGpsLost(false);
-        Geolocator.saveCachedLocation(fetchedLoc.lat, fetchedLoc.lng);
-
-        userHasMovedCameraRef.current = false;
-        setIsUserInteracting(false);
-        isUserInteractingRef.current = false;
-
-        if (mapInstanceRef.current) {
-          mapInstanceRef.current.flyTo([fetchedLoc.lat, fetchedLoc.lng], 15, { animate: true, duration: 1 });
-        }
-        showToast(lang === 'ar' ? '🎯 تم تفعيل خدمة الموقع وتحديد موقعك الفعلي بنجاح!' : '🎯 GPS location enabled & position centered!');
-        startGpsWatch();
-        return;
-      } catch (err) {
-        console.warn("MapView manual GPS request attempt fallback:", err);
-      }
     }
 
-    startGpsWatch();
+    try {
+      // 1. Try to get accurate physical location directly first
+      const accurate = await Geolocator.getAccuratePhysicalLocation();
+      const fetchedLoc = { lat: accurate.lat, lng: accurate.lng };
+      const accuracy = accurate.accuracy ? Math.round(accurate.accuracy) : 15;
 
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const now = Date.now();
-          const currentCount = updateCountRef.current;
-
-          if (!isManualReset && currentCount >= 3 && lastLocUpdateTimeRef.current > 0 && now - lastLocUpdateTimeRef.current < 10000) {
-            setIsLocating(false);
-            return;
-          }
-
-          lastLocUpdateTimeRef.current = now;
-          if (currentCount < 3) {
-            updateCountRef.current = currentCount + 1;
-          }
-
-          const fetchedLoc = { lat: position.coords.latitude, lng: position.coords.longitude };
-          const accuracy = position.coords.accuracy ? Math.round(position.coords.accuracy) : 25;
-          setUserLoc(fetchedLoc);
-          setUserLocAccuracy(accuracy);
-          setGpsActive(true);
-          setIsLocating(false);
-          setHasCenteredGPS(true);
-          setGpsDenied(false);
-          setIsGpsServiceEnabled(true);
-          setIsGpsLost(false);
-          Geolocator.saveCachedLocation(fetchedLoc.lat, fetchedLoc.lng);
-
-          if (isManualReset) {
-            userHasMovedCameraRef.current = false;
-            setIsUserInteracting(false);
-            isUserInteractingRef.current = false;
-            if (mapInstanceRef.current) {
-              mapInstanceRef.current.flyTo([fetchedLoc.lat, fetchedLoc.lng], 15, { animate: true, duration: 1 });
-            }
-            showToast(lang === 'ar' ? '📍 تم تحديد موقعك الفعلي بدقة عالية وتوسيط الخريطة!' : '📍 Live high-accuracy GPS position synced & centered!');
-          }
-        },
-        (error) => {
-          console.warn("Geolocation single acquisition failed:", error);
-          setIsLocating(false);
-          setIsGpsLost(true);
-          if (error.code === error.PERMISSION_DENIED) {
-            setGpsActive(false);
-            setGpsDenied(true);
-            setIsGpsServiceEnabled(false);
-            alert(
-              lang === 'ar'
-                ? '⚠️ يرجى تفعيل خيار تحديد الموقع (GPS) من إعدادات الهاتف والسماح للمتصفح بالوصول'
-                : '⚠️ Please enable GPS in phone settings and allow browser access'
-            );
-          } else {
-            setIsGpsServiceEnabled(true);
-            setGpsDenied(false);
-            showToast(lang === 'ar' ? '⚠️ جاري البحث عن إشارة الـ GPS، يمكنك تصفح الخريطة بحرية' : '⚠️ Acquiring GPS signal, feel free to browse the map');
-          }
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 20000,
-          maximumAge: 0
-        }
-      );
-    } else {
+      setUserLoc(fetchedLoc);
+      setUserLocAccuracy(accuracy);
+      setGpsActive(true);
       setIsLocating(false);
+      setHasCenteredGPS(true);
+      setGpsDenied(false);
+      setIsGpsServiceEnabled(true);
+      setIsGpsLost(false);
+      Geolocator.saveCachedLocation(fetchedLoc.lat, fetchedLoc.lng);
+
+      userHasMovedCameraRef.current = false;
+      setIsUserInteracting(false);
+      isUserInteractingRef.current = false;
+
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.flyTo([fetchedLoc.lat, fetchedLoc.lng], 15, { animate: true, duration: 1 });
+      }
+      showToast(lang === 'ar' ? '🎯 تم تحديد موقعك الفعلي بنجاح وتوسيط الخريطة!' : '🎯 GPS location synced & centered!');
+      startGpsWatch();
+      return;
+    } catch (err: any) {
+      console.warn("MapView location acquisition failed:", err);
+      setIsLocating(false);
+      setIsGpsLost(true);
       setGpsActive(false);
       setGpsDenied(true);
-      showToast(lang === 'ar' ? '⚠️ الـ GPS غير مدعوم في هذا المتصفح' : '⚠️ GPS is not supported in this browser');
+      setIsGpsServiceEnabled(false);
+
+      // 2. Open native settings if running on native mobile device
+      if (Capacitor.isNativePlatform()) {
+        const errorMsg = String(err?.message || '').toUpperCase();
+        if (errorMsg.includes('PERMISSION_DENIED')) {
+          await Geolocator.openLocationSettings('PERMISSION_DENIED');
+        } else {
+          await Geolocator.openLocationSettings('LOCATION_DISABLED');
+        }
+      } else {
+        showToast(
+          lang === 'ar'
+            ? '⚠️ يرجى تفعيل خيار تحديد الموقع (GPS) من إعدادات النظام أعلى الهاتف'
+            : '⚠️ Please enable Location (GPS) in phone quick settings'
+        );
+      }
     }
   };
 

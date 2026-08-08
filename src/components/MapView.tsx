@@ -464,25 +464,24 @@ export default function MapView({
     });
   }, [quests, userProfile.id, hiddenArrivedQuestIds]);
 
-  const startGpsWatch = useCallback(() => {
-    if (!navigator.geolocation) return;
+  const watchCleanupRef = useRef<(() => void) | null>(null);
 
-    if (watchIdRef.current !== null) {
-      navigator.geolocation.clearWatch(watchIdRef.current);
-      watchIdRef.current = null;
+  const startGpsWatch = useCallback(() => {
+    if (watchCleanupRef.current) {
+      watchCleanupRef.current();
+      watchCleanupRef.current = null;
     }
 
     setIsLocating(true);
 
-    watchIdRef.current = navigator.geolocation.watchPosition(
-      (position) => {
+    const cleanup = Geolocator.watchLocation(
+      (loc) => {
         const now = Date.now();
         const currentCount = updateCountRef.current;
 
-        // First 3 location updates are fast (unthrottled) to guarantee rapid high-accuracy lock.
-        // After 3 updates, throttle updates to once every 10 seconds (10,000ms).
+        // Throttling: first 3 updates are immediate; after that throttle to once every 5 seconds
         if (currentCount >= 3) {
-          if (lastLocUpdateTimeRef.current > 0 && now - lastLocUpdateTimeRef.current < 10000) {
+          if (lastLocUpdateTimeRef.current > 0 && now - lastLocUpdateTimeRef.current < 5000) {
             return;
           }
         }
@@ -490,11 +489,8 @@ export default function MapView({
         lastLocUpdateTimeRef.current = now;
         updateCountRef.current = currentCount + 1;
 
-        const fetchedLoc = { 
-          lat: position.coords.latitude, 
-          lng: position.coords.longitude 
-        };
-        const accuracy = position.coords.accuracy ? Math.round(position.coords.accuracy) : 25;
+        const fetchedLoc = { lat: loc.lat, lng: loc.lng };
+        const accuracy = loc.accuracy ? Math.round(loc.accuracy) : 25;
         setUserLoc(fetchedLoc);
         setUserLocAccuracy(accuracy);
         setGpsActive(true);
@@ -508,16 +504,10 @@ export default function MapView({
       (error) => {
         console.warn("Geolocation watch update error:", error);
         setIsLocating(false);
-        if (error.code === error.POSITION_UNAVAILABLE || error.code === error.TIMEOUT) {
-          setIsGpsLost(true);
-        }
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 20000,
-        maximumAge: 0
       }
     );
+
+    watchCleanupRef.current = cleanup;
   }, []);
 
   const triggerGPSGet = async (isManualReset = false) => {
@@ -556,27 +546,23 @@ export default function MapView({
       startGpsWatch();
       return;
     } catch (err: any) {
-      console.warn("MapView location acquisition failed:", err);
+      console.warn("MapView location acquisition failed, checking cached location:", err);
       setIsLocating(false);
-      setIsGpsLost(true);
-      setGpsActive(false);
-      setGpsDenied(true);
-      setIsGpsServiceEnabled(false);
 
-      // 2. Open native settings if running on native mobile device
-      if (Capacitor.isNativePlatform()) {
-        const errorMsg = String(err?.message || '').toUpperCase();
-        if (errorMsg.includes('PERMISSION_DENIED')) {
-          await Geolocator.openLocationSettings('PERMISSION_DENIED');
-        } else {
-          await Geolocator.openLocationSettings('LOCATION_DISABLED');
+      // Attempt fallback to cached location from Geolocator
+      const cached = Geolocator.getCachedLocation();
+      if (cached) {
+        setUserLoc(cached);
+        setUserLocAccuracy(100);
+        setGpsActive(true);
+        setHasCenteredGPS(true);
+        setIsGpsLost(false);
+        if (mapInstanceRef.current && !isUserInteractingRef.current) {
+          mapInstanceRef.current.setView([cached.lat, cached.lng], 14);
         }
       } else {
-        showToast(
-          lang === 'ar'
-            ? '⚠️ يرجى تفعيل خيار تحديد الموقع (GPS) من إعدادات النظام أعلى الهاتف'
-            : '⚠️ Please enable Location (GPS) in phone quick settings'
-        );
+        setIsGpsLost(true);
+        setGpsActive(false);
       }
     }
   };
@@ -711,6 +697,10 @@ export default function MapView({
     window.addEventListener('online', handleOnline);
 
     return () => {
+      if (watchCleanupRef.current) {
+        watchCleanupRef.current();
+        watchCleanupRef.current = null;
+      }
       clearInterval(gpsIntervalId);
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('online', handleOnline);

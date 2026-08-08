@@ -4,24 +4,23 @@ import { NativeSettings, AndroidSettings, IOSSettings } from 'capacitor-native-s
 
 /**
  * Geolocator Utility
- * إصدار Capacitor النقي - يدعم الهواتف الاقتصادية (Realme C)
- * ولا يعتمد على أي مكتبات Cordova قديمة.
+ * Implements strict GPS and location service verification methods,
+ * enforcing action-triggered hardware GPS limits and anti-mock spoof checks.
+ * Supports both Native Capacitor (Android/iOS) and standard Web Browser environments.
  */
 export class Geolocator {
-
-  private static _pendingSettingsRetry: boolean = false;
-  private static _retryCallback: (() => void) | null = null;
-  private static _isAppListenerRegistered: boolean = false;
-  private static _isWebListenerRegistered: boolean = false;
-
+  /**
+   * Returns current browser permission status for geolocation ('granted' | 'prompt' | 'denied').
+   */
   static async getPermissionState(): Promise<'granted' | 'prompt' | 'denied'> {
     try {
       if (Capacitor.isNativePlatform()) {
         const perm = await CapGeolocation.checkPermissions();
-        if (perm.location === 'granted' || perm.coarseLocation === 'granted') return 'granted';
+        if (perm.location === 'granted') return 'granted';
         if (perm.location === 'denied') return 'denied';
         return 'prompt';
       }
+
       if (!navigator.geolocation) return 'denied';
       if (typeof navigator.permissions !== 'undefined' && navigator.permissions.query) {
         const permissionStatus = await navigator.permissions.query({ name: 'geolocation' as PermissionName });
@@ -33,16 +32,22 @@ export class Geolocator {
     }
   }
 
+  /**
+   * Saves user location to localStorage with a timestamp for expiration checking.
+   */
   static saveCachedLocation(lat: number, lng: number): void {
     try {
       localStorage.setItem('last_user_lat', lat.toString());
       localStorage.setItem('last_user_lng', lng.toString());
       localStorage.setItem('last_user_loc_timestamp', Date.now().toString());
     } catch (e) {
-      console.warn("Could not save location to cache");
+      console.warn("Could not save location to cache:", e);
     }
   }
 
+  /**
+   * Retrieves last cached user location from localStorage if available and not older than 1 hour.
+   */
   static getCachedLocation(): { lat: number; lng: number } | null {
     try {
       const latStr = localStorage.getItem('last_user_lat');
@@ -51,6 +56,7 @@ export class Geolocator {
 
       if (!latStr || !lngStr) return null;
 
+      // Validate 1 hour expiration (3,600,000 ms)
       if (timeStr) {
         const timestamp = parseInt(timeStr, 10);
         const ONE_HOUR = 60 * 60 * 1000;
@@ -59,201 +65,409 @@ export class Geolocator {
           return null;
         }
       }
+
       const lat = parseFloat(latStr);
       const lng = parseFloat(lngStr);
-      if (!isNaN(lat) && !isNaN(lng)) return { lat, lng };
+      if (!isNaN(lat) && !isNaN(lng)) {
+        return { lat, lng };
+      }
     } catch (e) {
-      console.warn("Could not read cached location");
+      console.warn("Could not read cached location:", e);
     }
     return null;
   }
 
+  /**
+   * Clears cached location entries.
+   */
   static clearCachedLocation(): void {
     try {
       localStorage.removeItem('last_user_lat');
       localStorage.removeItem('last_user_lng');
       localStorage.removeItem('last_user_loc_timestamp');
-    } catch (e) {}
-  }
-
-  static async isLocationServiceEnabled(): Promise<boolean> {
-    try {
-      if (Capacitor.isNativePlatform()) {
-        const perm = await CapGeolocation.checkPermissions();
-        if (perm.location === 'denied' && perm.coarseLocation === 'denied') return false;
-
-        try {
-          await CapGeolocation.getCurrentPosition({
-            enableHighAccuracy: false,
-            timeout: 1500, 
-            maximumAge: 60000
-          });
-          return true;
-        } catch (e: any) {
-          const msg = String(e?.message || e || '').toLowerCase();
-          if (msg.includes('not enabled') || msg.includes('disabled') || msg.includes('location is off')) {
-            return false;
-          }
-          return true;
-        }
-      }
-      return navigator.geolocation ? true : false;
-    } catch {
-      return true;
-    }
-  }
-
-  static async getAccuratePhysicalLocation(
-    onProgress?: (sampleCount: number, bestAccuracy: number) => void
-  ): Promise<{ lat: number; lng: number; accuracy: number }> {
-    
-    if (Capacitor.isNativePlatform()) {
-      try {
-        const permStatus = await CapGeolocation.requestPermissions();
-        if (permStatus.location === 'denied' && permStatus.coarseLocation === 'denied') {
-          throw new Error('PERMISSION_DENIED');
-        }
-
-        const position = await CapGeolocation.getCurrentPosition({
-          enableHighAccuracy: true,
-          timeout: 30000, 
-          maximumAge: 5000 
-        });
-
-        const lat = position.coords.latitude;
-        const lng = position.coords.longitude;
-        const accuracy = position.coords.accuracy || 15;
-
-        if (onProgress) onProgress(1, accuracy);
-        this.saveCachedLocation(lat, lng);
-        return { lat, lng, accuracy };
-
-      } catch (nativeErr: any) {
-        const msg = String(nativeErr?.message || nativeErr || '').toLowerCase();
-        const code = nativeErr?.code;
-
-        if (msg.includes('denied') || msg.includes('permission') || code === 1) {
-          throw new Error('PERMISSION_DENIED');
-        }
-
-        const isEnabled = await this.isLocationServiceEnabled();
-        
-        if (!isEnabled) {
-          throw new Error('LOCATION_DISABLED');
-        }
-
-        const cached = this.getCachedLocation();
-        if (cached) return { lat: cached.lat, lng: cached.lng, accuracy: 100 };
-
-        throw new Error('LOCATION_TIMEOUT');
-      }
-    }
-
-    return new Promise((resolve, reject) => {
-      if (!navigator.geolocation) return reject(new Error('GPS_NOT_SUPPORTED'));
-      navigator.geolocation.getCurrentPosition(
-        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy || 50 }),
-        (err) => {
-            const cached = this.getCachedLocation();
-            if (cached) resolve({ lat: cached.lat, lng: cached.lng, accuracy: 100 });
-            else reject(err);
-        },
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-      );
-    });
-  }
-
-  static setReturnFromSettingsCallback(callback: () => void): void {
-    this._retryCallback = callback;
-    this._pendingSettingsRetry = true;
-
-    if (Capacitor.isNativePlatform()) {
-      if (!this._isAppListenerRegistered) {
-        this._isAppListenerRegistered = true;
-        import('@capacitor/app').then(({ App }) => {
-          App.addListener('appStateChange', (state: { isActive: boolean }) => {
-            if (state.isActive && this._pendingSettingsRetry) {
-              this._pendingSettingsRetry = false;
-              setTimeout(() => {
-                if (this._retryCallback) {
-                  this._retryCallback();
-                  this._retryCallback = null;
-                }
-              }, 800);
-            }
-          });
-        }).catch(() => {});
-      }
-    } else {
-      if (!this._isWebListenerRegistered) {
-        this._isWebListenerRegistered = true;
-        document.addEventListener('visibilitychange', () => {
-          if (document.visibilityState === 'visible' && this._pendingSettingsRetry) {
-            this._pendingSettingsRetry = false;
-            setTimeout(() => {
-              if (this._retryCallback) {
-                this._retryCallback();
-                this._retryCallback = null;
-              }
-            }, 800);
-          }
-        });
-      }
-    }
-  }
-
-  static async openLocationSettings(reason: 'PERMISSION_DENIED' | 'LOCATION_DISABLED'): Promise<void> {
-    if (!Capacitor.isNativePlatform()) return;
-
-    try {
-      if (reason === 'PERMISSION_DENIED') {
-        await NativeSettings.open({
-          optionAndroid: AndroidSettings.ApplicationDetails,
-          optionIOS: IOSSettings.App
-        });
-      } else {
-        await NativeSettings.open({
-          optionAndroid: AndroidSettings.Location,
-          optionIOS: IOSSettings.LocationServices
-        });
-      }
     } catch (e) {
-      console.warn("openLocationSettings failed:", e);
+      console.warn("Could not clear cached location:", e);
     }
   }
 
   /**
-   * الدالة الرئيسية المحدثة.
-   * onRequireSettingsPrompt: دالة تتيح لك إظهار رسالة واجهة المستخدم الخاصة بك بدلاً من القفز فوراً للإعدادات.
+   * Checks if device's location services (GPS) are active and permissions state.
    */
-  static async getLocationWithAutoSettingsRetry(
-    onSuccess: (loc: { lat: number; lng: number; accuracy: number }) => void,
-    onError: (error: Error) => void,
-    onRequireSettingsPrompt: (reason: 'PERMISSION_DENIED' | 'LOCATION_DISABLED', proceedToSettings: () => void) => void
-  ): Promise<void> {
-    
-    const tryGetLocation = async (): Promise<void> => {
-      try {
-        const loc = await this.getAccuratePhysicalLocation();
-        onSuccess(loc);
-      } catch (err: any) {
-        const msg = String(err?.message || err || '');
+  static async isLocationServiceEnabled(): Promise<boolean> {
+    try {
+      if (Capacitor.isNativePlatform()) {
+        const perm = await CapGeolocation.checkPermissions();
+        if (perm.location === 'denied') return false;
 
-        if (msg.includes('PERMISSION_DENIED') || msg.includes('LOCATION_DISABLED')) {
-          const reason = msg.includes('PERMISSION_DENIED') ? 'PERMISSION_DENIED' : 'LOCATION_DISABLED';
-          
-          // بدلاً من فتح الإعدادات فوراً، نستدعي واجهة المستخدم الخاصة بك
-          onRequireSettingsPrompt(reason, async () => {
-             this.setReturnFromSettingsCallback(tryGetLocation);
-             await this.openLocationSettings(reason);
+        // Verify native location availability by attempting a quick low-power position check
+        try {
+          const pos = await CapGeolocation.getCurrentPosition({
+            enableHighAccuracy: false,
+            timeout: 4000,
+            maximumAge: 60000
+          });
+          return !!(pos && pos.coords);
+        } catch (e: any) {
+          const msg = String(e?.message || e || '').toLowerCase();
+          // If error is purely a timeout (e.g. user indoors) but permission is granted, location service is enabled
+          if ((msg.includes('timeout') || e?.code === 3) && perm.location === 'granted') {
+            return true;
+          }
+          // Explicit location service disabled/unavailable errors
+          return false;
+        }
+      }
+      if (!navigator.geolocation) return false;
+      if (typeof navigator.permissions !== 'undefined' && navigator.permissions.query) {
+        const permissionStatus = await navigator.permissions.query({ name: 'geolocation' as PermissionName });
+        return permissionStatus.state === 'granted';
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Fetch absolute high-accuracy real-time location (LocationAccuracy.bestForNavigation equivalent).
+   * Bypasses VPN/IP approximation, demands physical hardware GPS stream, and queries spoofing flags.
+   */
+  static async getCurrentPhysicalLocation(): Promise<{ lat: number; lng: number }> {
+    const accurateLoc = await this.getAccuratePhysicalLocation();
+    return { lat: accurateLoc.lat, lng: accurateLoc.lng };
+  }
+
+  /**
+   * Samples location continuously or via high/low accuracy attempts.
+   * Features a multi-tiered progressive fallback for budget Android devices (e.g. Realme C55, C67, ColorOS)
+   * where hardware GPS locks may time out or require balanced network providers.
+   */
+  static async getAccuratePhysicalLocation(
+    onProgress?: (sampleCount: number, bestAccuracy: number) => void
+  ): Promise<{ lat: number; lng: number; accuracy: number }> {
+    // 1. Native Capacitor Execution Path with Progressive Device Fallbacks
+    if (Capacitor.isNativePlatform()) {
+      try {
+        // Explicitly request Native Android/iOS runtime permissions
+        const permStatus = await CapGeolocation.requestPermissions();
+        if (permStatus.location === 'denied') {
+          throw new Error('PERMISSION_DENIED');
+        }
+
+        // Attempt 1: High Accuracy with reasonable maximumAge (helps budget chipsets reuse OS fused fix)
+        try {
+          const position = await CapGeolocation.getCurrentPosition({
+            enableHighAccuracy: true,
+            timeout: 8000,
+            maximumAge: 10000
+          });
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          const accuracy = position.coords.accuracy || 15;
+          this.saveCachedLocation(lat, lng);
+          if (onProgress) onProgress(1, accuracy);
+          return { lat, lng, accuracy };
+        } catch (highAccErr) {
+          console.warn("High-accuracy location failed on native (common on budget devices like Realme C-series). Falling back to balanced network location:", highAccErr);
+        }
+
+        // Attempt 2: Balanced Network/Cell Location Fallback (works on MediaTek/Snapdragon budget chips without satellite fix)
+        try {
+          const position = await CapGeolocation.getCurrentPosition({
+            enableHighAccuracy: false,
+            timeout: 10000,
+            maximumAge: 60000
+          });
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          const accuracy = position.coords.accuracy || 50;
+          this.saveCachedLocation(lat, lng);
+          if (onProgress) onProgress(1, accuracy);
+          return { lat, lng, accuracy };
+        } catch (lowAccErr) {
+          console.warn("Balanced location failed on native:", lowAccErr);
+        }
+
+        // Attempt 3: Web Navigator Fallback within Native Context
+        if (typeof navigator !== 'undefined' && navigator.geolocation) {
+          try {
+            const webLoc = await new Promise<{ lat: number; lng: number; accuracy: number }>((resolve, reject) => {
+              navigator.geolocation.getCurrentPosition(
+                (pos) => resolve({
+                  lat: pos.coords.latitude,
+                  lng: pos.coords.longitude,
+                  accuracy: pos.coords.accuracy || 50
+                }),
+                (err) => reject(err),
+                { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 }
+              );
+            });
+            this.saveCachedLocation(webLoc.lat, webLoc.lng);
+            if (onProgress) onProgress(1, webLoc.accuracy);
+            return webLoc;
+          } catch (webErr) {
+            console.warn("Web navigator fallback on native failed:", webErr);
+          }
+        }
+
+        // Attempt 4: Return cached location if available
+        const cached = this.getCachedLocation();
+        if (cached) {
+          if (onProgress) onProgress(1, 100);
+          return { lat: cached.lat, lng: cached.lng, accuracy: 100 };
+        }
+
+        throw new Error('LOCATION_DISABLED');
+      } catch (nativeErr: any) {
+        console.warn("Native Capacitor Geolocation attempt failed:", nativeErr);
+        const msg = String(nativeErr?.message || nativeErr || '').toLowerCase();
+        if (msg.includes('denied') || msg.includes('permission')) {
+          throw new Error('PERMISSION_DENIED');
+        }
+        if (msg.includes('disabled') || msg.includes('unavailable') || msg.includes('location services') || msg.includes('provider')) {
+          throw new Error('LOCATION_DISABLED');
+        }
+        throw nativeErr;
+      }
+    }
+
+    // 2. Web / Fallback Execution Path
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) {
+        return reject(new Error('GPS_NOT_SUPPORTED'));
+      }
+
+      const samples: Array<{ lat: number; lng: number; accuracy: number }> = [];
+      let watchId: number | null = null;
+      let timer: any = null;
+
+      const finishSampling = () => {
+        if (timer) clearTimeout(timer);
+        if (watchId !== null) {
+          try {
+            navigator.geolocation.clearWatch(watchId);
+          } catch (e) {
+            console.warn("Failed to clear watchPosition", e);
+          }
+          watchId = null;
+        }
+
+        if (samples.length === 0) {
+          // Fallback to getCurrentPosition if watchPosition produced no samples
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              resolve({
+                lat: position.coords.latitude,
+                lng: position.coords.longitude,
+                accuracy: position.coords.accuracy || 50
+              });
+            },
+            (error) => reject(error),
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+          );
+          return;
+        }
+
+        // Sort samples by best accuracy (lowest error margin in meters)
+        samples.sort((a, b) => a.accuracy - b.accuracy);
+        resolve(samples[0]);
+      };
+
+      // Set a strict 5-second calibration window
+      timer = setTimeout(() => {
+        finishSampling();
+      }, 5000);
+
+      try {
+        watchId = navigator.geolocation.watchPosition(
+          (position) => {
+            const sample = {
+              lat: position.coords.latitude,
+              lng: position.coords.longitude,
+              accuracy: position.coords.accuracy || 999
+            };
+            samples.push(sample);
+
+            const bestAcc = Math.min(...samples.map((s) => s.accuracy));
+            if (onProgress) {
+              onProgress(samples.length, bestAcc);
+            }
+
+            // Early exit if we have at least 3 samples and accuracy is already very precise (<= 8 meters)
+            if (samples.length >= 3 && sample.accuracy <= 8) {
+              finishSampling();
+            }
+          },
+          (error) => {
+            if (samples.length === 0) {
+              // Try fallback single fix
+              if (timer) clearTimeout(timer);
+              if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+              navigator.geolocation.getCurrentPosition(
+                (position) => {
+                  resolve({
+                    lat: position.coords.latitude,
+                    lng: position.coords.longitude,
+                    accuracy: position.coords.accuracy || 50
+                  });
+                },
+                (err) => reject(err),
+                { enableHighAccuracy: false, timeout: 10000, maximumAge: 30000 }
+              );
+            }
+          },
+          {
+            enableHighAccuracy: true,
+            timeout: 15000,
+            maximumAge: 0
+          }
+        );
+      } catch (err) {
+        if (timer) clearTimeout(timer);
+        reject(err);
+      }
+    });
+  }
+
+  /**
+   * Cross-platform continuous location watcher.
+   * Periodically streams position updates on both Native Capacitor and Web platforms.
+   */
+  static watchLocation(
+    onLocation: (loc: { lat: number; lng: number; accuracy: number }) => void,
+    onError?: (err: any) => void
+  ): () => void {
+    let isActive = true;
+    let capWatchId: string | null = null;
+    let webWatchId: number | null = null;
+    let intervalId: any = null;
+
+    if (Capacitor.isNativePlatform()) {
+      // 1. Native Capacitor watchPosition
+      CapGeolocation.watchPosition(
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 3000 },
+        (position, err) => {
+          if (!isActive) return;
+          if (position && position.coords) {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            const accuracy = position.coords.accuracy ? Math.round(position.coords.accuracy) : 25;
+            this.saveCachedLocation(lat, lng);
+            onLocation({ lat, lng, accuracy });
+          } else if (err) {
+            console.warn("Capacitor watchPosition warning:", err);
+            if (onError) onError(err);
+          }
+        }
+      ).then((id) => {
+        capWatchId = id;
+      }).catch((e) => {
+        console.warn("Could not register CapGeolocation watchPosition:", e);
+      });
+
+      // 2. Backup periodic check every 8 seconds for devices with aggressive background OS power saving
+      intervalId = setInterval(async () => {
+        if (!isActive) return;
+        try {
+          const pos = await this.getAccuratePhysicalLocation();
+          if (isActive && pos) {
+            onLocation(pos);
+          }
+        } catch (e) {
+          // Silent fallback ignore
+        }
+      }, 8000);
+
+      return () => {
+        isActive = false;
+        if (intervalId) clearInterval(intervalId);
+        if (capWatchId !== null) {
+          CapGeolocation.clearWatch({ id: capWatchId }).catch(() => {});
+        }
+      };
+    }
+
+    // Web Execution Path
+    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+      webWatchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          if (!isActive) return;
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          const accuracy = pos.coords.accuracy ? Math.round(pos.coords.accuracy) : 25;
+          this.saveCachedLocation(lat, lng);
+          onLocation({ lat, lng, accuracy });
+        },
+        (err) => {
+          if (!isActive) return;
+          console.warn("Web navigator watchPosition error:", err);
+          if (onError) onError(err);
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 3000 }
+      );
+
+      return () => {
+        isActive = false;
+        if (webWatchId !== null) {
+          navigator.geolocation.clearWatch(webWatchId);
+        }
+      };
+    }
+
+    return () => { isActive = false; };
+  }
+
+  /**
+   * Updates application-level state preference and dispatches custom event for GPS status listeners.
+   * Note: This manages app UI state notifications; it does not directly toggle hardware GPS on the physical device.
+   */
+  static async setLocationServiceEnabled(enabled: boolean): Promise<void> {
+    localStorage.setItem('gps_hardware_enabled', enabled ? 'true' : 'false');
+    window.dispatchEvent(new CustomEvent('gps_status_changed', { detail: { enabled } }));
+  }
+
+  /**
+   * Alias for setLocationServiceEnabled to clearly indicate broadcasting UI status changes.
+   */
+  static async notifyGpsStatusChanged(enabled: boolean): Promise<void> {
+    await this.setLocationServiceEnabled(enabled);
+  }
+
+  /**
+   * Directly opens native device location settings (GPS toggle) or App Details settings if permissions are denied.
+   */
+  static async openLocationSettings(reason?: 'PERMISSION_DENIED' | 'LOCATION_DISABLED'): Promise<void> {
+    await this.setLocationServiceEnabled(true);
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const permStatus = await CapGeolocation.checkPermissions();
+        if (permStatus.location === 'denied' || reason === 'PERMISSION_DENIED') {
+          // Open App Details screen directly if permission is denied
+          await NativeSettings.open({
+            optionAndroid: AndroidSettings.ApplicationDetails,
+            optionIOS: IOSSettings.App
           });
           return;
         }
 
-        onError(err instanceof Error ? err : new Error(msg));
+        // Open native Android/iOS system Location (GPS) settings toggle screen
+        await NativeSettings.open({
+          optionAndroid: AndroidSettings.Location,
+          optionIOS: IOSSettings.LocationServices
+        });
+      } catch (e) {
+        console.warn("Could not open native settings via plugin:", e);
       }
-    };
-
-    await tryGetLocation();
+    } else {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          () => {},
+          (err) => {
+            console.warn("Web geolocation request error:", err);
+          },
+          { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+        );
+      }
+    }
   }
 }

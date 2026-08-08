@@ -396,21 +396,12 @@ export default function HomeView({
       setIsGpsServiceEnabled(false);
 
       // 2. If location fetch failed because GPS is disabled or permission denied, open native system settings on native app
-      if (Capacitor.isNativePlatform()) {
-        const errorMsg = String(err?.message || '').toUpperCase();
-        if (errorMsg.includes('PERMISSION_DENIED')) {
-          await Geolocator.openLocationSettings('PERMISSION_DENIED');
-        } else {
-          await Geolocator.openLocationSettings('LOCATION_DISABLED');
-        }
-      } else {
-        if (showToast) {
-          showToast(
-            lang === 'ar'
-              ? '⚠️ يرجى تفعيل خيار تحديد الموقع (GPS) من إعدادات الهاتف لتحديد موقعك'
-              : '⚠️ Please enable Location (GPS) in phone settings'
-          );
-        }
+      if (showToast) {
+        showToast(
+          lang === 'ar'
+            ? '⚠️ تعذر تحديد الموقع. يرجى التأكد من تفعيل الـ GPS وإعطاء الإذن'
+            : '⚠️ Could not determine location. Please ensure GPS is enabled'
+        );
       }
     } finally {
       setIsGpsRequesting(false);
@@ -1254,9 +1245,10 @@ export default function HomeView({
                   <div className="p-5 space-y-4">
                     
                     {/* SOCIAL POST HEADER: Creator avatar, name, Sky Blue checkmark badge and localized timestamp */}
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="relative">
+                            <div 
+          className="flex justify-between items-center px-6 py-5 border-b border-white/5 bg-slate-900/40 relative z-20"
+          style={{ paddingTop: 'calc(1.25rem + min(env(safe-area-inset-top, 0px), 28px))' }}
+        >
                           {/* Inner glowing effect for Poster Avatar */}
                           <div 
                             className="w-11 h-11 rounded-full p-0.5 bg-gradient-to-tr from-[#1F2A44]/10 to-[#1F2A44]/30 cursor-pointer"

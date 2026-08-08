@@ -1245,10 +1245,9 @@ export default function HomeView({
                   <div className="p-5 space-y-4">
                     
                     {/* SOCIAL POST HEADER: Creator avatar, name, Sky Blue checkmark badge and localized timestamp */}
-                            <div 
-          className="flex justify-between items-center px-6 py-5 border-b border-white/5 bg-slate-900/40 relative z-20"
-          style={{ paddingTop: 'calc(1.25rem + min(env(safe-area-inset-top, 0px), 28px))' }}
-        >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="relative">
                           {/* Inner glowing effect for Poster Avatar */}
                           <div 
                             className="w-11 h-11 rounded-full p-0.5 bg-gradient-to-tr from-[#1F2A44]/10 to-[#1F2A44]/30 cursor-pointer"

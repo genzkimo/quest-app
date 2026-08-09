@@ -56,10 +56,9 @@ export class Geolocator {
 
       if (!latStr || !lngStr) return null;
 
-      // Validate 1 hour expiration (3,600,000 ms)
       if (timeStr) {
         const timestamp = parseInt(timeStr, 10);
-        const ONE_HOUR = 60 * 60 * 1000;
+        const ONE_HOUR = 60 * 60 * 1000; // 1 hour max age
         if (!isNaN(timestamp) && (Date.now() - timestamp > ONE_HOUR)) {
           this.clearCachedLocation();
           return null;
@@ -210,13 +209,7 @@ export class Geolocator {
           }
         }
 
-        // Attempt 4: Return cached location if available
-        const cached = this.getCachedLocation();
-        if (cached) {
-          if (onProgress) onProgress(1, 100);
-          return { lat: cached.lat, lng: cached.lng, accuracy: 100 };
-        }
-
+        // Attempt 4: Throw error if live location cannot be obtained
         throw new Error('LOCATION_DISABLED');
       } catch (nativeErr: any) {
         console.warn("Native Capacitor Geolocation attempt failed:", nativeErr);

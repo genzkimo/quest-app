@@ -348,7 +348,7 @@ export default function HomeView({
   const [newCommentTexts, setNewCommentTexts] = useState<Record<string, string>>({});
   const [storyReactMsg, setStoryReactMsg] = useState('');
 
-  // Hardware GPS Coordinate Syncing & Cached Location Initialization
+  // Hardware GPS Coordinate Syncing
   const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(() => {
     return Geolocator.getCachedLocation();
   });

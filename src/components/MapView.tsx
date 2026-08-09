@@ -68,13 +68,12 @@ export default function MapView({
   setQuests
 }: MapViewProps) {
   const [gpsActive, setGpsActive] = useState(false);
-  const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(() => {
-    return Geolocator.getCachedLocation();
-  }); 
+  const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(null); 
   const [selectedQuest, setSelectedQuest] = useState<Quest | null>(null);
   const [pinnedQuest, setPinnedQuest] = useState<Quest | null>(null);
   const [userLocAccuracy, setUserLocAccuracy] = useState<number | null>(null);
   const [isGpsLost, setIsGpsLost] = useState<boolean>(false);
+  const [isLocStale, setIsLocStale] = useState<boolean>(false);
   const accuracyCircleRef = useRef<L.Circle | null>(null);
   const watchIdRef = useRef<number | null>(null);
   const lastLocUpdateTimeRef = useRef<number>(0);
@@ -85,6 +84,35 @@ export default function MapView({
       setPinnedQuest(selectedQuest);
     }
   }, [selectedQuest]);
+
+  useEffect(() => {
+    const checkStaleTimer = setInterval(() => {
+      if (lastLocUpdateTimeRef.current > 0) {
+        if (Date.now() - lastLocUpdateTimeRef.current >= 10000) {
+          setIsLocStale(true);
+        } else {
+          setIsLocStale(false);
+        }
+      } else if (userLoc) {
+        setIsLocStale(true);
+      }
+    }, 1000);
+
+    return () => clearInterval(checkStaleTimer);
+  }, [userLoc]);
+
+  useEffect(() => {
+    const handleAppExit = () => {
+      Geolocator.clearCachedLocation();
+    };
+    window.addEventListener('beforeunload', handleAppExit);
+    window.addEventListener('pagehide', handleAppExit);
+    return () => {
+      window.removeEventListener('beforeunload', handleAppExit);
+      window.removeEventListener('pagehide', handleAppExit);
+      handleAppExit();
+    };
+  }, []);
 
   useEffect(() => {
     if (navigatingQuest) {
@@ -492,6 +520,7 @@ export default function MapView({
         const fetchedLoc = { lat: loc.lat, lng: loc.lng };
         const accuracy = loc.accuracy ? Math.round(loc.accuracy) : 25;
         setUserLoc(fetchedLoc);
+        setIsLocStale(false);
         setUserLocAccuracy(accuracy);
         setGpsActive(true);
         setIsLocating(false);
@@ -504,6 +533,9 @@ export default function MapView({
       (error) => {
         console.warn("Geolocation watch update error:", error);
         setIsLocating(false);
+        setIsLocStale(true);
+        setIsGpsLost(true);
+        setGpsActive(false);
       }
     );
 
@@ -524,6 +556,8 @@ export default function MapView({
       const accuracy = accurate.accuracy ? Math.round(accurate.accuracy) : 15;
 
       setUserLoc(fetchedLoc);
+      setIsLocStale(false);
+      lastLocUpdateTimeRef.current = Date.now();
       setUserLocAccuracy(accuracy);
       setGpsActive(true);
       setIsLocating(false);
@@ -546,24 +580,11 @@ export default function MapView({
       startGpsWatch();
       return;
     } catch (err: any) {
-      console.warn("MapView location acquisition failed, checking cached location:", err);
+      console.warn("MapView location acquisition failed:", err);
       setIsLocating(false);
-
-      // Attempt fallback to cached location from Geolocator
-      const cached = Geolocator.getCachedLocation();
-      if (cached) {
-        setUserLoc(cached);
-        setUserLocAccuracy(100);
-        setGpsActive(true);
-        setHasCenteredGPS(true);
-        setIsGpsLost(false);
-        if (mapInstanceRef.current && !isUserInteractingRef.current) {
-          mapInstanceRef.current.setView([cached.lat, cached.lng], 14);
-        }
-      } else {
-        setIsGpsLost(true);
-        setGpsActive(false);
-      }
+      setIsGpsLost(true);
+      setGpsActive(false);
+      setIsLocStale(true);
     }
   };
 
@@ -840,15 +861,23 @@ export default function MapView({
     // A map of desired markers to place on the map
     const desiredMarkers = new Map<string, { latlng: L.LatLngExpression; icon: L.DivIcon; onClick?: () => void }>();
 
-    // Add User Current Location pulsing radar icon
-    if (gpsActive && userLoc) {
+    // Add User Current Location pulsing radar icon (Blue when active & updated, Gray when stale >10s or lost)
+    if (userLoc) {
+      const isGray = isLocStale || isGpsLost || !gpsActive || (typeof navigator !== 'undefined' && !navigator.onLine);
+      const pingBg = isGray ? 'bg-[#9CA3AF]/30' : 'bg-[#4FC3F7]/30';
+      const pulseBg = isGray ? 'bg-[#9CA3AF]/10' : 'bg-[#4FC3F7]/10';
+      const dotBg = isGray ? 'bg-[#9CA3AF]' : 'bg-[#4FC3F7]';
+      const shadowColor = isGray ? 'rgba(156,163,175,0.8)' : 'rgba(79,195,247,0.8)';
+      const pingAnim = isGray ? '' : 'animate-ping';
+      const pulseAnim = isGray ? '' : 'animate-pulse';
+
       const userIcon = L.divIcon({
         className: 'user-marker-glow',
         html: `
           <div class="relative flex items-center justify-center">
-            <div class="absolute w-8 h-8 bg-[#4FC3F7]/30 rounded-full animate-ping"></div>
-            <div class="absolute w-16 h-16 bg-[#4FC3F7]/10 rounded-full animate-pulse"></div>
-            <div class="w-4.5 h-4.5 bg-[#4FC3F7] border-2 border-white rounded-full shadow-[0_0_10px_rgba(79,195,247,0.8)]"></div>
+            <div class="absolute w-8 h-8 ${pingBg} rounded-full ${pingAnim}"></div>
+            <div class="absolute w-16 h-16 ${pulseBg} rounded-full ${pulseAnim}"></div>
+            <div class="w-4.5 h-4.5 ${dotBg} border-2 border-white rounded-full shadow-[0_0_10px_${shadowColor}]"></div>
           </div>
         `,
         iconSize: [24, 24],
@@ -1152,7 +1181,7 @@ export default function MapView({
         polylineRef.current = null;
       }
     }
-  }, [filteredMapQuests, gpsActive, userLoc, userLocAccuracy, lang, navigatingQuest, selectedQuest, lockedRoutePoints, travelMode, mapZoom, userProfile.hapticFeedbackEnabled, getQuestCoords]);
+  }, [filteredMapQuests, gpsActive, userLoc, userLocAccuracy, lang, navigatingQuest, selectedQuest, lockedRoutePoints, travelMode, mapZoom, userProfile.hapticFeedbackEnabled, getQuestCoords, isLocStale, isGpsLost]);
 
   const remainingDistance = useMemo(() => {
     if (!navigatingQuest) return 0;

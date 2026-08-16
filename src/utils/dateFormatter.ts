@@ -1,9 +1,24 @@
-export function formatArabicDate(dateInput: string | Date | undefined, lang: 'ar' | 'fr' | 'en' = 'ar'): string {
-  if (!dateInput) return '';
-  const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
-  if (isNaN(date.getTime())) return '';
+export function formatArabicDate(dateInput: string | number | Date | undefined, lang: 'ar' | 'fr' | 'en' = 'ar'): string {
+  if (!dateInput) return lang === 'ar' ? 'الآن' : (lang === 'fr' ? 'À l\'instant' : 'Just now');
+  if (typeof dateInput === 'string' && (dateInput.includes('منذ') || dateInput.includes('ago') || dateInput === 'الآن')) {
+    return dateInput;
+  }
+  const date = typeof dateInput === 'string' || typeof dateInput === 'number' ? new Date(dateInput) : dateInput;
+  if (isNaN(date.getTime())) {
+    return String(dateInput);
+  }
 
   const now = new Date();
+  const diffMs = Math.max(0, now.getTime() - date.getTime());
+  const diffMins = Math.floor(diffMs / (1000 * 60));
+
+  if (diffMins < 1) {
+    return lang === 'ar' ? 'الآن' : (lang === 'fr' ? "À l'instant" : 'Just now');
+  }
+  if (diffMins < 60) {
+    return lang === 'ar' ? `منذ ${diffMins} دقيقة` : (lang === 'fr' ? `Il y a ${diffMins} min` : `${diffMins}m ago`);
+  }
+
   const isToday = date.toDateString() === now.toDateString();
   const yesterday = new Date();
   yesterday.setDate(now.getDate() - 1);
@@ -17,7 +32,7 @@ export function formatArabicDate(dateInput: string | Date | undefined, lang: 'ar
   if (lang === 'ar') {
     period = hours >= 12 ? 'م' : 'ص';
     hours = hours % 12 || 12;
-    const hourStr = String(hours).padStart(2, '0');
+    const hourStr = String(hours);
     const timeStr = `${hourStr}:${minutes} ${period}`;
 
     if (isToday) {
@@ -27,48 +42,25 @@ export function formatArabicDate(dateInput: string | Date | undefined, lang: 'ar
       return `أمس، ${timeStr}`;
     }
 
-    // Standard Algerian/North African month names
-    try {
-      const formatter = new Intl.DateTimeFormat('ar-DZ', {
-        day: 'numeric',
-        month: 'long',
-      });
-      return `${formatter.format(date)}، ${timeStr}`;
-    } catch (e) {
-      const monthsAr = ['جانفي', 'فيفري', 'مارس', 'أفريل', 'ماي', 'جوان', 'جويلية', 'أوت', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
-      return `${date.getDate()} ${monthsAr[date.getMonth()]}، ${timeStr}`;
-    }
+    const monthsAr = ['جانفي', 'فيفري', 'مارس', 'أفريل', 'ماي', 'جوان', 'جويلية', 'أوت', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+    return `${date.getDate()} ${monthsAr[date.getMonth()]}، ${timeStr}`;
   } else if (lang === 'fr') {
     const hourStr = String(hours).padStart(2, '0');
     const timeStr = `${hourStr}h${minutes}`;
     if (isToday) return `Aujourd'hui, ${timeStr}`;
     if (isYesterday) return `Hier, ${timeStr}`;
-    try {
-      const formatter = new Intl.DateTimeFormat('fr-FR', {
-        day: 'numeric',
-        month: 'long',
-      });
-      return `${formatter.format(date)}, ${timeStr}`;
-    } catch {
-      return `${date.getDate()}/${date.getMonth() + 1}, ${timeStr}`;
-    }
+    const monthsFr = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+    return `${date.getDate()} ${monthsFr[date.getMonth()]}, ${timeStr}`;
   } else {
     // English
     const ampm = hours >= 12 ? 'PM' : 'AM';
     hours = hours % 12 || 12;
-    const hourStr = String(hours).padStart(2, '0');
+    const hourStr = String(hours);
     const timeStr = `${hourStr}:${minutes} ${ampm}`;
     if (isToday) return `Today, ${timeStr}`;
     if (isYesterday) return `Yesterday, ${timeStr}`;
-    try {
-      const formatter = new Intl.DateTimeFormat('en-US', {
-        day: 'numeric',
-        month: 'long',
-      });
-      return `${formatter.format(date)}, ${timeStr}`;
-    } catch {
-      return `${date.getMonth() + 1}/${date.getDate()}, ${timeStr}`;
-    }
+    const monthsEn = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${monthsEn[date.getMonth()]} ${date.getDate()}, ${timeStr}`;
   }
 }
 

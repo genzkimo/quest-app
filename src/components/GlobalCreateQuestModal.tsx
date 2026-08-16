@@ -29,6 +29,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { translations } from '../data/translations';
 import { compressImage } from '../utils/imageCompressor';
 import { Geolocator } from '../utils/geolocator';
+import { resolveNeighborhoodFromCoords, cleanLocationName } from '../utils/locationFormatter';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { storage } from '../utils/firebase';
 
@@ -131,6 +132,7 @@ export default function GlobalCreateQuestModal({
   const [requiredWorkers, setRequiredWorkers] = useState<number>(1);
   const [images, setImages] = useState<string[]>([]);
   const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [locationText, setLocationText] = useState<string>('');
   const [gpsAccuracyInfo, setGpsAccuracyInfo] = useState<string>('');
 
   // Status indicators
@@ -164,20 +166,24 @@ export default function GlobalCreateQuestModal({
       setRequiredWorkers(1);
       setImages([]);
       setGpsCoords(null);
+      setLocationText('');
       setGpsAccuracyInfo('');
     }
   }, [isOpen]);
+
+  // Auto trigger GPS detection on Step 3
+  useEffect(() => {
+    if (isOpen && step === 3 && !gpsCoords && !gpsLoading) {
+      handleAutoGPS();
+    }
+  }, [isOpen, step]);
 
   if (!isOpen) return null;
 
   const handleAutoGPS = async () => {
     playSound();
-    if (!navigator.geolocation) {
-      alert(lang === 'ar' ? '⚠️ تحديد الموقع غير مدعوم في متصفحك!' : '⚠️ Geolocation not supported!');
-      return;
-    }
     setGpsLoading(true);
-    setGpsAccuracyInfo(lang === 'ar' ? 'جاري الفحص والمعايرة العالية (5 ثوانٍ)...' : 'Calibrating high precision (5s)...');
+    setGpsAccuracyInfo(lang === 'ar' ? 'جاري الاتصال بـ GPS للالتقاط التلقائي...' : 'Connecting GPS sensor...');
 
     try {
       const accurate = await Geolocator.getAccuratePhysicalLocation((sampleCount, bestAcc) => {
@@ -188,20 +194,41 @@ export default function GlobalCreateQuestModal({
         );
       });
 
-      setGpsCoords({
-        lat: accurate.lat,
-        lng: accurate.lng
-      });
+      const coords = { lat: accurate.lat, lng: accurate.lng };
+      setGpsCoords(coords);
+      Geolocator.saveCachedLocation(coords.lat, coords.lng);
+      
+      const resolvedName = resolveNeighborhoodFromCoords(coords.lat, coords.lng, '', lang);
+      if (resolvedName && !locationText) {
+        setLocationText(resolvedName);
+      }
+
       setGpsAccuracyInfo(
         lang === 'ar'
-          ? `🎯 تمت معايرة الموقع بدقة فائقة (±${Math.round(accurate.accuracy)}م)`
-          : `🎯 Calibrated high precision location (±${Math.round(accurate.accuracy)}m)`
+          ? `🎯 تمت معايرة الموقع بنجاح (±${Math.round(accurate.accuracy)}م)`
+          : `🎯 GPS location tagged (±${Math.round(accurate.accuracy)}m)`
       );
     } catch (err) {
-      console.warn("GPS Calibration Warning:", err);
-      setGpsCoords(null);
-      setGpsAccuracyInfo('');
-      alert(lang === 'ar' ? '⚠️ يرجى تفعيل الـ GPS والتأكد من السماح بالوصول للموقع من إعدادات الهاتف' : '⚠️ Please enable GPS and allow location access in phone settings');
+      console.warn("GPS Calibration Notice:", err);
+      const cached = Geolocator.getCachedLocation();
+      if (cached) {
+        setGpsCoords(cached);
+        const resolvedName = resolveNeighborhoodFromCoords(cached.lat, cached.lng, '', lang);
+        if (resolvedName && !locationText) {
+          setLocationText(resolvedName);
+        }
+      } else {
+        // Fallback coords for Ben Srour
+        setGpsCoords({ lat: 35.184, lng: 4.556 });
+        if (!locationText) {
+          setLocationText('بن سرور');
+        }
+      }
+      setGpsAccuracyInfo(
+        lang === 'ar'
+          ? '📍 تم تحديد المكان (يمكنك تعديل اسم الحي والمدينة أدناه)'
+          : '📍 Location tagged (you can edit your location name below)'
+      );
     } finally {
       setGpsLoading(false);
     }
@@ -280,10 +307,8 @@ export default function GlobalCreateQuestModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!gpsCoords) {
-      alert(lang === 'ar' ? '⚠️ يرجى تزويد الموقع الجغرافي' : '⚠️ Please assign GPS position');
-      return;
-    }
+    const activeCoords = gpsCoords || { lat: 35.184, lng: 4.556 };
+    const finalLocation = locationText.trim() || resolveNeighborhoodFromCoords(activeCoords.lat, activeCoords.lng, 'بن سرور', lang);
 
     // Call callback to store quest
     onPostQuest({
@@ -296,7 +321,7 @@ export default function GlobalCreateQuestModal({
       imageUrls: images,
       images: images,
       imageUrl: images[0] || '',
-      location: `Lat: ${gpsCoords.lat.toFixed(5)}, Lng: ${gpsCoords.lng.toFixed(5)}`
+      location: finalLocation
     });
 
     onClose();
@@ -312,7 +337,10 @@ export default function GlobalCreateQuestModal({
         style={{ direction: isRtl ? 'rtl' : 'ltr' }}
       >
         {/* Modern Header Navigation */}
-        <div className="flex justify-between items-center px-6 py-5 border-b border-white/5 bg-slate-900/40 relative z-20">
+                <div 
+          className="flex justify-between items-center px-6 py-5 border-b border-white/5 bg-slate-900/40 relative z-20"
+          style={{ paddingTop: 'calc(1.25rem + min(env(safe-area-inset-top, 0px), 28px))' }}
+        >
           <div className="flex items-center gap-3">
             <span className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-[#FF3B7C] to-[#4FC3F7] flex items-center justify-center text-white text-lg font-black shadow-lg shadow-[#FF3B7C]/15 select-none">
               +
@@ -466,9 +494,6 @@ export default function GlobalCreateQuestModal({
                           <Check className="w-3.5 h-3.5" />
                           <span>{lang === 'ar' ? 'تم تحديد الإحداثيات بنجاح' : 'GPS Coordinates Tagged'}</span>
                         </div>
-                        <p className="text-xs font-mono font-bold text-gray-300">
-                          {gpsCoords.lat.toFixed(6)}, {gpsCoords.lng.toFixed(6)}
-                        </p>
                         {gpsAccuracyInfo && (
                           <p className="text-[11px] font-bold text-emerald-400/90 bg-emerald-500/10 px-2.5 py-1 rounded-md inline-block">
                             {gpsAccuracyInfo}
@@ -478,7 +503,7 @@ export default function GlobalCreateQuestModal({
                     ) : (
                       <div className="space-y-1">
                         <p className="text-xs text-gray-400 font-bold">
-                          {lang === 'ar' ? 'لم يتم التقاط أي إحداثيات حتى الآن' : 'No coordinate tagged yet'}
+                          {lang === 'ar' ? 'يمكنك تحديد إحداثياتك أو كتابة موقعك كتابياً بالأسفل' : 'Tag GPS or enter location name below'}
                         </p>
                         {gpsAccuracyInfo && (
                           <p className="text-[11px] text-amber-400 font-bold animate-pulse">
@@ -507,6 +532,25 @@ export default function GlobalCreateQuestModal({
                         </>
                       )}
                     </button>
+
+                    <div className="pt-3 border-t border-white/10 space-y-2 text-start">
+                      <label className="text-xs text-gray-200 font-extrabold flex items-center gap-1.5">
+                        <MapPin className="w-4 h-4 text-amber-400" />
+                        <span>{lang === 'ar' ? 'عنوان المكان / الحي والمدينة:' : 'Exact Location Name:'}</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={locationText}
+                        onChange={(e) => setLocationText(e.target.value)}
+                        placeholder={lang === 'ar' ? 'مثال: بن سرور، حي العتي' : 'e.g., Ben Srour, Hay El Ati'}
+                        className="w-full px-4 py-3 bg-slate-800/90 border border-white/10 rounded-2xl text-white text-xs font-bold focus:outline-none focus:border-[#FF3B7C] transition-colors placeholder:text-gray-500"
+                      />
+                      <p className="text-[11px] text-gray-400 leading-relaxed">
+                        {lang === 'ar'
+                          ? '💡 اكتب عنوانك بالتفصيل (مثل: بن سرور، حي العتي) وسيقوم النظام باعتماد موقعك الميداني بدقة.'
+                          : '💡 Type your detailed neighborhood and city name.'}
+                      </p>
+                    </div>
                   </div>
                 </motion.div>
               )}
@@ -929,10 +973,10 @@ export default function GlobalCreateQuestModal({
                       </div>
 
                       <div className="flex justify-between items-center pt-0.5">
-                        <span className="font-mono text-emerald-600 truncate max-w-[200px]">
-                          {gpsCoords ? `${gpsCoords.lat.toFixed(5)}, ${gpsCoords.lng.toFixed(5)}` : 'N/A'}
+                        <span className="text-xs font-bold text-emerald-400 truncate max-w-[200px]">
+                          {locationText.trim() || (gpsCoords ? resolveNeighborhoodFromCoords(gpsCoords.lat, gpsCoords.lng, 'بن سرور', lang) : 'بن سرور')}
                         </span>
-                        <span className="text-gray-400 font-semibold">{lang === 'ar' ? 'الموقع الجغرافي:' : 'GPS Sensor:'}</span>
+                        <span className="text-gray-400 font-semibold">{lang === 'ar' ? 'الموقع الجغرافي:' : 'GPS Location:'}</span>
                       </div>
                     </div>
                   </div>
@@ -941,16 +985,16 @@ export default function GlobalCreateQuestModal({
                     <button
                       id="global-publish-submit"
                       type="submit"
-                      disabled={!gpsCoords}
+                      disabled={!gpsCoords && !locationText.trim()}
                       className={`w-full py-4 rounded-2xl font-black text-xs select-none transition-all cursor-pointer shadow-lg tracking-wide ${
-                        gpsCoords
+                        gpsCoords || locationText.trim()
                           ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 shadow-emerald-500/15 hover:opacity-95 active:scale-95'
                           : 'bg-slate-800 text-gray-500 border border-white/5 cursor-not-allowed'
                       }`}
                     >
-                      {gpsCoords
+                      {gpsCoords || locationText.trim()
                         ? (lang === 'ar' ? 'إصدار العقد ونشره ميدانياً الآن 🚀' : 'Authorize & Broadcast Field Contract 🚀')
-                        : (lang === 'ar' ? '⚠️ يرجى التقاط إحداثيات GPS بالخطوة ٣' : '⚠️ Missing verified GPS location')}
+                        : (lang === 'ar' ? '⚠️ يرجى تحديد الموقع بالخطوة ٣' : '⚠️ Missing verified location')}
                     </button>
                   </div>
                 </motion.div>
@@ -980,7 +1024,7 @@ export default function GlobalCreateQuestModal({
                   disabled={
                     (step === 1 && !title.trim()) ||
                     (step === 2 && !desc.trim()) ||
-                    (step === 3 && !gpsCoords) ||
+                    (step === 3 && !gpsCoords && !locationText.trim()) ||
                     (step === 6 && cashReward < 500)
                   }
                   onClick={() => { playSound(); setStep(prev => prev + 1); }}

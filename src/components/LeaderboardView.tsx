@@ -287,11 +287,13 @@ export default function LeaderboardView({
       
       {/* Dynamic Activity Simulation Overlay */}
       {toastMessage && (
-        <div className="fixed bottom-24 left-4 right-4 z-50 bg-slate-900 text-white border border-[#FFD34D] p-4 rounded-2xl shadow-xl flex items-center gap-3 animate-slideUp">
-          <div className="w-10 h-10 bg-[#FFD34D] rounded-full flex items-center justify-center shrink-0">
-            <Trophy className="w-5 h-5 text-[#1F2A44] fill-[#1F2A44]" />
+        <div className="fixed bottom-24 left-4 right-4 z-50 bg-white dark:bg-[#0A1128] text-slate-900 dark:text-white border-2 border-[#FF3B7C] p-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-slideUp">
+          <div className="w-10 h-10 bg-gradient-to-tr from-[#FF3B7C] via-[#FFD34D] to-[#4FC3F7] p-0.5 rounded-full shrink-0 flex items-center justify-center">
+            <div className="w-full h-full bg-white dark:bg-[#0A1128] rounded-full flex items-center justify-center">
+              <Trophy className="w-5 h-5 text-[#FF3B7C]" />
+            </div>
           </div>
-          <p className="text-xs font-black leading-snug">{toastMessage}</p>
+          <p className="text-xs font-black leading-snug text-slate-900 dark:text-slate-100">{toastMessage}</p>
         </div>
       )}
 

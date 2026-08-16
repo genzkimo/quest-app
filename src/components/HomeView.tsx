@@ -34,10 +34,13 @@ import {
   Lock,
   ChevronDown,
   Compass,
+  Navigation,
   RefreshCw
 } from 'lucide-react';
 import { Quest, QuestCategory, UserProfile, QuestStory } from '../types';
 import { Geolocator } from '../utils/geolocator';
+import { formatArabicDate } from '../utils/dateFormatter';
+import { cleanLocationName } from '../utils/locationFormatter';
 import { Capacitor } from '@capacitor/core';
 import { calculateBookingFee } from '../utils/fee';
 import { db } from '../utils/firebase';
@@ -858,6 +861,20 @@ export default function HomeView({
     setActiveStoryGroup(null);
   };
 
+  const pinnedActiveQuests = useMemo(() => {
+    if (!userProfile) return [];
+    const activeStatuses = ['booked', 'active', 'arrived', 'pending_verification', 'disputed'];
+    return quests.filter(q => {
+      if (!activeStatuses.includes(q.status)) return false;
+      const isCreator = q.creatorId === userProfile.id;
+      const isRunner = 
+        q.helperId === userProfile.id || 
+        q.assignedRunnerId === userProfile.id || 
+        (q.assignedRunnerIds && q.assignedRunnerIds.includes(userProfile.id));
+      return isCreator || isRunner;
+    });
+  }, [quests, userProfile]);
+
   const filteredQuests = useMemo(() => {
     const qSearch = searchQuery.toLowerCase();
     return quests
@@ -1130,6 +1147,165 @@ export default function HomeView({
       {/* VERTICAL PREMIUM SOCIAL FEED PLAYGROUND */}
       <div id="social-media-feed-track" className="space-y-6">
         
+        {/* PINNED ACTIVE RESERVED QUESTS FOR WORKER / EMPLOYER */}
+        {pinnedActiveQuests.length > 0 && (
+          <div className="space-y-3 mb-6 max-w-2xl mx-auto">
+            <div className="flex items-center justify-between px-1">
+              <h3 className="text-xs font-black text-[#FF3B7C] uppercase tracking-wider flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#FF3B7C] animate-ping"></span>
+                <span>{lang === 'ar' ? '📌 المهام المحجوزة المثبتة (مستمرة حتى الانتهاء)' : '📌 Pinned Active Tasks (Ongoing)'}</span>
+                <span className="bg-[#FF3B7C]/15 text-[#FF3B7C] border border-[#FF3B7C]/30 px-2 py-0.5 rounded-full text-[10px] font-black">
+                  {pinnedActiveQuests.length}
+                </span>
+              </h3>
+            </div>
+
+            <div className="space-y-3">
+              {pinnedActiveQuests.map((quest) => {
+                const isCreator = userProfile && quest.creatorId === userProfile.id;
+                const isWorker = userProfile && (
+                  quest.helperId === userProfile.id || 
+                  quest.assignedRunnerId === userProfile.id || 
+                  (quest.assignedRunnerIds && quest.assignedRunnerIds.includes(userProfile.id))
+                );
+
+                const getStatusText = (status: string) => {
+                  switch (status) {
+                    case 'booked':
+                      return lang === 'ar' ? 'تم الحجز 🔒 (في انتظار البدء)' : 'Booked 🔒';
+                    case 'active':
+                      return lang === 'ar' ? 'جاري التنفيذ المباشر ⚡' : 'In Progress ⚡';
+                    case 'arrived':
+                      return lang === 'ar' ? 'وصل المنفذ إلى الموقع 📍' : 'Arrived at Location 📍';
+                    case 'pending_verification':
+                      return lang === 'ar' ? 'بانتظار تأكيد واستلام العقد ⏳' : 'Pending Verification ⏳';
+                    case 'disputed':
+                      return lang === 'ar' ? 'قيد المراجعة والنزاع ⚠️' : 'Disputed ⚠️';
+                    default:
+                      return status;
+                  }
+                };
+
+                return (
+                  <motion.div
+                    key={`pinned-${quest.id}`}
+                    initial={{ scale: 0.98, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    className="bg-white dark:bg-[#0A1128] text-slate-900 dark:text-white border-2 border-[#FF3B7C] rounded-3xl p-5 shadow-xl relative overflow-hidden backdrop-blur-md"
+                  >
+                    {/* Background glow accents */}
+                    <div className="absolute -top-12 -right-12 w-32 h-32 bg-[#FF3B7C]/10 rounded-full blur-2xl pointer-events-none" />
+                    <div className="absolute -bottom-12 -left-12 w-32 h-32 bg-[#4FC3F7]/10 rounded-full blur-2xl pointer-events-none" />
+
+                    {/* Header Banner */}
+                    <div className="flex items-center justify-between gap-2 mb-3 pb-3 border-b border-slate-150 dark:border-white/10">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="bg-[#FF3B7C] text-white text-[10px] font-black px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-sm uppercase tracking-wider">
+                          <span>📌</span>
+                          <span>{lang === 'ar' ? 'مثبتة لك' : 'Pinned'}</span>
+                        </span>
+                        {isCreator && (
+                          <span className="bg-amber-50 dark:bg-[#FFD34D]/20 text-amber-900 dark:text-[#FFD34D] border border-amber-300 dark:border-[#FFD34D]/30 text-[10px] font-black px-2.5 py-1 rounded-lg">
+                            {lang === 'ar' ? '👑 أنت صاحب العمل' : '👑 Employer'}
+                          </span>
+                        )}
+                        {isWorker && (
+                          <span className="bg-sky-50 dark:bg-[#4FC3F7]/20 text-sky-900 dark:text-[#4FC3F7] border border-sky-300 dark:border-[#4FC3F7]/30 text-[10px] font-black px-2.5 py-1 rounded-lg">
+                            {lang === 'ar' ? '⚡ أنت العامل/المنفذ' : '⚡ Assigned Worker'}
+                          </span>
+                        )}
+                      </div>
+
+                      <span className="text-[11px] font-black text-amber-900 dark:text-[#FFD34D] bg-amber-50 dark:bg-white/10 border border-amber-300 dark:border-[#FFD34D]/30 px-2.5 py-1 rounded-xl shadow-2xs">
+                        {getStatusText(quest.status)}
+                      </span>
+                    </div>
+
+                    {/* Quest Body */}
+                    <div className="space-y-2 mb-4">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-black text-[#0284C7] dark:text-[#4FC3F7] uppercase tracking-wider bg-sky-50 dark:bg-[#4FC3F7]/10 border border-sky-200 dark:border-[#4FC3F7]/30 px-2.5 py-0.5 rounded-md">
+                          {quest.category}
+                        </span>
+                        <span className="text-xs font-mono font-black text-amber-900 dark:text-[#FFD34D] bg-amber-50 dark:bg-[#FFD34D]/10 border border-amber-300 dark:border-[#FFD34D]/30 px-2.5 py-1 rounded-lg">
+                          {quest.cashReward} DA
+                        </span>
+                      </div>
+                      <h4 className="text-base font-extrabold text-slate-900 dark:text-white leading-snug">
+                        {quest.title}
+                      </h4>
+                      <p className="text-xs text-slate-600 dark:text-slate-300 font-medium line-clamp-2">
+                        {quest.description}
+                      </p>
+                      <div className="pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onStartNavigation) {
+                              onStartNavigation(quest);
+                            } else if (onViewChange) {
+                              onViewChange('map');
+                            }
+                          }}
+                          className="inline-flex items-center gap-1.5 text-xs text-[#0284C7] bg-[#4FC3F7]/10 hover:bg-[#4FC3F7]/20 border border-[#4FC3F7]/30 px-3 py-1.5 rounded-xl font-extrabold transition-all cursor-pointer"
+                        >
+                          <Navigation className="w-3.5 h-3.5 text-[#0284C7]" />
+                          <span>{lang === 'ar' ? '🗺️ الخريطة والملاحة' : '🗺️ Map & Navigation'}</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Quick Controls */}
+                    <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-slate-150 dark:border-white/10">
+                      <button
+                        onClick={() => {
+                          if (onViewQuestDetail) {
+                            onViewQuestDetail(quest.id);
+                          } else {
+                            setSelectedQuest(quest);
+                          }
+                          const hapticEnabled = userProfile?.hapticFeedbackEnabled !== false;
+                          triggerHaptic('sharp', hapticEnabled);
+                        }}
+                        className="flex-1 min-w-[120px] bg-[#FF3B7C] hover:bg-[#FF3B7C]/90 text-white font-black text-xs py-2.5 px-3 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 shadow-md"
+                      >
+                        <Eye className="w-4 h-4 text-[#FFD34D]" />
+                        <span>{lang === 'ar' ? 'التفاصيل والعقد 🎯' : 'View Details 🎯'}</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          if (onViewChange) onViewChange('messages');
+                        }}
+                        className="bg-slate-100 dark:bg-white/10 hover:bg-slate-200 dark:hover:bg-white/20 text-slate-800 dark:text-white font-extrabold text-xs py-2.5 px-3 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 border border-slate-200 dark:border-white/20 shadow-2xs"
+                      >
+                        <MessageSquare className="w-4 h-4 text-sky-600 dark:text-[#4FC3F7]" />
+                        <span>{lang === 'ar' ? 'المحادثة 💬' : 'Chat 💬'}</span>
+                      </button>
+
+                      {isWorker && (
+                        <button
+                          onClick={() => {
+                            if (onStartNavigation) {
+                              onStartNavigation(quest);
+                            } else if (onViewChange) {
+                              onViewChange('map');
+                            }
+                          }}
+                          className="bg-[#4FC3F7] hover:bg-[#4FC3F7]/90 text-[#0A1128] font-black text-xs py-2.5 px-3 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 shadow-md"
+                        >
+                          <Compass className="w-4 h-4 text-[#0A1128]" />
+                          <span>{lang === 'ar' ? 'الملاحة 🗺️' : 'Navigate 🗺️'}</span>
+                        </button>
+                      )}
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         <div className="flex items-center justify-between px-1">
           <h2 className="text-sm font-black text-[#1F2A44] flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-full bg-[#FF3B7C] animate-ping"></span>
@@ -1288,7 +1464,7 @@ export default function HomeView({
                           </div>
                           <div className="text-[10px] text-gray-400 font-mono flex items-center gap-1 mt-0.5">
                             <Clock className="w-3.5 h-3.5 text-gray-300" />
-                            <span>{quest.createdAt}</span>
+                            <span>{formatArabicDate(quest.createdAt, lang)}</span>
                           </div>
                         </div>
                       </div>
@@ -2498,19 +2674,23 @@ export default function HomeView({
                       const isApprovedAndActive = (selectedQuest.helperId === userProfile.id || selectedQuest.assignedRunnerId === userProfile.id || selectedQuest.assignedRunnerIds?.includes(userProfile.id)) && selectedQuest.status !== 'completed';
                       const isLocationAuthorized = selectedQuest.creatorId === userProfile.id || isApprovedAndActive;
                       return (
-                        <div className="flex items-center gap-2 text-xs font-bold text-gray-700 bg-gray-50 p-3 rounded-2xl border border-gray-150/50">
+                        <div className="w-full">
                           {isLocationAuthorized ? (
-                            <>
-                              <MapPin className="w-4 h-4 text-[#4FC3F7] shrink-0" />
-                              <span className="truncate">{selectedQuest.location}</span>
-                            </>
+                            <button
+                              type="button"
+                              onClick={() => onStartNavigation(selectedQuest)}
+                              className="w-full flex items-center justify-center gap-2 bg-[#4FC3F7]/10 text-[#0284C7] hover:bg-[#4FC3F7]/20 p-3 rounded-2xl font-black cursor-pointer transition-all border border-[#4FC3F7]/30 text-xs"
+                            >
+                              <Navigation className="w-4 h-4 text-[#0284C7]" />
+                              <span>{lang === 'ar' ? '🗺️ عرض على الخريطة والملاحة' : '🗺️ Open Map & Navigation'}</span>
+                            </button>
                           ) : (
-                            <>
+                            <div className="flex items-center justify-center gap-2 text-xs font-bold text-amber-700 bg-amber-50/80 p-3 rounded-2xl border border-amber-200/60">
                               <Lock className="w-4 h-4 text-amber-500 shrink-0 animate-pulse" />
-                              <span className="text-slate-400 truncate">
+                              <span>
                                 {lang === 'ar' ? '🔒 الموقع مخفي حتى قبول الحجز وتفعيل العقد' : '🔒 Location hidden until booking approved'}
                               </span>
-                            </>
+                            </div>
                           )}
                         </div>
                       );

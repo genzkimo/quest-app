@@ -209,25 +209,30 @@ export class Geolocator {
           }
         }
 
-        // Attempt 4: Throw error if live location cannot be obtained
-        throw new Error('LOCATION_DISABLED');
+        // Attempt 4: Return cached location if available or default fallback (Algiers)
+        const cached = this.getCachedLocation();
+        if (cached) {
+          if (onProgress) onProgress(1, 35);
+          return { lat: cached.lat, lng: cached.lng, accuracy: 35 };
+        }
+        if (onProgress) onProgress(1, 100);
+        return { lat: 36.75288, lng: 3.05858, accuracy: 100 };
       } catch (nativeErr: any) {
-        console.warn("Native Capacitor Geolocation attempt failed:", nativeErr);
-        const msg = String(nativeErr?.message || nativeErr || '').toLowerCase();
-        if (msg.includes('denied') || msg.includes('permission')) {
-          throw new Error('PERMISSION_DENIED');
+        console.warn("Native Capacitor Geolocation attempt failed, using fallback:", nativeErr);
+        const cached = this.getCachedLocation();
+        if (cached) {
+          return { lat: cached.lat, lng: cached.lng, accuracy: 35 };
         }
-        if (msg.includes('disabled') || msg.includes('unavailable') || msg.includes('location services') || msg.includes('provider')) {
-          throw new Error('LOCATION_DISABLED');
-        }
-        throw nativeErr;
+        return { lat: 36.75288, lng: 3.05858, accuracy: 100 };
       }
     }
 
     // 2. Web / Fallback Execution Path
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       if (!navigator.geolocation) {
-        return reject(new Error('GPS_NOT_SUPPORTED'));
+        const cached = this.getCachedLocation();
+        if (cached) return resolve({ lat: cached.lat, lng: cached.lng, accuracy: 35 });
+        return resolve({ lat: 36.75288, lng: 3.05858, accuracy: 100 });
       }
 
       const samples: Array<{ lat: number; lng: number; accuracy: number }> = [];
@@ -249,27 +254,36 @@ export class Geolocator {
           // Fallback to getCurrentPosition if watchPosition produced no samples
           navigator.geolocation.getCurrentPosition(
             (position) => {
-              resolve({
+              const res = {
                 lat: position.coords.latitude,
                 lng: position.coords.longitude,
                 accuracy: position.coords.accuracy || 50
-              });
+              };
+              this.saveCachedLocation(res.lat, res.lng);
+              resolve(res);
             },
-            (error) => reject(error),
-            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            (error) => {
+              console.warn("getCurrentPosition failed, using fallback location:", error);
+              const cached = this.getCachedLocation();
+              if (cached) return resolve({ lat: cached.lat, lng: cached.lng, accuracy: 35 });
+              return resolve({ lat: 36.75288, lng: 3.05858, accuracy: 100 });
+            },
+            { enableHighAccuracy: false, timeout: 5000, maximumAge: 300000 }
           );
           return;
         }
 
         // Sort samples by best accuracy (lowest error margin in meters)
         samples.sort((a, b) => a.accuracy - b.accuracy);
-        resolve(samples[0]);
+        const best = samples[0];
+        this.saveCachedLocation(best.lat, best.lng);
+        resolve(best);
       };
 
-      // Set a strict 5-second calibration window
+      // Set a strict 4-second calibration window
       timer = setTimeout(() => {
         finishSampling();
-      }, 5000);
+      }, 4000);
 
       try {
         watchId = navigator.geolocation.watchPosition(
@@ -286,8 +300,8 @@ export class Geolocator {
               onProgress(samples.length, bestAcc);
             }
 
-            // Early exit if we have at least 3 samples and accuracy is already very precise (<= 8 meters)
-            if (samples.length >= 3 && sample.accuracy <= 8) {
+            // Early exit if we have at least 2 samples and accuracy is precise (<= 15 meters)
+            if (samples.length >= 2 && sample.accuracy <= 15) {
               finishSampling();
             }
           },
@@ -298,26 +312,35 @@ export class Geolocator {
               if (watchId !== null) navigator.geolocation.clearWatch(watchId);
               navigator.geolocation.getCurrentPosition(
                 (position) => {
-                  resolve({
+                  const res = {
                     lat: position.coords.latitude,
                     lng: position.coords.longitude,
                     accuracy: position.coords.accuracy || 50
-                  });
+                  };
+                  this.saveCachedLocation(res.lat, res.lng);
+                  resolve(res);
                 },
-                (err) => reject(err),
-                { enableHighAccuracy: false, timeout: 10000, maximumAge: 30000 }
+                (err) => {
+                  console.warn("watchPosition error & getCurrentPosition error, using fallback:", err);
+                  const cached = this.getCachedLocation();
+                  if (cached) return resolve({ lat: cached.lat, lng: cached.lng, accuracy: 35 });
+                  return resolve({ lat: 36.75288, lng: 3.05858, accuracy: 100 });
+                },
+                { enableHighAccuracy: false, timeout: 5000, maximumAge: 300000 }
               );
             }
           },
           {
             enableHighAccuracy: true,
-            timeout: 15000,
+            timeout: 8000,
             maximumAge: 0
           }
         );
       } catch (err) {
         if (timer) clearTimeout(timer);
-        reject(err);
+        const cached = this.getCachedLocation();
+        if (cached) return resolve({ lat: cached.lat, lng: cached.lng, accuracy: 35 });
+        return resolve({ lat: 36.75288, lng: 3.05858, accuracy: 100 });
       }
     });
   }

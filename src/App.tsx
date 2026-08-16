@@ -29,6 +29,7 @@ import MapView from './components/MapView';
 import LeaderboardView from './components/LeaderboardView';
 import MyQuestsView from './components/MyQuestsView';
 import ProfileView from './components/ProfileView';
+
 import PublicProfileView from './components/PublicProfileView';
 import ReciprocalRatingModal from './components/ReciprocalRatingModal';
 import NotificationScreen, { NotificationDoc } from './components/NotificationScreen';
@@ -39,6 +40,7 @@ import GlobalCreateQuestModal from './components/GlobalCreateQuestModal';
 import TermsConsentModal from './components/TermsConsentModal';
 import OnboardingModal from './components/OnboardingModal';
 import SmartContextualGuide from './components/SmartContextualGuide';
+import ActiveQuestFloatingWidget from './components/ActiveQuestFloatingWidget';
 import { motion, AnimatePresence } from 'motion/react';
 import { Geolocator } from './utils/geolocator';
 import { calculateBookingFee } from './utils/fee';
@@ -513,7 +515,7 @@ export default function App() {
   ]);
   
   // Real-time hardware GPS level tracking coordinates
-  const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(() => Geolocator.getCachedLocation());
+  const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
     if (!userLoc && navigator.geolocation) {
@@ -709,6 +711,7 @@ export default function App() {
   const activeConnectionStatus = simulatedConnectionStatus !== null ? simulatedConnectionStatus : realConnectionStatus;
 
   const [showConnectionBar, setShowConnectionBar] = useState<boolean>(true);
+  const [isNavVisible, setIsNavVisible] = useState<boolean>(false);
 
   // Trigger whenever active status changes
   useEffect(() => {
@@ -1619,6 +1622,8 @@ export default function App() {
       if (detail && detail.chatId) {
         setActiveMessagesChatId(detail.chatId);
         setCurrentView('messages');
+        setGlobalQuestDetailId(null);
+        setSelectedPublicProfileId(null);
       }
     };
     window.addEventListener('open-chat', handleOpenChatGlobal);
@@ -1631,6 +1636,7 @@ export default function App() {
       const detail = (e as CustomEvent).detail;
       if (detail && detail.userId) {
         setSelectedPublicProfileId(detail.userId);
+        setGlobalQuestDetailId(null);
       }
     };
     window.addEventListener('view-public-profile', handleViewProfileGlobal);
@@ -1985,6 +1991,7 @@ export default function App() {
 
   const handleDeleteStory = async (storyId: string) => {
     try {
+      const isAr = userProfile?.language === 'ar';
       const targetStory = stories.find(s => s.id === storyId);
       if (targetStory) {
         const isOwner = Boolean(
@@ -2442,15 +2449,16 @@ export default function App() {
     const targetQuest = quests.find(q => q.id === questId);
     if (!targetQuest || !userProfile) return;
 
-    // Security check: Verify that the user is actually the assigned runner for this quest
-    const isRunner = targetQuest.helperId === userProfile.id || 
-                     targetQuest.assignedRunnerId === userProfile.id || 
-                     (targetQuest.assignedRunnerIds && targetQuest.assignedRunnerIds.includes(userProfile.id));
+    // Security check: Verify that the user is actually the assigned runner for this quest and NOT the creator
+    const isRunner = (targetQuest.helperId === userProfile.id || 
+                      targetQuest.assignedRunnerId === userProfile.id || 
+                      (targetQuest.assignedRunnerIds && targetQuest.assignedRunnerIds.includes(userProfile.id))) &&
+                     targetQuest.creatorId !== userProfile.id;
 
     if (!isRunner) {
       showToast(userProfile.language === 'ar'
-        ? '⚠️ لا يمكنك تأكيد الوصول لمهمة لست الكابتن المعين لها!'
-        : '⚠️ You cannot confirm arrival for a quest you are not assigned to!'
+        ? '⚠️ لا يمكنك تأكيد الوصول لمهمة أنت صاحبها أو لست الكابتن المعين لها!'
+        : '⚠️ You cannot confirm arrival for a quest you created or are not assigned to as runner!'
       );
       return;
     }
@@ -3553,14 +3561,21 @@ export default function App() {
             initial={{ y: -50, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: -50, opacity: 0 }}
-            className="fixed top-20 right-4 left-4 md:right-8 md:left-8 z-50 bg-slate-900/95 backdrop-blur-xs border border-emerald-500 text-white px-5 py-3.5 rounded-2xl shadow-2xl flex items-center justify-between text-xs font-bold leading-relaxed shadow-emerald-950/20"
+            className="fixed top-20 right-4 left-4 md:right-8 md:left-8 z-50 bg-white dark:bg-[#0A1128] border-2 border-[#FF3B7C] text-slate-900 dark:text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center justify-between text-xs font-bold leading-relaxed shadow-[#FF3B7C]/20"
           >
-            <div className="flex-1 text-center md:text-right">
-              {toastMessage}
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#FF3B7C] via-[#FFD34D] to-[#4FC3F7] p-0.5 shrink-0 flex items-center justify-center shadow-xs">
+                <div className="w-full h-full bg-white dark:bg-[#0A1128] rounded-full flex items-center justify-center text-[#FF3B7C] font-black text-xs">
+                  🔔
+                </div>
+              </div>
+              <div className="flex-1 text-start md:text-right text-slate-900 dark:text-slate-100 font-black text-xs leading-snug truncate">
+                {toastMessage}
+              </div>
             </div>
             <button 
               onClick={() => setToastMessage(null)}
-              className="px-2 text-[10px] text-gray-400 hover:text-white font-extrabold mr-3 cursor-pointer"
+              className="px-3 py-1 text-[11px] text-white bg-[#FF3B7C] hover:bg-[#FF3B7C]/90 font-black mr-2 shrink-0 cursor-pointer rounded-xl shadow-xs transition"
             >
               إغلاق
             </button>
@@ -3690,66 +3705,7 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Dynamic Internet Connection Status Bar */}
-      <AnimatePresence>
-        {showConnectionBar && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className={`fixed top-16 right-0 left-0 z-30 border-b py-2.5 px-4 flex items-center justify-between gap-3 shadow-md backdrop-blur-md transition-all duration-300 ${
-              activeConnectionStatus === 'offline'
-                ? 'bg-rose-50/95 border-rose-200 text-rose-700'
-                : activeConnectionStatus === 'weak'
-                ? 'bg-amber-50/95 border-amber-200 text-amber-700'
-                : 'bg-emerald-50/95 border-emerald-200 text-emerald-700'
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <span className={`w-2.5 h-2.5 rounded-full animate-pulse ${
-                activeConnectionStatus === 'offline'
-                  ? 'bg-rose-500'
-                  : activeConnectionStatus === 'weak'
-                  ? 'bg-amber-500'
-                  : 'bg-emerald-500'
-              }`} />
-              <span className="text-[11px] font-extrabold leading-relaxed">
-                {activeConnectionStatus === 'offline' && (
-                  userProfile?.language === 'ar' ? '🔴 لا يوجد اتصال بالإنترنت - يرجى التحقق من الشبكة' : '🔴 No internet connection - please check your network'
-                )}
-                {activeConnectionStatus === 'weak' && (
-                  userProfile?.language === 'ar' ? '⚠️ الاتصال بالإنترنت ضعيف - قد تواجه بعض البطء' : '⚠️ Connection is weak - you may experience some lag'
-                )}
-                {activeConnectionStatus === 'online' && (
-                  userProfile?.language === 'ar' ? '🟢 متصل بالإنترنت بنجاح - الخدمة مستقرة' : '🟢 Successfully connected - service is stable'
-                )}
-              </span>
-            </div>
-
-            <button 
-              onClick={() => setShowConnectionBar(false)}
-              className="text-gray-400 hover:text-gray-600 px-1 font-black shrink-0 cursor-pointer text-xs"
-            >
-              ✕
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Sticky Global Broadcast bulletin and announcement stream */}
-      {globalBroadcast && (
-        <div className="fixed top-16 right-0 left-0 bg-slate-100 border-b border-gray-200 py-2.5 px-4 z-30 flex items-center justify-between text-[11px] font-extrabold text-[#1F2A44] leading-relaxed shadow-sm">
-          <span className="flex-1 text-[#1F2A44] truncate">{globalBroadcast}</span>
-          <button 
-            onClick={() => setGlobalBroadcast(null)}
-            className="text-[#FF3B7C] hover:text-[#FF3B7C]/80 px-2 font-black shrink-0 cursor-pointer"
-          >
-            ✕
-          </button>
-        </div>
-      )}
-
-      {/* Main Bottom aligned navigation frame */}
+      {/* Main Navigation & Top Header Frame */}
       <Navbar 
         currentView={currentView}
         onViewChange={(view) => {
@@ -3762,6 +3718,13 @@ export default function App() {
           setProfileSubmenu(submenu);
           setCurrentView('profile');
         }}
+        activeConnectionStatus={activeConnectionStatus}
+        showConnectionBar={showConnectionBar}
+        onCloseConnectionBar={() => setShowConnectionBar(false)}
+        onToggleConnectionBar={() => setShowConnectionBar(prev => !prev)}
+        globalBroadcast={globalBroadcast}
+        onCloseGlobalBroadcast={() => setGlobalBroadcast(null)}
+        onNavVisibilityChange={setIsNavVisible}
         unclaimedChallengesCount={profileBadgeDismissed ? 0 : unclaimedChallengesCount}
         unreadTasksCount={myQuestsBadgeDismissed ? 0 : unreadTasksCount}
         tokenBalance={userProfile.tokenBalance}
@@ -3825,7 +3788,7 @@ export default function App() {
       />
 
       {/* Main Scroll Content Area */}
-      <main className={currentView === 'messages' && !globalQuestDetailId ? "w-full max-w-none px-0 pt-16 pb-[72px]" : "max-w-5xl mx-auto px-4 md:px-8 pt-28 pb-28 md:pb-32"}>
+      <main className={currentView === 'messages' && !globalQuestDetailId ? "w-full max-w-none px-0 pt-0 pb-0" : "max-w-5xl mx-auto px-4 md:px-8 pt-28 pb-28 md:pb-32"}>
         <h2 className="sr-only">محتوى صفحة كويست الرئيسي</h2>
         <AnimatePresence mode="wait">
           <motion.div
@@ -3870,6 +3833,8 @@ export default function App() {
                   }
                 }}
                 onOpenChat={(chatParams) => {
+                  setGlobalQuestDetailId(null);
+                  setSelectedPublicProfileId(null);
                   const openChatEvent = new CustomEvent('open-chat', {
                     detail: chatParams
                   });
@@ -3884,7 +3849,10 @@ export default function App() {
                   setSelectedPublicProfileId(null);
                   setCurrentView('my-quests');
                 }}
-                onViewPublicProfile={(userId) => setSelectedPublicProfileId(userId)}
+                onViewPublicProfile={(userId) => {
+                  setGlobalQuestDetailId(null);
+                  setSelectedPublicProfileId(userId);
+                }}
                 onExtendPendingQuest={handleExtendPendingQuest}
                 onExtendActiveContract={handleExtendActiveContract}
                 showToast={showToast}
@@ -3967,16 +3935,16 @@ export default function App() {
                           setCurrentView('my-quests');
                           setAutoOpenCreateQuest(true);
                         }}
-                        onViewChange={setCurrentView}
+                        onViewChange={(v) => handleViewNavigation(v as ViewState)}
                         onStartNavigation={(q) => {
                           const isRunner = userProfile && (q.helperId === userProfile.id || q.assignedRunnerId === userProfile.id || (q.assignedRunnerIds && q.assignedRunnerIds.includes(userProfile.id)));
                           const isCreator = userProfile && q.creatorId === userProfile.id;
                           if (isRunner) {
                             setNavigatingQuest(q);
-                            setCurrentView('map');
+                            handleViewNavigation('map');
                           } else if (isCreator) {
                             setMapSelectedQuest(q);
-                            setCurrentView('map');
+                            handleViewNavigation('map');
                           } else {
                             showToast(userProfile?.language === 'ar' ? '⚠️ لا يمكنك فتح الخريطة أو تتبع الموقع حتى تقوم بحجز المهمة أولاً!' : '⚠️ You cannot open the map or view location until you book the quest first!');
                           }
@@ -4081,6 +4049,7 @@ export default function App() {
                     currentUserId={userProfile.id}
                     userProfile={userProfile}
                     lang={userProfile.language}
+                    isNavVisible={isNavVisible}
                     onOpenChat={(chatId) => {
                       const questId = chatId.split('_')[0];
                       navigateToQuestDetail(questId);
@@ -4351,6 +4320,38 @@ export default function App() {
           userId={userProfile.id}
           onNavigate={(v) => setCurrentView(v as ViewState)}
           onOpenCreateQuest={() => setShowGlobalCreateQuest(true)}
+        />
+      )}
+
+      {/* ⚡ Global Smart Floating Widget for Active Reserved Quests */}
+      {authenticatedUser && userProfile && !showTermsConsentModal && !showOnboardingModal && (
+        <ActiveQuestFloatingWidget
+          userProfile={userProfile}
+          quests={quests}
+          lang={userProfile.language || 'ar'}
+          onOpenQuestDetail={(questId) => setGlobalQuestDetailId(questId)}
+          onOpenChat={(quest) => {
+            const isCreator = quest.creatorId === userProfile.id;
+            const helperId = quest.helperId || quest.assignedRunnerId || (quest.assignedRunnerIds ? quest.assignedRunnerIds[0] : '');
+            const targetUserId = isCreator ? helperId : quest.creatorId;
+            const approvedChatId = `${quest.id}_${quest.creatorId}_${helperId}`;
+            window.dispatchEvent(new CustomEvent('open-chat', {
+              detail: {
+                chatId: approvedChatId,
+                questId: quest.id,
+                targetUserId: targetUserId
+              }
+            }));
+          }}
+          onNavigateToMap={(quest) => {
+            setNavigatingQuest(quest);
+            setMapSelectedQuest(quest);
+            setCurrentView('map');
+          }}
+          onOpenMyQuests={(tab) => {
+            setMyQuestsActiveTab(tab);
+            setCurrentView('my-quests');
+          }}
         />
       )}
 

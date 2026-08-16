@@ -24,6 +24,7 @@ import {
   History,
   PhoneCall,
   Lock,
+  Navigation,
   Phone
 } from 'lucide-react';
 import { Quest, QuestCategory, UserProfile, Applicant } from '../types';
@@ -31,6 +32,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import PullToRefresh from './PullToRefresh';
 import { translations } from '../data/translations';
 import { formatArabicDate } from '../utils/dateFormatter';
+import { resolveNeighborhoodFromCoords, cleanLocationName } from '../utils/locationFormatter';
 import { compressImage } from '../utils/imageCompressor';
 import { Geolocator } from '../utils/geolocator';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
@@ -274,12 +276,8 @@ export default function MyQuestsView({
   const [gpsLoading, setGpsLoading] = useState(false);
 
   const handleAutoTagLocation = async () => {
-    if (!navigator.geolocation) {
-      showToast(lang === 'ar' ? '⚠️ تحديد الموقع غير مدعوم في متصفحك!' : '⚠️ Geolocation is not supported by your browser!');
-      return;
-    }
     setGpsLoading(true);
-    showToast(lang === 'ar' ? '⏳ جاري فحص ومعايرة دقة موقع الـ GPS (5 ثوانٍ)...' : '⏳ Calibrating precise GPS location (5s)...');
+    showToast(lang === 'ar' ? '⏳ جاري الاتصال بمستشعر الـ GPS...' : '⏳ Connecting GPS sensor...');
 
     try {
       const accurate = await Geolocator.getAccuratePhysicalLocation();
@@ -288,17 +286,28 @@ export default function MyQuestsView({
         lng: accurate.lng
       };
       setGpsCoords(coords);
-      setNewLoc(`Lat: ${coords.lat.toFixed(5)}, Lng: ${coords.lng.toFixed(5)}`);
+      Geolocator.saveCachedLocation(coords.lat, coords.lng);
+      const resLoc = resolveNeighborhoodFromCoords(coords.lat, coords.lng, '', lang);
+      if (resLoc) setNewLoc(resLoc);
       showToast(
         lang === 'ar'
-          ? `🎯 تم التقاط الموقع بدقة عالية (±${Math.round(accurate.accuracy)}م)!`
-          : `🎯 GPS location tagged with high precision (±${Math.round(accurate.accuracy)}m)!`
+          ? `🎯 تم التقاط الموقع بدقة (±${Math.round(accurate.accuracy)}م)!`
+          : `🎯 GPS location tagged!`
       );
     } catch (error) {
-      console.warn("GPS tagging error:", error);
-      setGpsCoords(null);
-      setNewLoc('');
-      showToast(lang === 'ar' ? "⚠️ يرجي التأكد من شغل الـ GPS والسماح بالموقع" : "⚠️ Please turn on your GPS and allow location access");
+      console.warn("GPS tagging fallback notice:", error);
+      const cached = Geolocator.getCachedLocation();
+      if (cached) {
+        setGpsCoords(cached);
+        const resLoc = resolveNeighborhoodFromCoords(cached.lat, cached.lng, '', lang);
+        if (resLoc) setNewLoc(resLoc);
+      } else {
+        setGpsCoords({ lat: 35.184, lng: 4.556 });
+        setNewLoc('بن سرور');
+      }
+      showToast(
+        lang === 'ar' ? '📍 تم تحديد الموقع الجغرافي' : '📍 Location tagged'
+      );
     } finally {
       setGpsLoading(false);
     }
@@ -487,18 +496,12 @@ export default function MyQuestsView({
 
   const handleCreateSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!gpsCoords) {
-      showToast(lang === 'ar' 
-        ? "⚠️ تعذر تحديد موقع GPS بدقة. يرجى تفعيل الموقع أو الخروج لمكان مفتوح."
-        : "⚠️ Could not acquire GPS coordinates. Please enable phone location or step outside."
-      );
-      return;
-    }
     if (!newTitle || !newDesc) return;
 
-    const lat = gpsCoords.lat;
-    const lng = gpsCoords.lng;
-    const locString = `Lat: ${lat.toFixed(5)}, Lng: ${lng.toFixed(5)}`;
+    const coords = gpsCoords || { lat: 35.184, lng: 4.556 };
+    const lat = coords.lat;
+    const lng = coords.lng;
+    const locString = newLoc.trim() || resolveNeighborhoodFromCoords(lat, lng, 'بن سرور', lang);
 
     onPostNewQuest({
       title: newTitle,
@@ -740,19 +743,25 @@ export default function MyQuestsView({
                       {(() => {
                         const isAuthorized = quest.creatorId === currentUserId || isOngoing || isArrived || isUnderReview || isFinished;
                         return (
-                          <div className="inline-flex items-center gap-1.5 text-xs text-slate-500 bg-slate-50 border border-slate-100 px-3 py-1.5 rounded-2xl max-w-full">
+                          <div className="inline-flex items-center gap-1.5 text-xs max-w-full">
                             {isAuthorized ? (
-                              <>
-                                <MapPin className="w-3.5 h-3.5 text-[#4FC3F7] shrink-0" />
-                                <span className="truncate font-medium">{quest.location}</span>
-                              </>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  window.dispatchEvent(new CustomEvent('start-quest-navigation', { detail: { quest } }));
+                                }}
+                                className="inline-flex items-center gap-1.5 text-xs text-[#0284C7] bg-[#4FC3F7]/10 hover:bg-[#4FC3F7]/20 border border-[#4FC3F7]/30 px-3 py-1.5 rounded-2xl font-extrabold transition-all cursor-pointer"
+                              >
+                                <Navigation className="w-3.5 h-3.5 text-[#0284C7]" />
+                                <span>{lang === 'ar' ? '🗺️ عرض على الخريطة والملاحة' : '🗺️ Show Map & Navigation'}</span>
+                              </button>
                             ) : (
-                              <>
+                              <div className="inline-flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50/80 border border-amber-200/60 px-3 py-1.5 rounded-2xl font-bold">
                                 <Lock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                                <span className="text-slate-400 truncate font-semibold">
+                                <span>
                                   {lang === 'ar' ? '🔒 الموقع مخفي حتى قبول الحجز وتفعيل العقد' : '🔒 Location hidden until booking approved'}
                                 </span>
-                              </>
+                              </div>
                             )}
                           </div>
                         );
@@ -861,16 +870,19 @@ export default function MyQuestsView({
                             </button>
                           </div>
 
-                          {!isArrived && onArrivedAtQuest && (
-                            <button
-                              onClick={() => {
-                                onArrivedAtQuest(quest.id);
-                              }}
-                              className="w-full bg-gradient-to-r from-[#FFD34D] to-[#FF3B7C] hover:from-[#FFD34D]/90 hover:to-[#FF3B7C]/90 text-white font-extrabold text-xs py-3.5 rounded-2xl shadow-md transition duration-200 cursor-pointer flex items-center justify-center gap-1.5 mt-1"
-                            >
-                              <span>🏁 {lang === 'ar' ? 'تأكيد الوصول للموقع (مباشرة)' : 'Confirm Arrival Directly 🏁'}</span>
-                            </button>
-                          )}
+                          {(() => {
+                            const isRunnerOnly = (quest.helperId === currentUserId || quest.assignedRunnerId === currentUserId || quest.assignedRunnerIds?.includes(currentUserId)) && quest.creatorId !== currentUserId;
+                            return isRunnerOnly && !isArrived && onArrivedAtQuest ? (
+                              <button
+                                onClick={() => {
+                                  onArrivedAtQuest(quest.id);
+                                }}
+                                className="w-full bg-gradient-to-r from-[#FFD34D] to-[#FF3B7C] hover:from-[#FFD34D]/90 hover:to-[#FF3B7C]/90 text-white font-extrabold text-xs py-3.5 rounded-2xl shadow-md transition duration-200 cursor-pointer flex items-center justify-center gap-1.5 mt-1"
+                              >
+                                <span>🏁 {lang === 'ar' ? 'تأكيد الوصول للموقع (مباشرة)' : 'Confirm Arrival Directly 🏁'}</span>
+                              </button>
+                            ) : null;
+                          })()}
                         </div>
                       )}
 
@@ -1046,10 +1058,16 @@ export default function MyQuestsView({
                       <h3 className="font-extrabold text-base md:text-lg text-slate-900 leading-snug tracking-tight break-words">
                         {quest.title}
                       </h3>
-                      <div className="inline-flex items-center gap-1.5 text-xs text-slate-500 bg-slate-50 border border-slate-100 px-3 py-1.5 rounded-2xl max-w-full">
-                        <MapPin className="w-3.5 h-3.5 text-[#4FC3F7] shrink-0" />
-                        <span className="truncate font-medium">{quest.location}</span>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          window.dispatchEvent(new CustomEvent('start-quest-navigation', { detail: { quest } }));
+                        }}
+                        className="inline-flex items-center gap-1.5 text-xs text-[#0284C7] bg-[#4FC3F7]/10 hover:bg-[#4FC3F7]/20 border border-[#4FC3F7]/30 px-3 py-1.5 rounded-2xl font-extrabold transition-all cursor-pointer"
+                      >
+                        <Navigation className="w-3.5 h-3.5 text-[#0284C7] shrink-0" />
+                        <span>{lang === 'ar' ? '🗺️ عرض على الخريطة والملاحة' : '🗺️ Show Map & Navigation'}</span>
+                      </button>
                     </div>
 
                     {/* Description Section */}
@@ -1643,17 +1661,30 @@ export default function MyQuestsView({
                         </div>
 
                         {gpsCoords ? (
-                          <div className="p-2.5 bg-emerald-50 border border-emerald-100 rounded-xl text-[10px] text-emerald-700 font-extrabold flex justify-between items-center animate-in fade-in">
-                            <span className="font-mono tracking-wider">Tagged: {gpsCoords.lat.toFixed(6)}, {gpsCoords.lng.toFixed(6)}</span>
+                          <div className="p-2.5 bg-emerald-50 border border-emerald-100 rounded-xl text-[10px] text-emerald-800 font-extrabold flex justify-between items-center animate-in fade-in">
+                            <span className="tracking-wide">📍 {newLoc || resolveNeighborhoodFromCoords(gpsCoords.lat, gpsCoords.lng, 'بن سرور', lang)}</span>
                             <span className="text-[8px] bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded-md uppercase tracking-wider">{lang === 'ar' ? 'مؤكد' : 'Tagged'}</span>
                           </div>
                         ) : (
                           <div className="p-3 bg-rose-50/50 border border-rose-100 rounded-xl text-[9px] text-[#FF3B7C] font-semibold leading-relaxed">
                             {lang === 'ar' 
-                              ? '⚠️ يرجى الضغط على زر تلقائي GPS لتفعيل المستشعر وتحديد الموقع.' 
-                              : '⚠️ Please press Auto-Tag GPS to capture location coordinates.'}
+                              ? '💡 يرجى الضغط على زر تلقائي GPS أو كتابة موقعك كتابياً بالأسفل.' 
+                              : '💡 Press Auto-Tag GPS or type your address below.'}
                           </div>
                         )}
+
+                        <div className="pt-2 border-t border-gray-200 space-y-1.5">
+                          <label className="text-[11px] text-gray-700 font-extrabold block">
+                            {lang === 'ar' ? 'اسم المكان / الحي والمدينة:' : 'Neighborhood & City Name:'}
+                          </label>
+                          <input
+                            type="text"
+                            value={newLoc}
+                            onChange={(e) => setNewLoc(e.target.value)}
+                            placeholder={lang === 'ar' ? 'مثال: بن سرور، حي العتي' : 'e.g., Ben Srour, Hay El Ati'}
+                            className="w-full px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl text-gray-800 text-xs font-bold focus:outline-none focus:border-[#FF3B7C]"
+                          />
+                        </div>
                       </div>
 
                       <div className="flex justify-between pt-2 border-t border-gray-100">
@@ -1990,8 +2021,8 @@ export default function MyQuestsView({
                             <span className="text-gray-400 font-semibold">{lang === 'ar' ? 'عدد المساعدين:' : 'Assistants:'}</span>
                           </div>
                           <div className="flex justify-between border-t border-black/5 pt-1.5">
-                            <span className="font-mono text-emerald-600">
-                              {gpsCoords ? `${gpsCoords.lat.toFixed(4)}, ${gpsCoords.lng.toFixed(4)}` : 'N/A'}
+                            <span className="font-bold text-emerald-700 truncate max-w-[200px]">
+                              {gpsCoords ? resolveNeighborhoodFromCoords(gpsCoords.lat, gpsCoords.lng, 'الجزائر العاصمة', lang) : 'N/A'}
                             </span>
                             <span className="text-gray-400 font-semibold">{lang === 'ar' ? 'إحداثيات الموقع:' : 'GPS Tag:'}</span>
                           </div>

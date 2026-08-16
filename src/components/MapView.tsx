@@ -19,7 +19,6 @@ import {
 import { Quest, UserProfile } from '../types';
 import { calculateBookingFee } from '../utils/fee';
 import { motion, AnimatePresence } from 'motion/react';
-import PullToRefresh from './PullToRefresh';
 import { db } from '../utils/firebase';
 import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
 import { translations } from '../data/translations';
@@ -74,6 +73,7 @@ export default function MapView({
   const [userLocAccuracy, setUserLocAccuracy] = useState<number | null>(null);
   const [isGpsLost, setIsGpsLost] = useState<boolean>(false);
   const [isLocStale, setIsLocStale] = useState<boolean>(false);
+  const [isInfoPanelMinimized, setIsInfoPanelMinimized] = useState<boolean>(false);
   const accuracyCircleRef = useRef<L.Circle | null>(null);
   const watchIdRef = useRef<number | null>(null);
   const lastLocUpdateTimeRef = useRef<number>(0);
@@ -1215,13 +1215,7 @@ export default function MapView({
   }, [navigatingQuest, navStartLoc, userLoc?.lat, userLoc?.lng, getQuestCoords]);
 
   return (
-    <PullToRefresh
-      onRefresh={handleRefresh}
-      lang={lang}
-      audioEffectsEnabled={userProfile?.audioEffectsEnabled !== false}
-      hapticFeedbackEnabled={userProfile?.hapticFeedbackEnabled !== false}
-    >
-      <div className="space-y-4 pb-12 h-[calc(100vh-140px)] flex flex-col" style={{ direction: isRtl ? 'rtl' : 'ltr' }}>
+    <div className="space-y-4 pb-12 h-[calc(100vh-140px)] flex flex-col" style={{ direction: isRtl ? 'rtl' : 'ltr' }}>
       
       {/* Dynamic routing line animations */}
       <style>{`
@@ -1397,255 +1391,371 @@ export default function MapView({
 
 
 
-        {/* Bottom sheet popup template for the selected Quest */}
+        {/* Unified Bottom Sheet Info Cards for Selected Quest or Navigation HUD */}
         <AnimatePresence>
-          {selectedQuest && (() => {
-            const tokenAmount = calculateBookingFee(selectedQuest.cashReward);
-            return (
+          {navigatingQuest ? (
+            isInfoPanelMinimized ? (
+              /* Minimized Navigation Pill */
               <motion.div
+                key="nav-minimized"
+                initial={{ y: 50, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: 50, opacity: 0 }}
+                className="absolute bottom-4 left-4 right-4 bg-slate-950/95 text-white p-3 rounded-2xl border border-rose-500/40 shadow-2xl z-40 flex items-center justify-between backdrop-blur-md cursor-pointer hover:bg-slate-900 transition-all"
+                onClick={() => setIsInfoPanelMinimized(false)}
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping shrink-0" />
+                  <span className="text-xs font-black text-rose-400 shrink-0">
+                    {lang === 'ar' ? 'تتبع مباشر' : 'Live Tracking'}
+                  </span>
+                  <span className="text-xs font-extrabold text-white truncate">
+                    {navigatingQuest.title}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-xs font-black text-[#FFD34D] bg-white/10 px-2 py-0.5 rounded-lg">
+                    {remainingDistance} km • {etaMinutes} {lang === 'ar' ? 'د' : 'm'}
+                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsInfoPanelMinimized(false);
+                    }}
+                    className="p-1.5 bg-rose-500/20 text-rose-300 rounded-lg hover:bg-rose-500 hover:text-white transition cursor-pointer flex items-center gap-1 text-[11px] font-bold"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">{lang === 'ar' ? 'توسيع' : 'Expand'}</span>
+                  </button>
+                </div>
+              </motion.div>
+            ) : (
+              /* Full Navigation HUD Card */
+              <motion.div
+                key="nav-full"
                 initial={{ y: 200, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 exit={{ y: 200, opacity: 0 }}
-                className="absolute bottom-4 left-4 right-4 bg-slate-950/95 border border-slate-800 rounded-3xl p-4.5 shadow-2xl z-40 flex flex-col sm:flex-row gap-4 items-center justify-between cursor-pointer hover:bg-slate-900 transition-all duration-200 backdrop-blur-md"
-                onClick={() => {
-                  if (onViewQuestDetail) {
-                    onViewQuestDetail(selectedQuest.id);
-                  } else {
-                    setShowDetailedSheet(selectedQuest);
-                  }
-                  const hapticEnabled = userProfile.hapticFeedbackEnabled !== false;
-                  triggerHaptic('sharp', hapticEnabled);
-                }}
+                className="absolute bottom-4 left-4 right-4 bg-slate-950/95 text-white p-5 rounded-3xl border border-rose-500/40 shadow-2xl z-30 flex flex-col gap-4 backdrop-blur-md"
               >
-                <div className="flex gap-3.5 items-center w-full sm:w-auto min-w-0">
-                  <div className="w-11 h-11 bg-[#FF3B7C]/15 border border-[#FF3B7C]/30 text-[#FF3B7C] rounded-full flex items-center justify-center shrink-0">
-                    <Target className="w-6 h-6 animate-pulse" />
-                  </div>
-                  <div className="space-y-1 min-w-0 text-start flex-1">
-                    <div className="flex items-center gap-1.5 flex-wrap text-[9px] font-black uppercase tracking-wider">
-                      <span className="bg-white/10 text-[#FFD34D] px-2 py-0.5 rounded">
-                        {selectedQuest.category}
-                      </span>
-                      {selectedQuest.urgency === 'urgent' && (
-                        <span className="bg-[#FF3B7C] text-white px-2 py-0.5 rounded animate-pulse">
-                          {lang === 'ar' ? 'عاجل جداً 🔥' : 'URGENT 🔥'}
+                {/* Header Details with Compass, Travel Mode Selector & Minimize Button */}
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/5 pb-3.5">
+                  <div className="flex items-center justify-between w-full md:w-auto">
+                    <div className="flex items-center gap-3">
+                      {/* 360 Rotation Compass guidance pointer */}
+                      <div className="relative w-11 h-11 rounded-full bg-rose-500/15 border border-rose-500/30 flex items-center justify-center shrink-0">
+                        <Compass 
+                          className="w-5.5 h-5.5 text-rose-500 transition-transform duration-300 animate-pulse" 
+                          style={{ transform: `rotate(${currentHeading}deg)` }} 
+                        />
+                        <span className="absolute -top-1.5 text-[7px] font-black tracking-widest text-rose-400">N</span>
+                      </div>
+                      
+                      <div className="space-y-0.5 min-w-0 text-start">
+                        <span className="text-[9px] text-rose-400 font-extrabold tracking-wider uppercase flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping"></span>
+                          {lang === 'ar' ? 'نظام تتبع المسار المباشر' : 'SATELLITE NAVIGATION HUD'}
                         </span>
-                      )}
-                      {simulatedDistance && (
-                        <span className="bg-[#4FC3F7]/10 text-[#4FC3F7] px-2 py-0.5 rounded">
-                          {simulatedDistance} {lang === 'ar' ? 'متبقية' : 'remaining'}
-                        </span>
-                      )}
+                        <h4 className="font-extrabold text-white text-xs sm:text-sm truncate max-w-[180px] sm:max-w-xs">{navigatingQuest.title}</h4>
+                        <p className="text-[10px] text-slate-400 font-medium truncate">{navigatingQuest.location}</p>
+                      </div>
                     </div>
-                    <h4 className="font-extrabold text-white text-sm sm:text-base leading-snug truncate">
-                      {selectedQuest.title}
-                    </h4>
-                    <p className="text-[11px] text-slate-400 font-bold truncate flex items-center gap-1">
-                      {isLocationAuthorized(selectedQuest) ? (
-                        <>
-                          <MapPin className="w-3.5 h-3.5 text-[#4FC3F7]" />
-                          {selectedQuest.location}
-                        </>
-                      ) : (
-                        <>
-                          <Lock className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
-                          <span>{lang === 'ar' ? '🔒 الموقع مخفي حتى قبول الحجز وتفعيل العقد' : '🔒 Location hidden until booking approved'}</span>
-                        </>
-                      )}
-                    </p>
+
+                    {/* Minimize Button Mobile Header */}
+                    <button
+                      onClick={() => setIsInfoPanelMinimized(true)}
+                      className="md:hidden p-2 bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white rounded-xl transition cursor-pointer flex items-center gap-1 text-xs font-bold shrink-0"
+                      title={lang === 'ar' ? 'تصغير' : 'Minimize'}
+                    >
+                      <Minimize2 className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0 self-center w-full md:w-auto">
+                    {/* Transportation Mode Select Panel */}
+                    <div className="flex bg-slate-100/5 border border-white/5 rounded-xl p-1 gap-1 select-none flex-1 md:flex-none">
+                      <button
+                        onClick={() => {
+                          setTravelMode('driving');
+                          const hapticEnabled = userProfile.hapticFeedbackEnabled !== false;
+                          triggerHaptic('soft', hapticEnabled);
+                        }}
+                        title={lang === 'ar' ? 'بالسيارة (Driving Mode)' : 'Car (Driving Mode)'}
+                        className={`flex-1 md:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black tracking-wider uppercase transition-all whitespace-nowrap cursor-pointer ${
+                          travelMode === 'driving' 
+                            ? 'bg-[#FF3B7C] text-white shadow-md shadow-[#FF3B7C]/20 font-black' 
+                            : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+                        }`}
+                      >
+                        <span>🚗</span>
+                        <span>{lang === 'ar' ? 'سيارة' : 'CAR'}</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setTravelMode('cycling');
+                          const hapticEnabled = userProfile.hapticFeedbackEnabled !== false;
+                          triggerHaptic('soft', hapticEnabled);
+                        }}
+                        title={lang === 'ar' ? 'بالدراجة النارية (Shortcuts & Motos)' : 'Moto (Shortcuts & Motos)'}
+                        className={`flex-1 md:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black tracking-wider uppercase transition-all whitespace-nowrap cursor-pointer ${
+                          travelMode === 'cycling' 
+                            ? 'bg-[#FF3B7C] text-white shadow-md shadow-[#FF3B7C]/20 font-black' 
+                            : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+                        }`}
+                      >
+                        <span>🏍️</span>
+                        <span>{lang === 'ar' ? 'دراجة' : 'MOTO'}</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setTravelMode('walking');
+                          const hapticEnabled = userProfile.hapticFeedbackEnabled !== false;
+                          triggerHaptic('soft', hapticEnabled);
+                        }}
+                        title={lang === 'ar' ? 'مشياً على الأقدام (Alleys & Narrow Paths)' : 'Pedestrian (Alleys & Narrow Paths)'}
+                        className={`flex-1 md:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black tracking-wider uppercase transition-all whitespace-nowrap cursor-pointer ${
+                          travelMode === 'walking' 
+                            ? 'bg-[#FF3B7C] text-white shadow-md shadow-[#FF3B7C]/20 font-black' 
+                            : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+                        }`}
+                      >
+                        <span>🚶</span>
+                        <span>{lang === 'ar' ? 'مشياً' : 'WALK'}</span>
+                      </button>
+                    </div>
+
+                    {/* Minimize Button Desktop */}
+                    <button
+                      onClick={() => setIsInfoPanelMinimized(true)}
+                      className="hidden md:flex p-2 bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white rounded-xl transition cursor-pointer items-center gap-1.5 text-xs font-bold shrink-0 border border-white/10"
+                      title={lang === 'ar' ? 'تصغير' : 'Minimize'}
+                    >
+                      <Minimize2 className="w-4 h-4 text-rose-400" />
+                      <span>{lang === 'ar' ? 'تصغير' : 'Minimize'}</span>
+                    </button>
                   </div>
                 </div>
 
-                {/* Compact bounty & Required safety locks tokens metrics */}
-                <div className="flex items-center justify-between sm:justify-end gap-5 w-full sm:w-auto border-t sm:border-t-0 border-white/10 pt-3 sm:pt-0">
-                  <div className="flex gap-4 font-mono text-center col-span-2">
-                    <div className="text-right">
-                      <span className="text-[8px] text-slate-400 font-extrabold block uppercase tracking-wider">{lang === 'ar' ? 'العائد النزيه' : 'BOUNTY'}</span>
-                      <span className="text-sm font-black text-white">{selectedQuest.cashReward} DA</span>
+                {/* Navigation Data Indicators and Action Buttons */}
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div className="flex gap-6 font-mono text-center w-full sm:w-auto justify-around sm:justify-start">
+                    <div className="text-start sm:text-center">
+                      <span className="text-[8px] text-slate-400 font-bold block uppercase tracking-wider">{lang === 'ar' ? 'المسافة المتبقية' : 'DISTANCE'}</span>
+                      <span className="text-sm font-black text-rose-400">{remainingDistance} km</span>
                     </div>
-                    <div className="border-l border-white/10 h-6"></div>
-                    <div className="text-right">
-                      <span className="text-[8px] text-slate-400 font-extrabold block uppercase tracking-wider">{lang === 'ar' ? 'الرموز المطلوبة' : 'REQUIRED TOKENS'}</span>
-                      <span className="text-sm font-black text-[#FFD34D]">⚡ {tokenAmount}</span>
+                    <div className="border-l border-white/10 h-8 self-center"></div>
+                    <div className="text-start sm:text-center">
+                      <span className="text-[8px] text-slate-400 font-bold block uppercase tracking-wider animate-pulse">
+                        {travelMode === 'driving' 
+                          ? (lang === 'ar' ? 'وقت السيارة المقدر' : 'CAR ETA') 
+                          : travelMode === 'cycling'
+                            ? (lang === 'ar' ? 'وفت الدراجة المقدر' : 'MOTO ETA')
+                            : (lang === 'ar' ? 'وقت المشي المقدر' : 'WALK ETA')
+                        }
+                      </span>
+                      <span className="text-sm font-black text-[#FFD34D]">{etaMinutes} {lang === 'ar' ? 'دقيقة' : 'mins'}</span>
                     </div>
                   </div>
 
-                  <div className="flex gap-2 shrink-0 items-center">
-                    {selectedQuest.status === 'arrived' && 
-                     (selectedQuest.helperId === userProfile.id || selectedQuest.assignedRunnerId === userProfile.id || selectedQuest.assignedRunnerIds?.includes(userProfile.id)) && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleHideArrivedQuest(selectedQuest.id);
-                          setSelectedQuest(null);
-                        }}
-                        className="bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[9px] font-black uppercase px-2.5 py-1.5 rounded-xl hover:bg-amber-500 hover:text-slate-950 transition duration-200 select-none cursor-pointer flex items-center gap-1"
-                      >
-                        👁️‍🗨️ {lang === 'ar' ? 'اخفاء' : 'Hide'}
-                      </button>
-                    )}
-                    <span 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (onViewQuestDetail) {
-                          onViewQuestDetail(selectedQuest.id);
-                        } else {
-                          setShowDetailedSheet(selectedQuest);
-                        }
-                        const hapticEnabled = userProfile.hapticFeedbackEnabled !== false;
-                        triggerHaptic('sharp', hapticEnabled);
-                      }}
-                      className="bg-[#FF3B7C]/15 border border-[#FF3B7C]/25 text-[#FF3B7C] text-[9px] font-black uppercase px-2.5 py-1.5 rounded-xl hover:bg-[#FF3B7C] hover:text-white transition duration-200 select-none cursor-pointer"
-                    >
-                      {lang === 'ar' ? 'فتح التفاصيل 🎯' : 'Inspect 🎯'}
-                    </span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedQuest(null);
-                      }}
-                      className="bg-white/5 hover:bg-white/15 text-slate-350 p-2 rounded-full transition cursor-pointer"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
+                  <div className="flex gap-2 shrink-0 w-full sm:w-auto justify-end">
+                    {(() => {
+                      const isRunnerForNavigatingQuest = navigatingQuest ? (
+                        (navigatingQuest.helperId === userProfile.id || 
+                         navigatingQuest.assignedRunnerId === userProfile.id || 
+                         (navigatingQuest.assignedRunnerIds && navigatingQuest.assignedRunnerIds.includes(userProfile.id))) &&
+                        navigatingQuest.creatorId !== userProfile.id
+                      ) : false;
+
+                      if (isWithinGeofence && isRunnerForNavigatingQuest) {
+                        return (
+                          <button
+                            onClick={() => {
+                              const hapticEnabled = userProfile.hapticFeedbackEnabled !== false;
+                              triggerHaptic('sharp', hapticEnabled);
+                              onArrivedAtQuest(navigatingQuest.id);
+                            }}
+                            className="w-full sm:w-auto px-5 py-3 bg-gradient-to-r from-[#FFD34D] to-[#FF3B7C] hover:from-[#FFD34D]/90 hover:to-[#FF3B7C]/90 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-[#FF3B7C]/40 animate-pulse transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer border border-white/20 uppercase tracking-wide"
+                          >
+                            <span>🏁 {lang === 'ar' ? 'وصلت! أرسل تنبيه الوصول الموثق' : 'Arrived! Confirm Arrival'}</span>
+                          </button>
+                        );
+                      }
+
+                      return (
+                        <button
+                          onClick={handleExitNavigation}
+                          className="flex-1 sm:flex-initial px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-rose-400 hover:text-rose-300 font-black text-xs rounded-xl hover:scale-105 active:scale-95 transition-all uppercase cursor-pointer border border-slate-700"
+                        >
+                          {lang === 'ar' ? 'إنهاء الملاحة' : 'Exit Guidance'}
+                        </button>
+                      );
+                    })()}
                   </div>
                 </div>
               </motion.div>
-            );
-          })()}
-        </AnimatePresence>
-
-        {/* Dynamic Navigation HUD Card */}
-        <AnimatePresence>
-          {navigatingQuest && (
-            <motion.div
-              initial={{ y: 200, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 200, opacity: 0 }}
-              className="absolute bottom-4 left-4 right-4 bg-slate-950/95 text-white p-5 rounded-3xl border border-rose-500/40 shadow-2xl z-30 flex flex-col gap-4 backdrop-blur-md"
-            >
-              {/* Header Details with Compass and Travel Mode Selector */}
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/5 pb-3.5">
-                <div className="flex items-center gap-3">
-                  {/* 360 Rotation Compass guidance pointer */}
-                  <div className="relative w-11 h-11 rounded-full bg-rose-500/15 border border-rose-500/30 flex items-center justify-center shrink-0">
-                    <Compass 
-                      className="w-5.5 h-5.5 text-rose-500 transition-transform duration-300 animate-pulse" 
-                      style={{ transform: `rotate(${currentHeading}deg)` }} 
-                    />
-                    <span className="absolute -top-1.5 text-[7px] font-black tracking-widest text-rose-400">N</span>
-                  </div>
-                  
-                  <div className="space-y-0.5 min-w-0 text-start">
-                    <span className="text-[9px] text-rose-400 font-extrabold tracking-wider uppercase flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping"></span>
-                      {lang === 'ar' ? 'نظام تتبع المسار المباشر' : 'SATELLITE NAVIGATION HUD'}
-                    </span>
-                    <h4 className="font-extrabold text-white text-xs sm:text-sm truncate max-w-[200px] sm:max-w-xs">{navigatingQuest.title}</h4>
-                    <p className="text-[10px] text-slate-400 font-medium truncate">{navigatingQuest.location}</p>
-                  </div>
+            )
+          ) : selectedQuest ? (
+            isInfoPanelMinimized ? (
+              /* Minimized Selected Quest Pill */
+              <motion.div
+                key="selected-minimized"
+                initial={{ y: 50, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: 50, opacity: 0 }}
+                className="absolute bottom-4 left-4 right-4 bg-slate-950/95 text-white p-3 rounded-2xl border border-slate-800 shadow-2xl z-40 flex items-center justify-between backdrop-blur-md cursor-pointer hover:bg-slate-900 transition-all"
+                onClick={() => setIsInfoPanelMinimized(false)}
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <Target className="w-4 h-4 text-[#FF3B7C] shrink-0 animate-pulse" />
+                  <span className="text-xs font-extrabold text-white truncate">
+                    {selectedQuest.title}
+                  </span>
                 </div>
-
-                {/* Transportation Mode Select Panel (Feature 5) */}
-                <div className="flex bg-slate-100/5 border border-white/5 rounded-xl p-1 gap-1 select-none w-full md:w-auto shrink-0 self-center">
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-xs font-black text-white bg-white/10 px-2 py-0.5 rounded-lg">
+                    {selectedQuest.cashReward} DA
+                  </span>
                   <button
-                    onClick={() => {
-                      setTravelMode('driving');
-                      const hapticEnabled = userProfile.hapticFeedbackEnabled !== false;
-                      triggerHaptic('soft', hapticEnabled);
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsInfoPanelMinimized(false);
                     }}
-                    title={lang === 'ar' ? 'بالسيارة (Driving Mode)' : 'Car (Driving Mode)'}
-                    className={`flex-1 md:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black tracking-wider uppercase transition-all whitespace-nowrap cursor-pointer ${
-                      travelMode === 'driving' 
-                        ? 'bg-[#FF3B7C] text-white shadow-md shadow-[#FF3B7C]/20 font-black' 
-                        : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
-                    }`}
+                    className="p-1.5 bg-[#FF3B7C]/20 text-[#FF3B7C] rounded-lg hover:bg-[#FF3B7C] hover:text-white transition cursor-pointer flex items-center gap-1 text-[11px] font-bold"
                   >
-                    <span>🚗</span>
-                    <span>{lang === 'ar' ? 'سيارة' : 'CAR'}</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      setTravelMode('cycling');
-                      const hapticEnabled = userProfile.hapticFeedbackEnabled !== false;
-                      triggerHaptic('soft', hapticEnabled);
-                    }}
-                    title={lang === 'ar' ? 'بالدراجة النارية (Shortcuts & Motos)' : 'Moto (Shortcuts & Motos)'}
-                    className={`flex-1 md:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black tracking-wider uppercase transition-all whitespace-nowrap cursor-pointer ${
-                      travelMode === 'cycling' 
-                        ? 'bg-[#FF3B7C] text-white shadow-md shadow-[#FF3B7C]/20 font-black' 
-                        : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
-                    }`}
-                  >
-                    <span>🏍️</span>
-                    <span>{lang === 'ar' ? 'دراجة' : 'MOTO'}</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      setTravelMode('walking');
-                      const hapticEnabled = userProfile.hapticFeedbackEnabled !== false;
-                      triggerHaptic('soft', hapticEnabled);
-                    }}
-                    title={lang === 'ar' ? 'مشياً على الأقدام (Alleys & Narrow Paths)' : 'Pedestrian (Alleys & Narrow Paths)'}
-                    className={`flex-1 md:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black tracking-wider uppercase transition-all whitespace-nowrap cursor-pointer ${
-                      travelMode === 'walking' 
-                        ? 'bg-[#FF3B7C] text-white shadow-md shadow-[#FF3B7C]/20 font-black' 
-                        : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
-                    }`}
-                  >
-                    <span>🚶</span>
-                    <span>{lang === 'ar' ? 'مشياً' : 'WALK'}</span>
+                    <Maximize2 className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">{lang === 'ar' ? 'توسيع' : 'Expand'}</span>
                   </button>
                 </div>
-              </div>
-
-              {/* Navigation Data Indicators and Action Buttons */}
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                <div className="flex gap-6 font-mono text-center w-full sm:w-auto justify-around sm:justify-start">
-                  <div className="text-start sm:text-center">
-                    <span className="text-[8px] text-slate-400 font-bold block uppercase tracking-wider">{lang === 'ar' ? 'المسافة المتبقية' : 'DISTANCE'}</span>
-                    <span className="text-sm font-black text-rose-400">{remainingDistance} km</span>
-                  </div>
-                  <div className="border-l border-white/10 h-8 self-center"></div>
-                  <div className="text-start sm:text-center">
-                    <span className="text-[8px] text-slate-400 font-bold block uppercase tracking-wider animate-pulse">
-                      {travelMode === 'driving' 
-                        ? (lang === 'ar' ? 'وقت السيارة المقدر' : 'CAR ETA') 
-                        : travelMode === 'cycling'
-                          ? (lang === 'ar' ? 'وفت الدراجة المقدر' : 'MOTO ETA')
-                          : (lang === 'ar' ? 'وقت المشي المقدر' : 'WALK ETA')
+              </motion.div>
+            ) : (
+              /* Full Selected Quest Card */
+              (() => {
+                const tokenAmount = calculateBookingFee(selectedQuest.cashReward);
+                return (
+                  <motion.div
+                    key="selected-full"
+                    initial={{ y: 200, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    exit={{ y: 200, opacity: 0 }}
+                    className="absolute bottom-4 left-4 right-4 bg-slate-950/95 border border-slate-800 rounded-3xl p-4.5 shadow-2xl z-40 flex flex-col sm:flex-row gap-4 items-center justify-between cursor-pointer hover:bg-slate-900 transition-all duration-200 backdrop-blur-md"
+                    onClick={() => {
+                      if (onViewQuestDetail) {
+                        onViewQuestDetail(selectedQuest.id);
+                      } else {
+                        setShowDetailedSheet(selectedQuest);
                       }
-                    </span>
-                    <span className="text-sm font-black text-[#FFD34D]">{etaMinutes} {lang === 'ar' ? 'دقيقة' : 'mins'}</span>
-                  </div>
-                </div>
+                      const hapticEnabled = userProfile.hapticFeedbackEnabled !== false;
+                      triggerHaptic('sharp', hapticEnabled);
+                    }}
+                  >
+                    <div className="flex gap-3.5 items-center w-full sm:w-auto min-w-0">
+                      <div className="w-11 h-11 bg-[#FF3B7C]/15 border border-[#FF3B7C]/30 text-[#FF3B7C] rounded-full flex items-center justify-center shrink-0">
+                        <Target className="w-6 h-6 animate-pulse" />
+                      </div>
+                      <div className="space-y-1 min-w-0 text-start flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap text-[9px] font-black uppercase tracking-wider">
+                          <span className="bg-white/10 text-[#FFD34D] px-2 py-0.5 rounded">
+                            {selectedQuest.category}
+                          </span>
+                          {selectedQuest.urgency === 'urgent' && (
+                            <span className="bg-[#FF3B7C] text-white px-2 py-0.5 rounded animate-pulse">
+                              {lang === 'ar' ? 'عاجل جداً 🔥' : 'URGENT 🔥'}
+                            </span>
+                          )}
+                          {simulatedDistance && (
+                            <span className="bg-[#4FC3F7]/10 text-[#4FC3F7] px-2 py-0.5 rounded">
+                              {simulatedDistance} {lang === 'ar' ? 'متبقية' : 'remaining'}
+                            </span>
+                          )}
+                        </div>
+                        <h4 className="font-extrabold text-white text-sm sm:text-base leading-snug truncate">
+                          {selectedQuest.title}
+                        </h4>
+                        <p className="text-[11px] text-slate-400 font-bold truncate flex items-center gap-1">
+                          {isLocationAuthorized(selectedQuest) ? (
+                            <>
+                              <MapPin className="w-3.5 h-3.5 text-[#4FC3F7]" />
+                              {selectedQuest.location}
+                            </>
+                          ) : (
+                            <>
+                              <Lock className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
+                              <span>{lang === 'ar' ? '🔒 الموقع مخفي حتى قبول الحجز وتفعيل العقد' : '🔒 Location hidden until booking approved'}</span>
+                            </>
+                          )}
+                        </p>
+                      </div>
+                    </div>
 
-                <div className="flex gap-2 shrink-0 w-full sm:w-auto justify-end">
-                  {isWithinGeofence ? (
-                    <button
-                      onClick={() => {
-                        const hapticEnabled = userProfile.hapticFeedbackEnabled !== false;
-                        triggerHaptic('sharp', hapticEnabled);
-                        onArrivedAtQuest(navigatingQuest.id);
-                      }}
-                      className="w-full sm:w-auto px-5 py-3 bg-gradient-to-r from-[#FFD34D] to-[#FF3B7C] hover:from-[#FFD34D]/90 hover:to-[#FF3B7C]/90 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-[#FF3B7C]/40 animate-pulse transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer border border-white/20 uppercase tracking-wide"
-                    >
-                      <span>🏁 {lang === 'ar' ? 'وصلت! أرسل تنبيه الوصول الموثق' : 'Arrived! Confirm Arrival'}</span>
-                    </button>
-                  ) : (
-                    <>
-                      <button
-                        onClick={handleExitNavigation}
-                        className="flex-1 sm:flex-initial px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-rose-400 hover:text-rose-300 font-black text-xs rounded-xl hover:scale-105 active:scale-95 transition-all uppercase cursor-pointer border border-slate-700"
-                      >
-                        {lang === 'ar' ? 'إنهاء الملاحة' : 'Exit Guidance'}
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            </motion.div>
-          )}
+                    {/* Compact bounty & Required safety locks tokens metrics */}
+                    <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto border-t sm:border-t-0 border-white/10 pt-3 sm:pt-0">
+                      <div className="flex gap-4 font-mono text-center">
+                        <div className="text-right">
+                          <span className="text-[8px] text-slate-400 font-extrabold block uppercase tracking-wider">{lang === 'ar' ? 'العائد النزيه' : 'BOUNTY'}</span>
+                          <span className="text-sm font-black text-white">{selectedQuest.cashReward} DA</span>
+                        </div>
+                        <div className="border-l border-white/10 h-6"></div>
+                        <div className="text-right">
+                          <span className="text-[8px] text-slate-400 font-extrabold block uppercase tracking-wider">{lang === 'ar' ? 'الرموز المطلوبة' : 'REQUIRED TOKENS'}</span>
+                          <span className="text-sm font-black text-[#FFD34D]">⚡ {tokenAmount}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2 shrink-0 items-center">
+                        {selectedQuest.status === 'arrived' && 
+                         (selectedQuest.helperId === userProfile.id || selectedQuest.assignedRunnerId === userProfile.id || selectedQuest.assignedRunnerIds?.includes(userProfile.id)) && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleHideArrivedQuest(selectedQuest.id);
+                              setSelectedQuest(null);
+                            }}
+                            className="bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[9px] font-black uppercase px-2.5 py-1.5 rounded-xl hover:bg-amber-500 hover:text-slate-950 transition duration-200 select-none cursor-pointer flex items-center gap-1"
+                          >
+                            👁️‍🗨️ {lang === 'ar' ? 'اخفاء' : 'Hide'}
+                          </button>
+                        )}
+                        <span 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (onViewQuestDetail) {
+                              onViewQuestDetail(selectedQuest.id);
+                            } else {
+                              setShowDetailedSheet(selectedQuest);
+                            }
+                            const hapticEnabled = userProfile.hapticFeedbackEnabled !== false;
+                            triggerHaptic('sharp', hapticEnabled);
+                          }}
+                          className="bg-[#FF3B7C]/15 border border-[#FF3B7C]/25 text-[#FF3B7C] text-[9px] font-black uppercase px-2.5 py-1.5 rounded-xl hover:bg-[#FF3B7C] hover:text-white transition duration-200 select-none cursor-pointer"
+                        >
+                          {lang === 'ar' ? 'فتح التفاصيل 🎯' : 'Inspect 🎯'}
+                        </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setIsInfoPanelMinimized(true);
+                          }}
+                          className="bg-white/10 hover:bg-white/20 text-slate-300 p-2 rounded-xl transition cursor-pointer flex items-center gap-1 text-xs font-bold"
+                          title={lang === 'ar' ? 'تصغير' : 'Minimize'}
+                        >
+                          <Minimize2 className="w-4 h-4 text-rose-400" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedQuest(null);
+                          }}
+                          className="bg-white/5 hover:bg-white/15 text-slate-350 p-2 rounded-full transition cursor-pointer"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })()
+            )
+          ) : null}
         </AnimatePresence>
 
         {/* DETAILED BOOKING FLOW PREVIEW OVERLAY SHEET */}
@@ -1986,17 +2096,6 @@ export default function MapView({
         </AnimatePresence>
 
       </div>
-
-      {/* Info notice */}
-      <div className="bg-[#1F2A44]/5 border border-[#1F2A44]/10 rounded-2xl p-3.5 flex items-start gap-2.5 text-xs text-slate-600 font-medium leading-relaxed shrink-0">
-        <Info className="w-4.5 h-4.5 text-[#1F2A44] shrink-0 mt-0.5" />
-        <p>
-          {lang === 'ar' 
-            ? 'خريطة صائد الكويستات التفاعلية المباشرة، التي تعتمد على OpenStreetMap وتحدث كل مهام الجزائر في الوقت الفعلي. انقر على الدبابيس لحجز المهام.'
-            : 'Interactive Hunt coordinates mapped using live OpenStreetMap layers across the entirety of Algeria. Red is urgent, gold is standard.'}
-        </p>
-      </div>
     </div>
-    </PullToRefresh>
   );
 }

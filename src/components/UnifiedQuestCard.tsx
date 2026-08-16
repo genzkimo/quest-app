@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, MapPin, Shield, Zap, Award, MessageSquare, Navigation, CheckCircle2, Trash, Edit, Lock } from 'lucide-react';
 import { Quest, UserProfile } from '../types';
 import { formatArabicDate } from '../utils/dateFormatter';
+import { cleanLocationName } from '../utils/locationFormatter';
 import { calculateBookingFee } from '../utils/fee';
 import { Geolocator } from '../utils/geolocator';
 
@@ -586,39 +587,32 @@ export default function UnifiedQuestCard({
                       onStartNavigation(quest);
                     }
                   } else {
-                    showToast(
-                      lang === 'ar' 
-                        ? '⚠️ لا يمكن تفعيل الملاحة أو تتبع الموقع الدقيق حتى تتم الموافقة على طلب الحجز وتفعيل العقد!' 
-                        : '⚠️ Exact location details and navigation are locked until your booking is approved!'
-                    );
+                    if (showToast) {
+                      showToast(
+                        lang === 'ar' 
+                          ? '⚠️ لا يمكن تفعيل الملاحة أو تتبع الموقع الدقيق حتى تتم الموافقة على طلب الحجز وتفعيل العقد!' 
+                          : '⚠️ Exact location details and navigation are locked until your booking is approved!'
+                      );
+                    }
                   }
                 }}
-                className="w-full flex items-center justify-between gap-3 text-xs font-bold text-slate-750 bg-slate-50 hover:bg-slate-100 p-3.5 rounded-2xl border border-slate-100 transition-all cursor-pointer text-start active:scale-98"
+                className={`w-full flex items-center justify-center gap-2 text-xs font-black p-3.5 rounded-2xl border transition-all cursor-pointer active:scale-98 ${
+                  isLocationAuthorized
+                    ? 'bg-[#4FC3F7]/10 border-[#4FC3F7]/30 text-[#0284C7] hover:bg-[#4FC3F7]/20 shadow-xs'
+                    : 'bg-amber-50/80 border-amber-200/60 text-amber-700 hover:bg-amber-100/80'
+                }`}
                 title={lang === 'ar' ? 'عرض على الخريطة الميدانية' : 'View on Field Map'}
               >
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                  {isLocationAuthorized ? (
-                    <>
-                      <MapPin className="w-4 h-4 text-[#4FC3F7] shrink-0" />
-                      <span className="truncate font-semibold">{quest.location}</span>
-                    </>
-                  ) : (
-                    <>
-                      <Lock className="w-4 h-4 text-amber-500 shrink-0 animate-pulse" />
-                      <span className="text-slate-400 truncate font-semibold">
-                        {lang === 'ar' ? '🔒 الموقع مخفي حتى قبول الحجز وتفعيل العقد' : '🔒 Location hidden until booking approved'}
-                      </span>
-                    </>
-                  )}
-                </div>
                 {isLocationAuthorized ? (
-                  <span className="text-[9px] font-black text-[#4FC3F7] bg-[#4FC3F7]/10 px-2 py-1.5 rounded-lg uppercase tracking-wider whitespace-nowrap shrink-0">
-                    🗺️ {lang === 'ar' ? 'عرض الخريطة' : 'Show Map'}
-                  </span>
+                  <>
+                    <Navigation className="w-4 h-4 text-[#0284C7] shrink-0" />
+                    <span>🗺️ {lang === 'ar' ? 'عرض على الخريطة والملاحة' : 'Show Map & Navigation'}</span>
+                  </>
                 ) : (
-                  <span className="text-[9px] font-black text-amber-600 bg-amber-50 px-2 py-1.5 rounded-lg uppercase tracking-wider whitespace-nowrap shrink-0 border border-amber-100">
-                    🔒 {lang === 'ar' ? 'مغلق' : 'Locked'}
-                  </span>
+                  <>
+                    <Lock className="w-4 h-4 text-amber-500 shrink-0 animate-pulse" />
+                    <span>{lang === 'ar' ? '🔒 الموقع مخفي حتى قبول الحجز وتفعيل العقد' : '🔒 Location hidden until booking approved'}</span>
+                  </>
                 )}
               </button>
             );
@@ -807,14 +801,16 @@ export default function UnifiedQuestCard({
                 {/* STATE D: Approved & Active Contract */}
                 {currentTrayState === 'D' && (
                   <div className="w-full space-y-2">
-                    <div className="grid grid-cols-2 gap-2 w-full">
-                      <button
-                        onClick={() => onStartNavigation(quest)}
-                        className="bg-emerald-600 hover:bg-emerald-500 text-white font-black py-3 rounded-2xl text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95 text-center shadow-lg"
-                      >
-                        <Navigation className="w-4 h-4 text-white shrink-0" />
-                        <span>{lang === 'ar' ? 'إلى التوجيه للوقع 🛰️' : 'Navigate 🛰️'}</span>
-                      </button>
+                    <div className={`grid ${quest.creatorId === userProfile.id ? 'grid-cols-1' : 'grid-cols-2'} gap-2 w-full`}>
+                      {quest.creatorId !== userProfile.id && (
+                        <button
+                          onClick={() => onStartNavigation(quest)}
+                          className="bg-emerald-600 hover:bg-emerald-500 text-white font-black py-3 rounded-2xl text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95 text-center shadow-lg"
+                        >
+                          <Navigation className="w-4 h-4 text-white shrink-0" />
+                          <span>{lang === 'ar' ? 'إلى التوجيه للوقع 🛰️' : 'Navigate 🛰️'}</span>
+                        </button>
+                      )}
                       <button
                         onClick={() => {
                           if (onClose) onClose();

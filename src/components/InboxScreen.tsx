@@ -33,6 +33,7 @@ interface InboxScreenProps {
   onClearInitialChatId?: () => void;
   setUserChats?: (chats: any[]) => void;
   onSendPushNotification?: (recipientId: string, title: string, body: string, data?: Record<string, string>) => void;
+  isNavVisible?: boolean;
 }
 
 const LOCALES = {
@@ -135,7 +136,8 @@ export default function InboxScreen({
   initialChatId,
   onClearInitialChatId,
   setUserChats,
-  onSendPushNotification
+  onSendPushNotification,
+  isNavVisible = false
 }: InboxScreenProps) {
   const isRtl = lang === 'ar';
   const t = LOCALES[lang] || LOCALES.ar;
@@ -585,7 +587,7 @@ export default function InboxScreen({
   return (
     <div 
       id="full_inbox_container"
-        className="w-full bg-slate-50 flex h-[calc(100vh-136px)] font-sans relative overflow-hidden"
+        className="w-full bg-slate-50 flex h-[100dvh] font-sans relative overflow-hidden pt-16 pb-0"
         style={{ direction: isRtl ? 'rtl' : 'ltr' }}
       >
         {/* SIDEBAR: Conversation List Panel */}
@@ -961,17 +963,23 @@ export default function InboxScreen({
 
               {/* Chat Input Dock */}
               {isChatArchived(selectedChat) ? (
-                <div className="p-4 bg-slate-100 border-t border-slate-200 text-center text-slate-500 text-xs font-black flex items-center justify-center gap-2 shrink-0">
+                <div className={`p-4 bg-slate-100 border-t border-slate-200 text-center text-slate-500 text-xs font-black flex items-center justify-center gap-2 shrink-0 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+                  isNavVisible ? 'pb-20 md:pb-4' : 'pb-4'
+                }`}>
                   <Lock className="w-4 h-4 text-slate-400 shrink-0" />
                   <span>{t.archivedNotice || 'هذه الدردشة مؤرشفة لانتهاء المهمة 🔒'}</span>
                 </div>
               ) : isChatPendingBooking(selectedChat) ? (
-                <div className="p-4 bg-amber-50 border-t border-amber-200 text-center text-amber-900 text-xs font-black flex items-center justify-center gap-2 shrink-0">
+                <div className={`p-4 bg-amber-50 border-t border-amber-200 text-center text-amber-900 text-xs font-black flex items-center justify-center gap-2 shrink-0 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+                  isNavVisible ? 'pb-20 md:pb-4' : 'pb-4'
+                }`}>
                   <Lock className="w-4 h-4 text-amber-600 shrink-0" />
                   <span>{lang === 'ar' ? '🔒 التواصل بالدردشة مغلق حالياً، وسيتم تفعيله فور قبول صاحب المهمة لطلب الحجز 🤝' : '🔒 Chat is locked until the creator accepts the booking request 🤝'}</span>
                 </div>
               ) : (
-                <div className="p-3 bg-white border-t border-slate-150 flex items-center gap-2 shrink-0">
+                <div className={`p-3 bg-white/95 backdrop-blur-md border-t border-slate-150 flex items-center gap-2 shrink-0 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+                  isNavVisible ? 'pb-20 md:pb-3' : 'pb-3'
+                }`}>
                   <input
                     type="text"
                     placeholder={t.typeMessage}

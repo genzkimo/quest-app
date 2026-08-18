@@ -977,9 +977,14 @@ export default function InboxScreen({
                   <span>{lang === 'ar' ? '🔒 التواصل بالدردشة مغلق حالياً، وسيتم تفعيله فور قبول صاحب المهمة لطلب الحجز 🤝' : '🔒 Chat is locked until the creator accepts the booking request 🤝'}</span>
                 </div>
               ) : (
-                <div className={`p-3 bg-white/95 backdrop-blur-md border-t border-slate-150 flex items-center gap-2 shrink-0 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-                  isNavVisible ? 'pb-20 md:pb-3' : 'pb-3'
-                }`}>
+                <div 
+  className="p-3 bg-white/95 backdrop-blur-md border-t border-slate-150 flex items-center gap-2 shrink-0 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
+  style={{ 
+    paddingBottom: isNavVisible 
+      ? 'calc(4.5rem + env(safe-area-inset-bottom, 0px) + 0.75rem)' 
+      : '0.75rem' 
+  }}
+>
                   <input
                     type="text"
                     placeholder={t.typeMessage}

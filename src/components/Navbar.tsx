@@ -23,7 +23,7 @@ interface NavbarProps {
   unreadTasksCount: number;
   tokenBalance: number;
   lang: 'ar' | 'fr' | 'en';
-  isAdmin?: boolean;
+  
   audioEnabled?: boolean;
   unreadNotificationsCount: number;
   unreadChatsCount: number;
@@ -49,7 +49,7 @@ export default function Navbar({
   unreadTasksCount,
   tokenBalance,
   lang,
-  isAdmin = false,
+  
   audioEnabled = true,
   unreadNotificationsCount,
   unreadChatsCount,
@@ -203,13 +203,7 @@ export default function Navbar({
     },
   ];
 
-  if (isAdmin) {
-    NAV_ITEMS.push({
-      id: 'admin',
-      label: lang === 'ar' ? 'الإشراف' : lang === 'fr' ? 'Superviser' : 'Supervise',
-      icon: ShieldAlert
-    });
-  }
+
 
   return (
     <>

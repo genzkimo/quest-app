@@ -29,7 +29,7 @@ import MapView from './components/MapView';
 import LeaderboardView from './components/LeaderboardView';
 import MyQuestsView from './components/MyQuestsView';
 import ProfileView from './components/ProfileView';
-
+import AdminView from './components/AdminView';
 import PublicProfileView from './components/PublicProfileView';
 import ReciprocalRatingModal from './components/ReciprocalRatingModal';
 import NotificationScreen, { NotificationDoc } from './components/NotificationScreen';
@@ -531,6 +531,22 @@ export default function App() {
     }
   }, []);
 
+  // Periodic active timestamp update in Firestore for presence
+  useEffect(() => {
+    if (!userProfile?.id) return;
+    const updateActivity = async () => {
+      try {
+        const nowIso = new Date().toISOString();
+        await setDoc(doc(db, 'users', userProfile.id), { lastActiveAt: nowIso }, { merge: true });
+      } catch (err) {
+        console.warn("Could not update lastActiveAt:", err);
+      }
+    };
+    updateActivity();
+    const interval = setInterval(updateActivity, 2 * 60 * 1000); // 2 minutes heartbeat
+    return () => clearInterval(interval);
+  }, [userProfile?.id]);
+
   // Quest Cleanup, Expiration & Extension System task loop
   useEffect(() => {
     const PENDING_QUEST_TIMEOUT = 8 * 60 * 60 * 1000; // 8 Hours
@@ -925,6 +941,20 @@ export default function App() {
               console.error("Failed saving email to profile: ", err);
             }
           }
+
+          // Preserve and auto-update Google profile avatar if missing or if Google photoURL was updated
+          if (firebaseUser.photoURL) {
+            const currentAvatar = profileToUse.avatar || '';
+            const isUnsetOrDefault = !currentAvatar || currentAvatar.includes('googleusercontent.com') || currentAvatar.includes('unsplash.com');
+            if (isUnsetOrDefault && currentAvatar !== firebaseUser.photoURL) {
+              profileToUse = { ...profileToUse, avatar: firebaseUser.photoURL };
+              try {
+                await updateDoc(userRef, { avatar: firebaseUser.photoURL });
+              } catch (err) {
+                console.error("Failed syncing Google photoURL to Firestore:", err);
+              }
+            }
+          }
         } else {
           // Check for archived points & stats if user previously deleted their account and returned
           let restoredPoints = 0;
@@ -1007,7 +1037,11 @@ export default function App() {
         // Sub 1: Profile listener
         unsubProfile = onSnapshot(userRef, (docSnap) => {
           if (docSnap.exists()) {
-            setUserProfile(UserModel.fromFirestore(docSnap.data(), firebaseUser.uid));
+            const loadedProf = UserModel.fromFirestore(docSnap.data(), firebaseUser.uid);
+            if (firebaseUser.photoURL && (!loadedProf.avatar || loadedProf.avatar.includes('unsplash.com'))) {
+              loadedProf.avatar = firebaseUser.photoURL;
+            }
+            setUserProfile(loadedProf);
           }
         }, (e) => handleFirestoreError(e, OperationType.GET, `users/${firebaseUser.uid}`));
 
@@ -2853,13 +2887,18 @@ export default function App() {
   // Callback 3: Post a brand new local quest - NOW PROTECTED BY HARDWARE GPS
   const handlePostNewQuest = (newQuestData: Partial<Quest>) => {
     verifyGpsHardwareAndExecute('publish', newQuestData, (coords) => {
+      const finalLat = newQuestData.lat || coords.lat;
+      const finalLng = newQuestData.lng || coords.lng;
+
       const newQuest: Quest = {
         id: `q-user-${Date.now()}`,
         title: newQuestData.title || '',
         description: newQuestData.description || '',
         location: newQuestData.location || '',
-        lat: coords.lat,
-        lng: coords.lng,
+        lat: finalLat,
+        lng: finalLng,
+        locationCoords: { lat: finalLat, lng: finalLng },
+        gpsCoords: { lat: finalLat, lng: finalLng } as any,
         category: newQuestData.category || 'أخرى',
         cashReward: newQuestData.cashReward || 50,
         pointsReward: newQuestData.pointsReward || 150,
@@ -4063,7 +4102,34 @@ export default function App() {
                   />
                 )}
 
-                
+                {currentView === 'admin' && (
+                  isAdminUser ? (
+                    <AdminView 
+                      userProfile={userProfile}
+                      quests={quests}
+                      leaders={leaders}
+                      lang={userProfile.language}
+                      onApproveKYC={handleApproveKYC}
+                      onRejectKYC={handleRejectKYC}
+                      onBanUser={handleBanUser}
+                      onDeleteQuest={handleDeleteQuest}
+                      onBroadcastMessage={handleBroadcastMessage}
+                      showToast={showToast}
+                      onInspectQuest={(questId) => setGlobalQuestDetailId(questId)}
+                      onUpdateProfile={handleUpdateProfile}
+                    />
+                  ) : (
+                    <div className="bg-white border-2 border-red-500 rounded-3xl p-8 text-center space-y-4 shadow-md max-w-md mx-auto my-12 font-sans" style={{ direction: userProfile.language === 'ar' ? 'rtl' : 'ltr' }}>
+                      <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto">
+                        <span className="text-red-600 text-3xl">⚠️</span>
+                      </div>
+                      <h3 className="text-lg font-black text-red-600">غير مصرح بالدخول | Access Denied</h3>
+                      <p className="text-xs text-slate-500 font-semibold leading-relaxed">
+                        هذه الصفحة مخصصة للمشرفين فقط. يرجى تسجيل الدخول بحساب مشرف معتمد للوصول للميزات الإدارية.
+                      </p>
+                    </div>
+                  )
+                )}
               </>
             )}
           </motion.div>

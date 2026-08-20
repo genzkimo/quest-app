@@ -119,7 +119,22 @@ export default function ProfileView({
   const [supportMessage, setSupportMessage] = useState('');
   const [supportSubject, setSupportSubject] = useState('');
   const [isSubmittingSupport, setIsSubmittingSupport] = useState(false);
-  const [name, setName] = useState(userProfile.name);
+  const isDummyName = (n?: string) => {
+    if (!n) return true;
+    const lower = n.trim().toLowerCase();
+    return (
+      lower === '' ||
+      lower === 'ياسين بلقاسم' ||
+      lower === 'omrani akram' ||
+      lower === 'akram omrani' ||
+      lower === 'صياد كويست' ||
+      lower === 'مستخدم المستكشف' ||
+      lower === 'مستخدم مجهول' ||
+      lower === 'مستخدم كويست' ||
+      lower.includes('@')
+    );
+  };
+  const [name, setName] = useState(isDummyName(userProfile.name) ? '' : userProfile.name);
   const [phone, setPhone] = useState(userProfile.phone === '0550000000' || userProfile.phone === '0555123456' || userProfile.phone === 'غير محدد' ? '' : (userProfile.phone || ''));
   const [city, setCity] = useState(userProfile.city);
 
@@ -158,6 +173,12 @@ export default function ProfileView({
   const [showAvatarChooser, setShowAvatarChooser] = useState(false);
   const [reviewToDelete, setReviewToDelete] = useState<string | null>(null);
   const [longPressTimer, setLongPressTimer] = useState<any>(null);
+
+  useEffect(() => {
+    if (userProfile?.avatar) {
+      setSelectedAvatar(userProfile.avatar);
+    }
+  }, [userProfile?.avatar]);
 
   // PWA Google Chrome installation trigger state
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -1897,6 +1918,10 @@ export default function ProfileView({
                       src={authenticatedUser.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=50'} 
                       alt="Google user" 
                       className="w-10 h-10 rounded-full border-2 border-emerald-300 object-cover bg-slate-100" 
+                      referrerPolicy="no-referrer"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150';
+                      }}
                     />
                   </div>
                 </div>
@@ -2021,6 +2046,7 @@ export default function ProfileView({
                     type="text" 
                     value={name} 
                     onChange={(e) => setName(e.target.value)} 
+                    placeholder={lang === 'ar' ? 'أدخل اسمك الكامل...' : 'Enter your full name...'}
                     className="w-full text-xs font-semibold py-2.5 px-3 bg-gray-50 border border-gray-150 rounded-xl focus:border-[#4FC3F7] focus:outline-none text-right"
                   />
                   <User className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
@@ -3931,10 +3957,14 @@ export default function ProfileView({
         <div className="relative pt-12 flex flex-col items-center">
           <div className="relative">
             <img 
-              src={selectedAvatar} 
+              src={selectedAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'} 
               alt={name}
               className="w-24 h-24 rounded-full border-4 border-white object-cover shadow-md bg-white cursor-pointer"
               onClick={() => isEditing && setShowAvatarChooser(!showAvatarChooser)}
+              referrerPolicy="no-referrer"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150';
+              }}
             />
             {userProfile.idVerificationStatus === 'verified' && (
               <span className="absolute bottom-0 right-0 p-1.5 bg-[#4FC3F7] text-white rounded-full border-2 border-white shadow-md animate-pulse">
@@ -4005,6 +4035,7 @@ export default function ProfileView({
                   type="text" 
                   value={name} 
                   onChange={(e) => setName(e.target.value)} 
+                  placeholder={lang === 'ar' ? 'أدخل اسمك الكامل...' : 'Enter your full name...'}
                   className="w-full text-center py-2 px-3 bg-gray-50 border border-gray-150 rounded-xl text-xs font-black"
                 />
                 <div className="space-y-2 bg-slate-50 p-2.5 rounded-xl border border-gray-150">

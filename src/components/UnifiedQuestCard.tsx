@@ -288,7 +288,15 @@ export default function UnifiedQuestCard({
         {/* Cohesive Subtitle Metadata */}
         <div className="flex items-center gap-2 flex-wrap text-slate-500 text-[11px] mt-2 w-full font-medium">
           <span className="flex items-center gap-1.5 text-slate-700 font-extrabold">
-            <img src={quest.creatorAvatar} alt={quest.creatorName} className="w-4.5 h-4.5 rounded-full object-cover shrink-0 border border-slate-150" />
+            <img 
+              src={quest.creatorAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'} 
+              alt={quest.creatorName} 
+              className="w-4.5 h-4.5 rounded-full object-cover shrink-0 border border-slate-150" 
+              referrerPolicy="no-referrer"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150';
+              }}
+            />
             {quest.creatorName}
           </span>
           <span>•</span>

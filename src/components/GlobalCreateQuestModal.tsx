@@ -210,24 +210,13 @@ export default function GlobalCreateQuestModal({
       );
     } catch (err) {
       console.warn("GPS Calibration Notice:", err);
-      const cached = Geolocator.getCachedLocation();
-      if (cached) {
-        setGpsCoords(cached);
-        const resolvedName = resolveNeighborhoodFromCoords(cached.lat, cached.lng, '', lang);
-        if (resolvedName && !locationText) {
-          setLocationText(resolvedName);
-        }
-      } else {
-        // Fallback coords for Ben Srour
-        setGpsCoords({ lat: 35.184, lng: 4.556 });
-        if (!locationText) {
-          setLocationText('بن سرور');
-        }
+      if (!locationText) {
+        setLocationText('بن سرور');
       }
       setGpsAccuracyInfo(
         lang === 'ar'
-          ? '📍 تم تحديد المكان (يمكنك تعديل اسم الحي والمدينة أدناه)'
-          : '📍 Location tagged (you can edit your location name below)'
+          ? '⚠️ تعذر التقاط إشارة GPS المباشرة، يرجى التأكد من تفعيل الموقع'
+          : '⚠️ Live GPS hardware fix unavailable, please verify location services'
       );
     } finally {
       setGpsLoading(false);
@@ -321,7 +310,11 @@ export default function GlobalCreateQuestModal({
       imageUrls: images,
       images: images,
       imageUrl: images[0] || '',
-      location: finalLocation
+      location: finalLocation,
+      lat: activeCoords.lat,
+      lng: activeCoords.lng,
+      locationCoords: { lat: activeCoords.lat, lng: activeCoords.lng },
+      gpsCoords: { lat: activeCoords.lat, lng: activeCoords.lng } as any,
     });
 
     onClose();
@@ -337,7 +330,7 @@ export default function GlobalCreateQuestModal({
         style={{ direction: isRtl ? 'rtl' : 'ltr' }}
       >
         {/* Modern Header Navigation */}
-                <div 
+        <div 
           className="flex justify-between items-center px-6 py-5 border-b border-white/5 bg-slate-900/40 relative z-20"
           style={{ paddingTop: 'calc(1.25rem + min(env(safe-area-inset-top, 0px), 28px))' }}
         >

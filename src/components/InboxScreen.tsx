@@ -123,6 +123,81 @@ const LOCALES = {
   }
 };
 
+export function formatLastActive(
+  lastActiveTime: string | number | undefined,
+  lang: 'ar' | 'fr' | 'en' = 'ar'
+): { text: string; isOnline: boolean } {
+  if (!lastActiveTime) {
+    if (lang === 'ar') return { text: 'نشط منذ وقت طويل', isOnline: false };
+    if (lang === 'fr') return { text: 'Inactif depuis longtemps', isOnline: false };
+    return { text: 'Active a long time ago', isOnline: false };
+  }
+
+  const timestamp = typeof lastActiveTime === 'number' ? lastActiveTime : new Date(lastActiveTime).getTime();
+  if (isNaN(timestamp) || timestamp <= 0) {
+    if (lang === 'ar') return { text: 'نشط منذ وقت طويل', isOnline: false };
+    if (lang === 'fr') return { text: 'Inactif depuis longtemps', isOnline: false };
+    return { text: 'Active a long time ago', isOnline: false };
+  }
+
+  const now = Date.now();
+  const diffMs = Math.max(0, now - timestamp);
+  const diffMins = Math.floor(diffMs / (1000 * 60));
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const diffWeeks = Math.floor(diffDays / 7);
+
+  // Active within last 5 minutes -> Online
+  if (diffMins < 5) {
+    if (lang === 'ar') return { text: 'نشط الآن', isOnline: true };
+    if (lang === 'fr') return { text: 'En ligne', isOnline: true };
+    return { text: 'Active now', isOnline: true };
+  }
+
+  // Less than 60 minutes -> "نشط منذ 15 دقيقة"
+  if (diffMins < 60) {
+    if (lang === 'ar') return { text: `نشط منذ ${diffMins} دقيقة`, isOnline: false };
+    if (lang === 'fr') return { text: `Actif il y a ${diffMins} min`, isOnline: false };
+    return { text: `Active ${diffMins}m ago`, isOnline: false };
+  }
+
+  // Today / Less than 24 hours -> "نشط منذ 3 ساعات"
+  if (diffHours < 24) {
+    if (lang === 'ar') {
+      const hText = diffHours === 1 ? 'ساعة' : diffHours === 2 ? 'ساعتين' : diffHours <= 10 ? `${diffHours} ساعات` : `${diffHours} ساعة`;
+      return { text: `نشط منذ ${hText}`, isOnline: false };
+    }
+    if (lang === 'fr') return { text: `Actif il y a ${diffHours}h`, isOnline: false };
+    return { text: `Active ${diffHours}h ago`, isOnline: false };
+  }
+
+  // Less than 7 days (less than a week) -> "نشط منذ 3 أيام"
+  if (diffDays < 7) {
+    if (lang === 'ar') {
+      const dText = diffDays === 1 ? 'يوم' : diffDays === 2 ? 'يومين' : diffDays <= 10 ? `${diffDays} أيام` : `${diffDays} يوماً`;
+      return { text: `نشط منذ ${dText}`, isOnline: false };
+    }
+    if (lang === 'fr') return { text: `Actif il y a ${diffDays} j`, isOnline: false };
+    return { text: `Active ${diffDays}d ago`, isOnline: false };
+  }
+
+  // Less than 30 days (less than a month) -> "نشط منذ أسبوع" / "نشط منذ أسبوعين" / "نشط منذ 3 أسابيع"
+  if (diffDays < 30) {
+    const weeks = Math.max(1, diffWeeks);
+    if (lang === 'ar') {
+      const wText = weeks === 1 ? 'أسبوع' : weeks === 2 ? 'أسبوعين' : `${weeks} أسابيع`;
+      return { text: `نشط منذ ${wText}`, isOnline: false };
+    }
+    if (lang === 'fr') return { text: `Actif il y a ${weeks} sem`, isOnline: false };
+    return { text: `Active ${weeks}w ago`, isOnline: false };
+  }
+
+  // More than a month (>= 30 days) -> "نشط منذ وقت طويل"
+  if (lang === 'ar') return { text: 'نشط منذ وقت طويل', isOnline: false };
+  if (lang === 'fr') return { text: 'Inactif depuis longtemps', isOnline: false };
+  return { text: 'Active a long time ago', isOnline: false };
+}
+
 export default function InboxScreen({ 
   userChats, 
   quests = [], 
@@ -246,6 +321,9 @@ export default function InboxScreen({
     });
   }, [userChats, currentUserId]);
 
+  // Track recipient presence profiles
+  const [recipientProfiles, setRecipientProfiles] = useState<Record<string, { lastActiveAt?: string }>>({});
+
   // Recipient info retriever
   const getInboxItemDetails = (chat: any) => {
     if (!chat) return { recipientName: '', recipientAvatar: '', recipientId: '' };
@@ -265,6 +343,61 @@ export default function InboxScreen({
     }
 
     return { recipientName, recipientAvatar, recipientId };
+  };
+
+  // Collect unique recipient IDs
+  const recipientIdsKey = useMemo(() => {
+    const ids = new Set<string>();
+    userChats.forEach(chat => {
+      const details = getInboxItemDetails(chat);
+      if (details.recipientId) ids.add(details.recipientId);
+    });
+    return Array.from(ids).sort().join(',');
+  }, [userChats, currentUserId, quests]);
+
+  useEffect(() => {
+    if (!recipientIdsKey) return;
+    const ids = recipientIdsKey.split(',').filter(Boolean);
+    const unsubs: (() => void)[] = [];
+
+    ids.forEach(id => {
+      try {
+        const unsub = onSnapshot(doc(db, 'users', id), (snap) => {
+          if (snap.exists()) {
+            const data = snap.data();
+            setRecipientProfiles(prev => ({
+              ...prev,
+              [id]: {
+                lastActiveAt: data.lastActiveAt || data.updatedAt || ''
+              }
+            }));
+          }
+        }, (err) => console.warn(`Recipient presence error for ${id}:`, err));
+        unsubs.push(unsub);
+      } catch (err) {
+        console.warn("Presence snapshot error:", err);
+      }
+    });
+
+    return () => {
+      unsubs.forEach(unsub => unsub());
+    };
+  }, [recipientIdsKey]);
+
+  const getRecipientLastActiveTime = (chat: any, recipientId: string): string | number | undefined => {
+    if (!recipientId) return undefined;
+    const profileLastActive = recipientProfiles[recipientId]?.lastActiveAt;
+    if (profileLastActive) return profileLastActive;
+
+    // Fallback to last message sent by recipient in this chat
+    const messages = chat?.messages || [];
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg.senderId === recipientId && msg.createdAt) {
+        return msg.createdAt;
+      }
+    }
+    return undefined;
   };
 
   // Check if unread
@@ -742,10 +875,25 @@ export default function InboxScreen({
                           }}
                           className="w-10 h-10 rounded-full relative overflow-hidden bg-slate-150 shrink-0 border border-slate-200 font-sans cursor-pointer hover:opacity-85 transition-opacity"
                         >
-                          <img src={recipientAvatar} alt={recipientName} className="w-full h-full object-cover" />
-                          {isUnread && (
+                          <img 
+                            src={recipientAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'} 
+                            alt={recipientName} 
+                            className="w-full h-full object-cover" 
+                            referrerPolicy="no-referrer"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150';
+                            }}
+                          />
+                          {isUnread ? (
                             <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-blue-500 border-2 border-white rounded-full animate-ping"></span>
-                          )}
+                          ) : (() => {
+                            const details = getInboxItemDetails(chat);
+                            const lastActiveTime = getRecipientLastActiveTime(chat, details.recipientId);
+                            const status = formatLastActive(lastActiveTime, lang);
+                            return (
+                              <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 border-2 border-white rounded-full ${status.isOnline ? 'bg-emerald-500' : 'bg-slate-300'}`}></span>
+                            );
+                          })()}
                         </div>
 
                         <div className="flex-1 min-w-0">
@@ -825,9 +973,13 @@ export default function InboxScreen({
                     className="w-10 h-10 rounded-full overflow-hidden border border-slate-100 bg-slate-100 shrink-0 cursor-pointer hover:opacity-85 transition-opacity"
                   >
                     <img 
-                      src={getInboxItemDetails(selectedChat).recipientAvatar} 
+                      src={getInboxItemDetails(selectedChat).recipientAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'} 
                       alt={getInboxItemDetails(selectedChat).recipientName} 
                       className="w-full h-full object-cover" 
+                      referrerPolicy="no-referrer"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150';
+                      }}
                     />
                   </div>
 
@@ -852,14 +1004,19 @@ export default function InboxScreen({
                             {lang === 'ar' ? 'مؤرشف 📁' : 'Archived 📁'}
                           </span>
                         </>
-                      ) : (
-                        <>
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
-                          <span className="text-[9px] text-emerald-600 font-bold tracking-tight">
-                            {t.activeOnline}
-                          </span>
-                        </>
-                      )}
+                      ) : (() => {
+                        const recipientInfo = getInboxItemDetails(selectedChat);
+                        const lastActiveTime = getRecipientLastActiveTime(selectedChat, recipientInfo.recipientId);
+                        const status = formatLastActive(lastActiveTime, lang);
+                        return (
+                          <>
+                            <span className={`w-1.5 h-1.5 rounded-full ${status.isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'} shrink-0`}></span>
+                            <span className={`text-[9px] font-bold tracking-tight ${status.isOnline ? 'text-emerald-600' : 'text-slate-500'}`}>
+                              {status.text}
+                            </span>
+                          </>
+                        );
+                      })()}
                       <span className="text-[9px] text-slate-300">|</span>
                       <span className="text-[9px] text-blue-600 font-extrabold truncate max-w-[140px] md:max-w-xs">
                         {selectedChat.questTitle}
@@ -963,16 +1120,26 @@ export default function InboxScreen({
 
               {/* Chat Input Dock */}
               {isChatArchived(selectedChat) ? (
-                <div className={`p-4 bg-slate-100 border-t border-slate-200 text-center text-slate-500 text-xs font-black flex items-center justify-center gap-2 shrink-0 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-                  isNavVisible ? 'pb-20 md:pb-4' : 'pb-4'
-                }`}>
+                <div 
+  className="p-4 bg-slate-100 border-t border-slate-200 text-center text-slate-500 text-xs font-black flex items-center justify-center gap-2 shrink-0 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
+  style={{ 
+    paddingBottom: isNavVisible 
+      ? 'calc(4.5rem + env(safe-area-inset-bottom, 0px) + 0.5rem)' 
+      : '1rem' 
+  }}
+>
                   <Lock className="w-4 h-4 text-slate-400 shrink-0" />
                   <span>{t.archivedNotice || 'هذه الدردشة مؤرشفة لانتهاء المهمة 🔒'}</span>
                 </div>
               ) : isChatPendingBooking(selectedChat) ? (
-                <div className={`p-4 bg-amber-50 border-t border-amber-200 text-center text-amber-900 text-xs font-black flex items-center justify-center gap-2 shrink-0 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-                  isNavVisible ? 'pb-20 md:pb-4' : 'pb-4'
-                }`}>
+                <div 
+  className="p-4 bg-amber-50 border-t border-amber-200 text-center text-amber-900 text-xs font-black flex items-center justify-center gap-2 shrink-0 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
+  style={{ 
+    paddingBottom: isNavVisible 
+      ? 'calc(4.5rem + env(safe-area-inset-bottom, 0px) + 0.5rem)' 
+      : '1rem' 
+  }}
+>
                   <Lock className="w-4 h-4 text-amber-600 shrink-0" />
                   <span>{lang === 'ar' ? '🔒 التواصل بالدردشة مغلق حالياً، وسيتم تفعيله فور قبول صاحب المهمة لطلب الحجز 🤝' : '🔒 Chat is locked until the creator accepts the booking request 🤝'}</span>
                 </div>

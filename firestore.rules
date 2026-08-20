@@ -86,11 +86,24 @@ service cloud.firestore {
              data.category is string &&
              (data.cashReward is int || data.cashReward is float || data.cashReward is number) &&
              (data.pointsReward is int || data.pointsReward is float || data.pointsReward is number) &&
-             data.status is string && (data.status == 'open' || data.status == 'pending' || data.status == 'booked' || data.status == 'active' || data.status == 'arrived' || data.status == 'pending_verification' || data.status == 'completed' || data.status == 'disputed') &&
-             data.urgency is string && (data.urgency == 'normal' || data.urgency == 'urgent' || data.urgency == 'featured') &&
+             data.status is string && (
+               data.status == 'open' || 
+               data.status == 'pending' || 
+               data.status == 'booked' || 
+               data.status == 'active' || 
+               data.status == 'arrived' || 
+               data.status == 'pending_verification' || 
+               data.status == 'completed' || 
+               data.status == 'disputed' ||
+               data.status == 'cancelled' ||
+               data.status == 'cancelled_by_timeout' ||
+               data.status == 'stale_cleared' ||
+               data.status == 'expired'
+             ) &&
+             (!('urgency' in data) || (data.urgency is string && (data.urgency == 'normal' || data.urgency == 'urgent' || data.urgency == 'featured'))) &&
              data.createdAt is string &&
              data.creatorId is string && data.creatorId.size() <= 128 &&
-             data.creatorName is string && data.creatorName.size() <= 120 &&
+             (!('creatorName' in data) || (data.creatorName is string && data.creatorName.size() <= 120)) &&
              (!('comments' in data) || data.comments is list);
     }
 

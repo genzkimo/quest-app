@@ -46,9 +46,9 @@ export class Geolocator {
   }
 
   /**
-   * Retrieves last cached user location from localStorage if available and not older than 1 hour.
+   * Retrieves last cached user location from localStorage if available and not older than maxAgeHours (default 5 hours).
    */
-  static getCachedLocation(): { lat: number; lng: number } | null {
+  static getCachedLocation(maxAgeHours: number = 5): { lat: number; lng: number } | null {
     try {
       const latStr = localStorage.getItem('last_user_lat');
       const lngStr = localStorage.getItem('last_user_lng');
@@ -58,8 +58,8 @@ export class Geolocator {
 
       if (timeStr) {
         const timestamp = parseInt(timeStr, 10);
-        const ONE_HOUR = 60 * 60 * 1000; // 1 hour max age
-        if (!isNaN(timestamp) && (Date.now() - timestamp > ONE_HOUR)) {
+        const MAX_AGE_MS = maxAgeHours * 60 * 60 * 1000; // default 5 hours
+        if (!isNaN(timestamp) && (Date.now() - timestamp > MAX_AGE_MS)) {
           this.clearCachedLocation();
           return null;
         }

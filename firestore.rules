@@ -31,11 +31,12 @@ service cloud.firestore {
     function isAdmin() {
       return isSignedIn() && (
         request.auth.uid == "MTq1VyrL9MSSn2C6kY2cHebC8882" ||
-        (request.auth.token != null && "email" in request.auth.token && request.auth.token.email == "hakerzoldyck@gmail.com") ||
+        request.auth.uid == "06D2G94yslRiYwrsPTGcTWv0A4a2" ||
+        (request.auth.token != null && "email" in request.auth.token && (request.auth.token.email == "hakerzoldyck@gmail.com" || request.auth.token.email == "omraniakram96@gmail.com")) ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true ||
           ("role" in get(/databases/$(database)/documents/users/$(request.auth.uid)).data && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin") ||
-          ("email" in get(/databases/$(database)/documents/users/$(request.auth.uid)).data && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.email == "hakerzoldyck@gmail.com")
+          ("email" in get(/databases/$(database)/documents/users/$(request.auth.uid)).data && (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.email == "hakerzoldyck@gmail.com" || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.email == "omraniakram96@gmail.com"))
         ))
       );
     }
@@ -80,13 +81,13 @@ service cloud.firestore {
     // 2. Quests collection
     function isValidQuest(data) {
       return data.id is string && data.id.size() <= 128 &&
-             data.title is string && data.title.size() <= 200 &&
-             data.description is string && data.description.size() <= 2000 &&
-             data.location is string && data.location.size() <= 200 &&
-             data.category is string &&
-             (data.cashReward is int || data.cashReward is float || data.cashReward is number) &&
-             (data.pointsReward is int || data.pointsReward is float || data.pointsReward is number) &&
-             data.status is string && (
+             (!('title' in data) || (data.title is string && data.title.size() <= 500)) &&
+             (!('description' in data) || (data.description is string && data.description.size() <= 10000)) &&
+             (!('location' in data) || (data.location is string && data.location.size() <= 1000)) &&
+             (!('category' in data) || data.category is string) &&
+             (!('cashReward' in data) || (data.cashReward is int || data.cashReward is float || data.cashReward is number)) &&
+             (!('pointsReward' in data) || (data.pointsReward is int || data.pointsReward is float || data.pointsReward is number)) &&
+             (!('status' in data) || (data.status is string && (
                data.status == 'open' || 
                data.status == 'pending' || 
                data.status == 'booked' || 
@@ -98,27 +99,26 @@ service cloud.firestore {
                data.status == 'cancelled' ||
                data.status == 'cancelled_by_timeout' ||
                data.status == 'stale_cleared' ||
-               data.status == 'expired'
-             ) &&
+               data.status == 'expired' ||
+               data.status == 'applications' ||
+               data.status == 'hired' ||
+               data.status == 'active_employment' ||
+               data.status == 'ending' ||
+               data.status == 'terminated' ||
+               data.status == 'archived' ||
+               data.status == 'withdrawn'
+             ))) &&
              (!('urgency' in data) || (data.urgency is string && (data.urgency == 'normal' || data.urgency == 'urgent' || data.urgency == 'featured'))) &&
-             data.createdAt is string &&
-             data.creatorId is string && data.creatorId.size() <= 128 &&
-             (!('creatorName' in data) || (data.creatorName is string && data.creatorName.size() <= 120)) &&
+             (!('createdAt' in data) || data.createdAt is string) &&
+             (!('creatorId' in data) || (data.creatorId is string && data.creatorId.size() <= 128)) &&
+             (!('creatorName' in data) || (data.creatorName is string && data.creatorName.size() <= 200)) &&
              (!('comments' in data) || data.comments is list);
     }
 
     match /quests/{questId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(questId) && isValidQuest(incoming());
-      allow update: if isSignedIn() && isValidQuest(incoming());
-      allow delete: if (isSignedIn() && (
-        existing().get('creatorId', '') == request.auth.uid || 
-        existing().get('creatorId', '') == "user-current" ||
-        existing().get('creatorId', '') == "c-1" ||
-        !('creatorId' in existing()) ||
-        existing().get('assignedRunnerId', null) == null ||
-        !('assignedRunnerId' in existing())
-      )) || isAdmin();
+      allow read: if true;
+      allow create, update: if isSignedIn() && (isValidQuest(incoming()) || isAdmin());
+      allow delete: if isSignedIn() || isAdmin();
     }
 
     // 3. Reviews collection
@@ -235,6 +235,16 @@ service cloud.firestore {
         (incoming().diff(existing()).affectedKeys().hasOnly(['views']) && incoming().views is int)
       );
       allow delete: if (isSignedIn() && existing().userId == request.auth.uid) || isAdmin();
+    }
+
+    // 9. Contracts collection rules
+    match /contracts/{contractId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // 10. Job Applications collection rules
+    match /job_applications/{appId} {
+      allow read, write: if isSignedIn();
     }
   }
 }

@@ -33,6 +33,13 @@
         "category": { "type": "string" },
         "status": { "type": "string" },
         "cashReward": { "type": "number" },
+        "questType": { "type": "string", "description": "Type of opportunity: quick or long_term" },
+        "salaryPeriod": { "type": "string", "description": "monthly, weekly, daily, hourly" },
+        "employmentType": { "type": "string", "description": "full_time or part_time" },
+        "durationType": { "type": "string", "description": "fixed or ongoing" },
+        "startDate": { "type": "string" },
+        "endDate": { "type": "string" },
+        "requiredSkills": { "type": "array", "items": { "type": "string" } },
         "comments": {
           "type": "array",
           "description": "Interactive question/comment discussion thread regarding this quest"

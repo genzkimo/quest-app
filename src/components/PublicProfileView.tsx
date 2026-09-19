@@ -25,8 +25,6 @@ import { db } from '../utils/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { formatJoinedDate, formatReviewDate } from '../utils/dateFormatter';
 
-// رابط الخادم الوسيط (غيّره إلى رابط Render الخاص بك بعد الرفع)
-const API_BASE_URL = 'https://quest-app-jne8.onrender.com';
 
 
 interface PublicProfileViewProps {

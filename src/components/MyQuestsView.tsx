@@ -30,7 +30,8 @@ import {
  XCircle,
  FolderArchive,
  Filter,
- ShieldAlert
+ ShieldAlert,
+ Frown
 } from 'lucide-react';
 import { Quest, QuestCategory, UserProfile, Applicant } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
@@ -106,9 +107,15 @@ export default function MyQuestsView({
  onClearAutoOpenCreate,
  setQuests,
  onArrivedAtQuest,
- onNavigateToProfileSubmenu
+ onNavigateToProfileSubmenu,
+ onRequestEndWork,
+ onConfirmEndWork,
+ onRejectEndWork
 }: MyQuestsViewProps) {
- const activeQuestCount = userProfile?.hasActiveQuest === false ? 0 : quests.filter(q => q.creatorId === currentUserId && q.status !== 'completed' && q.status !== 'cancelled' && q.status !== 'cancelled_by_timeout' && q.status !== 'stale_cleared').length;
+  const [endWorkQuestModal, setEndWorkQuestModal] = useState<Quest | null>(null);
+  const [endWorkReasonText, setEndWorkReasonText] = useState("");
+  const scrolledQuestIdRef = useRef<string | null>(null);
+ const activeQuestCount = userProfile?.hasActiveQuest === false ? 0 : quests.filter(q => q.creatorId === currentUserId && !['completed', 'cancelled', 'cancelled_by_timeout', 'stale_cleared', 'expired', 'terminated', 'archived'].includes(q.status) && !q.archived).length;
  const [activeTab, setActiveTab ] = useState<'obligations' | 'created'>(() => {
  if (initialTab) return initialTab;
  return activeQuestCount > 0 ? 'created' : 'obligations';
@@ -497,7 +504,7 @@ export default function MyQuestsView({
  };
 
  const obligations = quests.filter(q => 
- (q.helperId === currentUserId || q.assignedRunnerId === currentUserId || q.assignedRunnerIds?.includes(currentUserId) || q.employeeId === currentUserId || q.jobApplicants?.some(a => a.applicantId === currentUserId)) && 
+ (q.helperId === currentUserId || q.assignedRunnerId === currentUserId || q.assignedRunnerIds?.includes(currentUserId) || q.employeeId === currentUserId || (q.jobApplicants?.some(a => a.applicantId === currentUserId) || q.applicants?.some(a => a.userId === currentUserId))) && 
  (showHistory ? (isHistoryStatus(q.status) || q.archived) : (isActiveStatus(q.status) && !q.archived))
  );
 
@@ -816,20 +823,37 @@ export default function MyQuestsView({
  {activeTab === 'obligations' && (
  <div className="space-y-4">
  {displayObligations.length === 0 ? (
- <div className="bg-white py-14 px-4 rounded-3xl border border-gray-150 border-dashed text-center space-y-3 shadow-xs">
- <div className="w-12 h-12 bg-gray-50 text-gray-400 rounded-full flex items-center justify-center mx-auto">
- {showHistory ? <FolderArchive className="w-5 h-5 text-amber-500" /> : <Briefcase className="w-5 h-5 text-gray-400" />}
+ <div className="py-10 px-4 text-center space-y-3">
+ <div className="mx-auto flex justify-center">
+ {showHistory ? (
+ <svg className="w-24 h-24" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+ <circle cx="60" cy="60" r="50" className="fill-slate-100/90" />
+ <circle cx="60" cy="60" r="38" className="fill-slate-200/50" />
+ <path d="M36 42C36 38.6863 38.6863 36 42 36H54L60 42H78C81.3137 42 84 44.6863 84 48V78C84 81.3137 81.3137 84 78 84H42C38.6863 84 36 81.3137 36 78V42Z" fill="#FFFFFF" stroke="#64748B" strokeWidth="3" strokeLinejoin="round" />
+ <circle cx="52" cy="58" r="2.5" fill="#475569" />
+ <circle cx="68" cy="58" r="2.5" fill="#475569" />
+ <path d="M53 68C56 64 64 64 67 68" stroke="#475569" strokeWidth="2.5" strokeLinecap="round" />
+ </svg>
+ ) : (
+ <svg className="w-24 h-24" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+ <circle cx="60" cy="60" r="50" className="fill-blue-50/80" />
+ <circle cx="60" cy="60" r="38" className="fill-indigo-50/60" />
+ <rect x="38" y="32" width="44" height="56" rx="10" fill="#FFFFFF" stroke="#3B82F6" strokeWidth="3" />
+ <rect x="48" y="26" width="24" height="10" rx="4" fill="#3B82F6" />
+ <circle cx="52" cy="52" r="2.5" fill="#475569" />
+ <circle cx="68" cy="52" r="2.5" fill="#475569" />
+ <path d="M53 64C56 60 64 60 67 64" stroke="#475569" strokeWidth="2.5" strokeLinecap="round" />
+ <line x1="48" y1="72" x2="72" y2="72" stroke="#CBD5E1" strokeWidth="2.5" strokeLinecap="round" strokeDasharray="2 2" />
+ <path d="M26 40L32 46M32 40L26 46" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" />
+ <path d="M88 70L94 76M94 70L88 76" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" />
+ </svg>
+ )}
  </div>
  <h3 className="font-extrabold text-sm text-slate-800">
  {showHistory 
- ? (lang === 'ar' ? 'لا توجد كويستات مؤرشفة تطابق الفلتر المختار' : 'No archived records match this filter')
- : (lang === 'ar' ? 'أنت لا تلتزم بأي مهمة عمل حالياً' : 'No active worker commitments')}
+ ? (lang === 'ar' ? 'لا توجد كويستات مؤرشفة' : 'No archived quests')
+ : (lang === 'ar' ? 'لم تحجز أي مهمة بعد' : 'You haven\'t booked any tasks yet')}
  </h3>
- <p className="text-xs text-gray-400 max-w-sm mx-auto leading-relaxed">
- {showHistory
- ? (lang === 'ar' ? 'اختر تصنيفاً آخر من الأزرار بالأعلى لعرض السجلات الأخرى بالأرشيف.' : 'Select another category above to view archived items.')
- : (lang === 'ar' ? 'تصفح كويستات بالرئيسية والخريطة، ادفع 10% رسوم حجز لتبدأ العمل وكسب المكافأة!' : 'Book standard tasks on home or map view to populate commitments.')}
- </p>
  </div>
  ) : (
  <div className="space-y-4">
@@ -924,7 +948,7 @@ export default function MyQuestsView({
 
  
   {/* Long-Term Contract Summary Card (Rule 9) */}
-  {quest.questType === "long_term" && (
+  {(quest.questType === "long_term" || quest.status === "active_employment" || quest.status === "ending" || quest.status === "disputed" || quest.status === "active" || quest.status === "booked" || quest.helperId === currentUserId || quest.employeeId === currentUserId || quest.assignedRunnerId === currentUserId) && (
     <div className="bg-sky-50/80 dark:bg-sky-950/30 border border-sky-200/80 dark:border-sky-800/80 rounded-2xl p-4 text-xs space-y-2 text-start my-2">
       <div className="font-extrabold text-sky-900 dark:text-sky-200 flex items-center justify-between border-b border-sky-200/60 dark:border-sky-800/60 pb-2">
         <span className="flex items-center gap-1.5">
@@ -963,6 +987,53 @@ export default function MyQuestsView({
         <div>
           <span className="text-slate-400 block text-[10px]">{lang === "ar" ? "تاريخ النهاية:" : "End Date:"}</span>
           <span className="font-bold text-slate-800 dark:text-slate-200">{quest.terminatedAt ? formatArabicDate(quest.terminatedAt) : (quest.endDate ? formatArabicDate(quest.endDate) : (lang === "ar" ? "مستمر / غير محدد" : "Ongoing / Indefinite"))}</span>
+        </div>
+        {/* Contract Termination Row */}
+        <div className="col-span-2 pt-2 border-t border-sky-200/60 dark:border-sky-800/60 mt-1">
+          {quest.status === "ending" ? (
+            quest.endRequestedBy === currentUserId ? (
+              <div className="p-3 bg-amber-100/80 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 rounded-xl text-xs font-black text-center space-y-2">
+                <p>{lang === "ar" ? "تم فسخ العقد وفك الارتباط. المنشور بانتظار إطلاع الطرف الآخر لنقله للأرشيف." : "Contract severed & unlinked. Post awaiting partner read receipt."}</p>
+                <button
+                  type="button"
+                  onClick={() => onConfirmEndWork && onConfirmEndWork(quest.id)}
+                  className="w-full bg-amber-600 hover:bg-amber-700 text-white py-1.5 rounded-lg font-black text-[11px] cursor-pointer transition-all"
+                >
+                  {lang === "ar" ? "نقل للأرشيف 📁" : "Move to Archive 📁"}
+                </button>
+              </div>
+            ) : (
+              <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-xl space-y-2 text-start">
+                <p className="text-xs font-black text-rose-800 dark:text-rose-200 text-center">
+                  {lang === "ar" ? "وصلك إشعار فسخ العقد وفك الارتباط" : "Contract termination & unlinking notice"}
+                </p>
+                <div className="bg-white/80 dark:bg-rose-900/40 p-2 rounded-lg border border-rose-200/60 dark:border-rose-800/60 text-right">
+                  <span className="text-[10px] text-rose-600 dark:text-rose-300 font-bold block">{lang === "ar" ? "السبب الموضح بالطلب:" : "Reason provided:"}</span>
+                  <p className="text-xs font-extrabold text-slate-800 dark:text-slate-100">{quest.endReason || (lang === "ar" ? "لم يحدد سبب إضافي" : "No reason provided")}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onConfirmEndWork && onConfirmEndWork(quest.id)}
+                  className="w-full bg-rose-600 hover:bg-rose-700 text-white font-black text-xs py-2 rounded-xl shadow-xs transition-all cursor-pointer text-center"
+                >
+                  {lang === "ar" ? "تأكيد الاطلاع 📁" : "Acknowledge 📁"}
+                </button>
+              </div>
+            )
+          ) : quest.status === "disputed" ? (
+            <div className="p-2.5 bg-rose-100/80 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200 rounded-xl text-xs font-black text-center">
+              {lang === "ar" ? "العقد في حالة نزاع حالياً - جاري معالجته من قِبل الإدارة" : "Contract in dispute"}
+            </div>
+          ) : (quest.employeeId || quest.helperId || quest.assignedRunnerId || (quest.assignedRunnerIds && quest.assignedRunnerIds.length > 0)) && (quest.status === "active_employment" || quest.status === "active" || quest.status === "booked" || quest.questType === "long_term") && quest.status !== "completed" && !quest.archived ? (
+            <button
+              type="button"
+              onClick={() => setEndWorkQuestModal(quest)}
+              className="w-full bg-white dark:bg-slate-900 border border-rose-300 hover:border-rose-500 text-rose-600 dark:text-rose-400 font-black text-xs py-2 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs hover:bg-rose-50 dark:hover:bg-rose-950/30"
+            >
+              <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
+              <span>{lang === "ar" ? "فسخ العقد" : "Sever Contract"}</span>
+            </button>
+          ) : null}
         </div>
       </div>
     </div>
@@ -1067,6 +1138,15 @@ export default function MyQuestsView({
  >
  <span>{lang === 'ar' ? 'إلغاء الحجز' : 'Cancel Reservation'}</span>
  </button>
+
+ <button
+ type="button"
+ onClick={() => setEndWorkQuestModal(quest)}
+ className="flex-1 bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 hover:border-rose-300 font-bold text-xs py-2.5 rounded-2xl transition duration-200 cursor-pointer flex items-center justify-center gap-1 shadow-2xs"
+ >
+ <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
+ <span>{lang === 'ar' ? 'فسخ العقد' : 'Sever Contract'}</span>
+ </button>
  </div>
 
  {(() => {
@@ -1116,7 +1196,7 @@ export default function MyQuestsView({
 
  {/* Applied Pending Quests */}
  {!showHistory && (() => {
- const appliedQuests = quests.filter(q => q.applicants?.some(a => a.userId === currentUserId) && q.status === 'open');
+ const appliedQuests = quests.filter(q => (q.applicants?.some(a => a.userId === currentUserId) || q.jobApplicants?.some(a => a.applicantId === currentUserId)) && (q.status === 'open' || q.status === 'applications' || (q.status as string) === 'pending'));
  if (appliedQuests.length === 0) return null;
  return (
  <div className="space-y-4 pt-6 border-t border-slate-200">
@@ -1184,28 +1264,45 @@ export default function MyQuestsView({
  {activeTab === 'created' && (
  <div className="space-y-4">
  {displayCreatedQuests.length === 0 ? (
- <div className="bg-white py-14 px-4 rounded-3xl border border-gray-150 border-dashed text-center space-y-3 shadow-xs">
- <div className="w-12 h-12 bg-gray-50 text-gray-400 rounded-full flex items-center justify-center mx-auto">
- {showHistory ? <FolderArchive className="w-5 h-5 text-amber-500" /> : <Plus className="w-5 h-5 text-gray-400" />}
+ <div className="py-10 px-4 text-center space-y-3">
+ <div className="mx-auto flex justify-center">
+ {showHistory ? (
+ <svg className="w-24 h-24" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+ <circle cx="60" cy="60" r="50" className="fill-slate-100/90" />
+ <circle cx="60" cy="60" r="38" className="fill-slate-200/50" />
+ <path d="M36 42C36 38.6863 38.6863 36 42 36H54L60 42H78C81.3137 42 84 44.6863 84 48V78C84 81.3137 81.3137 84 78 84H42C38.6863 84 36 81.3137 36 78V42Z" fill="#FFFFFF" stroke="#64748B" strokeWidth="3" strokeLinejoin="round" />
+ <circle cx="52" cy="58" r="2.5" fill="#475569" />
+ <circle cx="68" cy="58" r="2.5" fill="#475569" />
+ <path d="M53 68C56 64 64 64 67 68" stroke="#475569" strokeWidth="2.5" strokeLinecap="round" />
+ </svg>
+ ) : (
+ <svg className="w-24 h-24" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+ <circle cx="60" cy="60" r="50" className="fill-amber-50/80" />
+ <circle cx="60" cy="60" r="38" className="fill-orange-50/60" />
+ <path d="M34 46C34 41.5817 37.5817 38 42 38H78C82.4183 38 86 41.5817 86 46V76C86 80.4183 82.4183 84 78 84H42C37.5817 84 34 80.4183 34 76V46Z" fill="#FFFFFF" stroke="#F59E0B" strokeWidth="3" />
+ <path d="M52 84L46 94L60 84" fill="#FFFFFF" stroke="#F59E0B" strokeWidth="3" strokeLinejoin="round" />
+ <circle cx="52" cy="54" r="2.5" fill="#475569" />
+ <circle cx="68" cy="54" r="2.5" fill="#475569" />
+ <path d="M53 66C56 62 64 62 67 66" stroke="#475569" strokeWidth="2.5" strokeLinecap="round" />
+ <circle cx="92" cy="42" r="3" fill="#FCD34D" />
+ <circle cx="28" cy="78" r="2" fill="#FCD34D" />
+ </svg>
+ )}
  </div>
  <h3 className="font-extrabold text-sm text-slate-800">
  {showHistory
- ? (lang === 'ar' ? 'لا توجد كويستات مؤرشفة تطابق الفلتر المختار' : 'No archived records match this filter')
- : (lang === 'ar' ? 'لم تقم بنشر أي كويست سابقاً' : 'No hosted chores listed')}
+ ? (lang === 'ar' ? 'لا توجد كويستات مؤرشفة' : 'No archived quests')
+ : (lang === 'ar' ? 'لم تطلب شيئاً بعد' : 'You haven\'t requested anything yet')}
  </h3>
- <p className="text-xs text-gray-400 max-w-sm mx-auto leading-relaxed">
- {showHistory
- ? (lang === 'ar' ? 'اختر تصنيفاً آخر من الأزرار بالأعلى لعرض السجلات الأخرى بالأرشيف.' : 'Select another category above to view archived items.')
- : (lang === 'ar' ? 'انشر طلباً لمساعدة الجيران! حدد مكافأة نقدية، ودع الرَّانَرز يلبون النداء.' : 'Post custom chores in Algeria to hire youth runner assistants today.')}
- </p>
  </div>
  ) : (
  <div className="space-y-4">
  {displayCreatedQuests.map((quest) => {
- const isAvailable = quest.status === 'open';
+ const isAvailable = quest.status === 'open' || quest.status === 'applications' || (quest.status as string) === 'pending';
  const isClaimed = quest.status === 'booked';
  const isSubmitted = quest.status === 'pending_verification';
  const isFinished = quest.status === 'completed';
+ const hasHiredWorker = !!(quest.employeeId || quest.helperId || quest.assignedRunnerId || (quest.assignedRunnerIds && quest.assignedRunnerIds.length > 0) || (quest.jobApplicants && quest.jobApplicants.some(a => a.status === 'accepted')));
 
  return (
  <div
@@ -1272,7 +1369,7 @@ export default function MyQuestsView({
 
  
   {/* Long-Term Contract Summary Card (Rule 9) */}
-  {quest.questType === "long_term" && (
+  {(quest.questType === "long_term" || quest.status === "active_employment" || quest.status === "ending" || quest.status === "disputed" || quest.status === "active" || quest.status === "booked" || quest.helperId === currentUserId || quest.employeeId === currentUserId || quest.assignedRunnerId === currentUserId) && (
     <div className="bg-sky-50/80 dark:bg-sky-950/30 border border-sky-200/80 dark:border-sky-800/80 rounded-2xl p-4 text-xs space-y-2 text-start my-2">
       <div className="font-extrabold text-sky-900 dark:text-sky-200 flex items-center justify-between border-b border-sky-200/60 dark:border-sky-800/60 pb-2">
         <span className="flex items-center gap-1.5">
@@ -1311,6 +1408,53 @@ export default function MyQuestsView({
         <div>
           <span className="text-slate-400 block text-[10px]">{lang === "ar" ? "تاريخ النهاية:" : "End Date:"}</span>
           <span className="font-bold text-slate-800 dark:text-slate-200">{quest.terminatedAt ? formatArabicDate(quest.terminatedAt) : (quest.endDate ? formatArabicDate(quest.endDate) : (lang === "ar" ? "مستمر / غير محدد" : "Ongoing / Indefinite"))}</span>
+        </div>
+        {/* Contract Termination Row */}
+        <div className="col-span-2 pt-2 border-t border-sky-200/60 dark:border-sky-800/60 mt-1">
+          {quest.status === "ending" ? (
+            quest.endRequestedBy === currentUserId ? (
+              <div className="p-3 bg-amber-100/80 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 rounded-xl text-xs font-black text-center space-y-2">
+                <p>{lang === "ar" ? "تم فسخ العقد وفك الارتباط. المنشور بانتظار إطلاع الطرف الآخر لنقله للأرشيف." : "Contract severed & unlinked. Post awaiting partner read receipt."}</p>
+                <button
+                  type="button"
+                  onClick={() => onConfirmEndWork && onConfirmEndWork(quest.id)}
+                  className="w-full bg-amber-600 hover:bg-amber-700 text-white py-1.5 rounded-lg font-black text-[11px] cursor-pointer transition-all"
+                >
+                  {lang === "ar" ? "نقل للأرشيف 📁" : "Move to Archive 📁"}
+                </button>
+              </div>
+            ) : (
+              <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-xl space-y-2 text-start">
+                <p className="text-xs font-black text-rose-800 dark:text-rose-200 text-center">
+                  {lang === "ar" ? "وصلك إشعار فسخ العقد وفك الارتباط" : "Contract termination & unlinking notice"}
+                </p>
+                <div className="bg-white/80 dark:bg-rose-900/40 p-2 rounded-lg border border-rose-200/60 dark:border-rose-800/60 text-right">
+                  <span className="text-[10px] text-rose-600 dark:text-rose-300 font-bold block">{lang === "ar" ? "السبب الموضح بالطلب:" : "Reason provided:"}</span>
+                  <p className="text-xs font-extrabold text-slate-800 dark:text-slate-100">{quest.endReason || (lang === "ar" ? "لم يحدد سبب إضافي" : "No reason provided")}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onConfirmEndWork && onConfirmEndWork(quest.id)}
+                  className="w-full bg-rose-600 hover:bg-rose-700 text-white font-black text-xs py-2 rounded-xl shadow-xs transition-all cursor-pointer text-center"
+                >
+                  {lang === "ar" ? "تأكيد الاطلاع 📁" : "Acknowledge 📁"}
+                </button>
+              </div>
+            )
+          ) : quest.status === "disputed" ? (
+            <div className="p-2.5 bg-rose-100/80 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200 rounded-xl text-xs font-black text-center">
+              {lang === "ar" ? "العقد في حالة نزاع حالياً - جاري معالجته من قِبل الإدارة" : "Contract in dispute"}
+            </div>
+          ) : (quest.employeeId || quest.helperId || quest.assignedRunnerId || (quest.assignedRunnerIds && quest.assignedRunnerIds.length > 0)) && (quest.status === "active_employment" || quest.status === "active" || quest.status === "booked" || quest.questType === "long_term") && quest.status !== "completed" && !quest.archived ? (
+            <button
+              type="button"
+              onClick={() => setEndWorkQuestModal(quest)}
+              className="w-full bg-white dark:bg-slate-900 border border-rose-300 hover:border-rose-500 text-rose-600 dark:text-rose-400 font-black text-xs py-2 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs hover:bg-rose-50 dark:hover:bg-rose-950/30"
+            >
+              <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
+              <span>{lang === "ar" ? "فسخ العقد" : "Sever Contract"}</span>
+            </button>
+          ) : null}
         </div>
       </div>
     </div>
@@ -1402,7 +1546,48 @@ export default function MyQuestsView({
  })()}
 
  {/* Applicants pipeline list */}
- {isAvailable && quest.applicants && quest.applicants.length > 0 && (
+ {(() => {
+ const combinedApps: Applicant[] = [
+ ...(quest.applicants || []),
+ ...((quest.jobApplicants || []).map(ja => ({
+ userId: ja.applicantId,
+ name: ja.applicantName,
+ avatar: ja.applicantAvatar,
+ phone: ja.applicantPhone || "",
+ rating: 5.0,
+ questsCompleted: 0
+ })))
+ ].filter((app, idx, self) => idx === self.findIndex(a => a.userId === app.userId));
+
+ if (combinedApps.length === 0) return null;
+ if (!isAvailable && quest.status !== "applications" && quest.status !== "open" && (quest.status as string) !== "pending") return null;
+
+ return (
+ <div className="p-4 bg-slate-50 border border-slate-150/50 rounded-2xl space-y-3.5 text-start">
+ <div className="text-[10px] font-black text-slate-700 flex items-center gap-2 uppercase tracking-wider">
+ <span className="relative flex h-2 w-2">
+ <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#FF3B7C] opacity-75"></span>
+ <span className="relative inline-flex rounded-full h-2 w-2 bg-[#FF3B7C]"></span>
+ </span>
+ <span>{lang === "ar" ? `المتقدمون لتنفيذ المهمة (${combinedApps.length})` : `Applicants (${combinedApps.length})`}</span>
+ </div>
+ <div className="flex flex-wrap gap-2.5">
+ {combinedApps.map((app) => (
+ <button
+ key={app.userId}
+ onClick={() => setSelectedApplicantData({ quest, applicant: app })}
+ className="flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 py-2 px-4 rounded-full text-xs font-extrabold transition-all duration-200 cursor-pointer shadow-2xs hover:shadow-xs hover:border-slate-400"
+ >
+ <img src={app.avatar} alt={app.name} className="w-5.5 h-5.5 rounded-full object-cover shadow-2xs border border-white" />
+ <span className="text-slate-800">{app.name}</span>
+ <span className="text-[10px] text-amber-500 font-mono font-black flex items-center gap-0.5"> {app.rating || "5.0"}</span>
+ </button>
+ ))}
+ </div>
+ </div>
+ );
+ })()}
+ {false && (
  <div className="p-4 bg-slate-50 border border-slate-150/50 rounded-2xl space-y-3.5 text-start">
  <div className="text-[10px] font-black text-slate-700 flex items-center gap-2 uppercase tracking-wider">
  <span className="relative flex h-2 w-2">
@@ -2273,18 +2458,12 @@ export default function MyQuestsView({
  <div className="w-12 h-12 bg-amber-50 rounded-full flex items-center justify-center mx-auto text-amber-500">
  <Star className="w-6 h-6 fill-amber-500 text-amber-500" />
  </div>
- 
- <h3 className="text-sm font-black uppercase text-[#1F2A44]">
- {lang === 'ar' ? 'تقييم أداء المنفذ' : 'Review Worker'}
- </h3>
- 
- <p className="text-xs text-slate-400 font-bold leading-normal">
- {lang === 'ar' 
- ? 'اكتب تقييمك وملاحظاتك حول إنجاز المهمة.' 
- : 'Submit your star rating and review.'}
- </p>
 
  {/* Stars selection */}
+ <div className="space-y-1 text-center">
+ <label className="text-xs font-black text-[#1F2A44] block">
+ {lang === 'ar' ? 'كم نجمة يستحق شريكك؟' : 'How many stars does your partner deserve?'}
+ </label>
  <div className="flex items-center justify-center gap-2 pt-1">
  {[1, 2, 3, 4, 5].map((starVal) => (
  <button
@@ -2301,16 +2480,17 @@ export default function MyQuestsView({
  </button>
  ))}
  </div>
+ </div>
 
  {/* Testimonial comments text shape */}
  <div className="space-y-1 text-right">
- <label className="text-[9px] font-black text-gray-400 uppercase">
- {lang === 'ar' ? 'كلمة شكر وشهادة عمل بالتجربة' : 'Godfather Testimonial Comment'}
+ <label className="text-xs font-black text-[#1F2A44] block">
+ {lang === 'ar' ? 'التفاصيل' : 'Details'}
  </label>
  <textarea
  rows={2}
  maxLength={140}
- placeholder={lang === 'ar' ? 'مثال: أداء رائع وسريع في الموعد أنصح به!' : 'e.g. Excellent work and super polite! Highest yield recommendation.'}
+ placeholder={lang === 'ar' ? 'اكتب التفاصيل والملاحظات...' : 'Write details and feedback...'}
  value={ratingComment}
  onChange={(e) => setRatingComment(e.target.value)}
  className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold focus:outline-none"
@@ -2326,7 +2506,7 @@ export default function MyQuestsView({
  }}
  className="w-full bg-[#1F2A44] hover:bg-[#1E2E4E] text-[#FFD34D] font-extrabold text-xs py-3 rounded-xl transition-all cursor-pointer shadow-md shadow-[#1F2A44]/15"
  >
- {lang === 'ar' ? 'تأكيد التسليم النهائي وحفظ التقييم' : 'Finalize Contract & Write Review'}
+ {lang === 'ar' ? 'تأكيد' : 'Confirm'}
  </button>
  <button
  onClick={() => setRatingQuestId(null)}
@@ -2456,7 +2636,88 @@ export default function MyQuestsView({
  )}
  </AnimatePresence>
 
- </div>
+ 
+      {/* End Work Modal */}
+      {endWorkQuestModal && (() => {
+        const isModalEmployer = endWorkQuestModal.creatorId === currentUserId;
+        return (
+          <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4 z-[100005] font-sans">
+            <div 
+              className="bg-white dark:bg-[#0A1128] text-slate-900 dark:text-white border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4 text-right"
+              style={{ direction: lang === 'ar' ? 'rtl' : 'ltr' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                <h3 className="font-black text-lg text-rose-600 dark:text-rose-400 flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5" />
+                  <span>
+                    {lang === 'ar' ? 'فسخ العقد' : 'Sever Contract'}
+                  </span>
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setEndWorkQuestModal(null)}
+                  className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center hover:bg-slate-200 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <p className="text-xs font-bold text-slate-600 dark:text-slate-300 leading-relaxed">
+                {isModalEmployer
+                  ? (lang === 'ar'
+                      ? 'سيتم إرسال طلب إنهاء الخدمة للعامل للموافقة عليه وتسوية كافة المستحقات وتعديل حالة العقد.'
+                      : 'A service termination request will be sent to the employee for approval and settlement.')
+                  : (lang === 'ar'
+                      ? 'سيتم إرسال طلب الاستقالة وفسخ العقد لصاحب العمل للموافقة عليه وإخلاء الطرف واسترجاع حالة حسابك كمتاح للعمل.'
+                      : 'A resignation request will be sent to the employer for approval and clearance.')}
+              </p>
+
+              <div className="space-y-1.5">
+                <label className="block text-[11px] font-extrabold text-slate-700 dark:text-slate-300">
+                  {isModalEmployer
+                    ? (lang === 'ar' ? 'سبب إنهاء الخدمة (اختياري):' : 'Reason for service termination (optional):')
+                    : (lang === 'ar' ? 'سبب الاستقالة (اختياري):' : 'Reason for resignation (optional):')}
+                </label>
+                <textarea
+                  value={endWorkReasonText}
+                  onChange={(e) => setEndWorkReasonText(e.target.value)}
+                  placeholder={
+                    isModalEmployer
+                      ? (lang === 'ar' ? 'مثال: انتهاء فترة المشروع، عدم الحاجة للخدمة حالياً...' : 'e.g., Project finished...')
+                      : (lang === 'ar' ? 'مثال: الانتقال لوظيفة جديدة، عدم التفرغ...' : 'e.g., Personal reasons, moving to new role...')
+                  }
+                  className="w-full bg-slate-50 dark:bg-[#162035] border border-slate-200 dark:border-slate-700 rounded-2xl p-3 text-xs font-medium outline-none focus:border-rose-500 dark:focus:border-rose-500 resize-none h-24 text-right"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onRequestEndWork) {
+                      onRequestEndWork(endWorkQuestModal.id, endWorkReasonText);
+                    }
+                    setEndWorkQuestModal(null);
+                    setEndWorkReasonText('');
+                  }}
+                  className="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs py-3 rounded-2xl shadow-md transition-all cursor-pointer text-center"
+                >
+                  {lang === 'ar' ? 'تأكيد فسخ العقد' : 'Confirm Severing Contract'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEndWorkQuestModal(null)}
+                  className="px-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-extrabold text-xs py-3 rounded-2xl transition-all cursor-pointer"
+                >
+                  {lang === 'ar' ? 'إلغاء' : 'Cancel'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+</div>
  </PullToRefresh>
  );
 }

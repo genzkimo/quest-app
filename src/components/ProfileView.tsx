@@ -64,6 +64,8 @@ import { formatJoinedDate, formatReviewDate } from '../utils/dateFormatter';
 // رابط الخادم الوسيط (غيّره إلى رابط Render الخاص بك بعد الرفع)
 const API_BASE_URL = 'https://quest-app-jne8.onrender.com';
 
+
+
 interface ProfileViewProps {
  userProfile: UserProfile;
  badges: Badge[];
@@ -939,7 +941,7 @@ export default function ProfileView({
  setKycAiResult(null);
 
  try {
- const response = await fetch(`${API_BASE_URL}/api/kyc/verify`, {
+const response = await fetch(`${API_BASE_URL}/api/kyc/verify`, {
  method: 'POST',
  headers: { 'Content-Type': 'application/json' },
  body: JSON.stringify({
@@ -1266,7 +1268,7 @@ export default function ProfileView({
  setRefillLoading(true);
 
  try {
- const response = await fetch(`${API_BASE_URL}/api/wallet/initiate-paypal-refill`, {
+const response = await fetch(`${API_BASE_URL}/api/wallet/initiate-paypal-refill`, {
  method: 'POST',
  headers: { 'Content-Type': 'application/json' },
  body: JSON.stringify({
@@ -1366,7 +1368,7 @@ export default function ProfileView({
 
  // Step 2 & 3: API call to the server-side validation which handles database logging and balance updates securely
  try {
- const response = await fetch(`${API_BASE_URL}/api/wallet/refill-manual`, {
+const response = await fetch(`${API_BASE_URL}/api/wallet/refill-manual`, {
  method: 'POST',
  headers: { 'Content-Type': 'application/json' },
  body: JSON.stringify({
@@ -1517,7 +1519,7 @@ export default function ProfileView({
  setOtpError('');
 
  try {
- const response = await fetch(`${API_BASE_URL}/api/wallet/verify-otp-refill`, {
+const response = await fetch(`${API_BASE_URL}/api/wallet/verify-otp-refill`, {
  method: 'POST',
  headers: { 'Content-Type': 'application/json' },
  body: JSON.stringify({
@@ -4248,7 +4250,155 @@ export default function ProfileView({
  </div>
  </div>
 
- {/* Admin secure command tile */}
+ 
+  {/* Current Employment & Employment History Section */}
+  <div className="space-y-3 text-right">
+    {/* Current Employment Card for Worker OR Active Employees Count for Employer */}
+    {(() => {
+      const activeHiredEmployees = quests?.filter(q =>
+        q.questType === "long_term" &&
+        q.creatorId === userProfile.id &&
+        (q.status === "active_employment" || q.status === "active" || q.status === "ending" || q.status === "disputed") &&
+        !q.archived
+      ) || [];
+
+      const workerCurrentJob = quests?.find(q =>
+        q.questType === "long_term" &&
+        (q.employeeId === userProfile.id || q.helperId === userProfile.id) &&
+        (q.status === "active_employment" || q.status === "active" || q.status === "ending" || q.status === "disputed") &&
+        !q.archived
+      );
+
+      const isEmployerProfile = activeHiredEmployees.length > 0 || (userProfile.questsCreated && userProfile.questsCreated > 0 && !workerCurrentJob);
+
+      if (isEmployerProfile) {
+        return (
+          <div className="bg-white border border-sky-150 rounded-2xl p-4 shadow-xs space-y-3">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+              <span className="text-[10px] font-black uppercase text-indigo-800 bg-indigo-50 px-2.5 py-0.5 rounded-full flex items-center gap-1 border border-indigo-100">
+                <Building2 className="w-3 h-3 text-indigo-600" />
+                {lang === "ar" ? "عدد الموظفين حالياً" : "Current Employees"}
+              </span>
+              <span className="text-[10px] font-extrabold text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-200">
+                {activeHiredEmployees.length} {lang === "ar" ? (activeHiredEmployees.length === 1 ? "موظف نشط" : "موظفين نشطين") : "Active Employee(s)"}
+              </span>
+            </div>
+
+            {activeHiredEmployees.length > 0 ? (
+              <div className="space-y-2 pt-1">
+                {activeHiredEmployees.map(empJob => (
+                  <div key={empJob.id} className="bg-slate-50/80 border border-slate-200/70 rounded-xl p-2.5 text-xs space-y-1">
+                    <div className="flex items-center justify-between">
+                      <h5 className="font-extrabold text-[#1F2A44]">{empJob.title}</h5>
+                      <span className="text-[9px] font-extrabold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                        {empJob.status === "ending"
+                          ? (lang === "ar" ? "قيد طلب الإنهاء" : "Ending Pending")
+                          : empJob.status === "disputed"
+                          ? (lang === "ar" ? "نزاع قائم" : "Disputed")
+                          : (lang === "ar" ? "عقد نشط" : "Active")}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] text-gray-500 font-bold">
+                      <span>{empJob.helperName ? `${lang === "ar" ? "الموظف: " : "Employee: "}${empJob.helperName}` : (lang === "ar" ? "عامل مُعيّن" : "Assigned Worker")}</span>
+                      <span className="text-emerald-600 font-extrabold">{empJob.cashReward} د.ج</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[11px] text-gray-400 font-semibold py-1">
+                {lang === "ar" ? "لا يوجد موظفون حالياً تحت كفالتك أو وظائفك المعلنة." : "No active employees currently assigned under your published listings."}
+              </p>
+            )}
+          </div>
+        );
+      }
+
+      return (
+        <div className="bg-white border border-sky-150 rounded-2xl p-4 shadow-xs space-y-2">
+          <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+            <span className="text-[10px] font-black uppercase text-sky-800 bg-sky-50 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+              <Briefcase className="w-3 h-3 text-sky-600" />
+              {lang === "ar" ? "العمل الحالي" : "Current Employment"}
+            </span>
+            {workerCurrentJob ? (
+              <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                {workerCurrentJob.status === "ending"
+                  ? (lang === "ar" ? "قيد طلب الإنهاء" : "Termination Pending")
+                  : workerCurrentJob.status === "disputed"
+                  ? (lang === "ar" ? "نزاع قائم" : "Disputed")
+                  : (lang === "ar" ? "عقد نشط (ACTIVE)" : "Active Employment")}
+              </span>
+            ) : (
+              <span className="text-[10px] font-extrabold text-sky-700 bg-sky-50 px-2.5 py-0.5 rounded-full border border-sky-200">
+                {lang === "ar" ? "متاح للعمل (AVAILABLE)" : "Available for Work"}
+              </span>
+            )}
+          </div>
+
+          {workerCurrentJob ? (
+            <div className="text-xs space-y-1 pt-1">
+              <h5 className="font-extrabold text-[#1F2A44]">{workerCurrentJob.title}</h5>
+              <div className="flex items-center justify-between text-[11px] text-gray-500 font-bold">
+                <span>{workerCurrentJob.creatorName ? `${lang === "ar" ? "صاحب العمل: " : "Employer: "}${workerCurrentJob.creatorName}` : ""}</span>
+                <span className="text-emerald-600 font-extrabold">{workerCurrentJob.cashReward} د.ج / {workerCurrentJob.salaryPeriod === "monthly" ? (lang === "ar" ? "شهرياً" : "Monthly") : workerCurrentJob.salaryPeriod === "weekly" ? (lang === "ar" ? "أسبوعياً" : "Weekly") : (lang === "ar" ? "يومياً" : "Daily")}</span>
+              </div>
+            </div>
+          ) : (
+            <p className="text-[11px] text-gray-400 font-semibold py-1">
+              {lang === "ar" ? "لا يوجد عمل حالي قائم. حسابك متاح للتقديم على وظائف جديدة." : "No current employment active. Profile is available for new applications."}
+            </p>
+          )}
+        </div>
+      );
+    })()}
+
+    {/* Employment History List */}
+    {(() => {
+      const pastJobs = quests?.filter(q =>
+        q.questType === "long_term" &&
+        (q.employeeId === userProfile.id || q.helperId === userProfile.id || q.creatorId === userProfile.id) &&
+        (q.archived || q.status === "completed" || q.status === "terminated" || q.status === "expired")
+      ) || [];
+
+      if (pastJobs.length === 0) return null;
+
+      return (
+        <div className="bg-white border border-gray-150 rounded-2xl p-4 shadow-xs space-y-2.5">
+          <h4 className="text-[11px] font-black text-[#1F2A44] uppercase tracking-wider flex items-center gap-1.5 border-b border-gray-100 pb-2">
+            <Clock className="w-3.5 h-3.5 text-slate-500" />
+            <span>{lang === "ar" ? "سجل الأعمال والخبرات الوظيفية السابقة" : "Employment History"}</span>
+          </h4>
+
+          <div className="space-y-2">
+            {pastJobs.map(job => (
+              <div key={job.id} className="bg-slate-50/70 border border-slate-200/60 rounded-xl p-3 text-xs space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="font-extrabold text-[#1F2A44]">{job.title}</span>
+                  <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-md bg-slate-200/80 text-slate-700">
+                    {job.status === "expired"
+                      ? (lang === "ar" ? "منتهي الصلاحية" : "Expired")
+                      : (lang === "ar" ? "منتهي ومؤرشف" : "Ended & Archived")}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-[10px] text-gray-500 font-bold">
+                  <span>{job.creatorName ? `${lang === "ar" ? "صاحب العمل: " : "Employer: "}${job.creatorName}` : ""}</span>
+                  <span>{job.cashReward} د.ج</span>
+                </div>
+                {job.terminatedAt && (
+                  <div className="text-[9.5px] text-gray-400 font-semibold pt-0.5">
+                    {lang === "ar" ? "تاريخ الانتهاء: " : "Ended: "}{new Date(job.terminatedAt).toLocaleDateString(lang === "ar" ? "ar-DZ" : "en-US")}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    })()}
+  </div>
+
+  {/* Admin secure command tile */}
  {isAdminUser && (
  <div className="bg-[#1F2A44] border-2 border-[#FFD34D] rounded-3xl p-5 shadow-lg flex items-center justify-between text-white animate-pulse">
  <div className="space-y-1 text-right">

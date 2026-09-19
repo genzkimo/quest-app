@@ -29,6 +29,7 @@ import MapView from './components/MapView';
 import LeaderboardView from './components/LeaderboardView';
 import MyQuestsView from './components/MyQuestsView';
 import ProfileView from './components/ProfileView';
+
 import PublicProfileView from './components/PublicProfileView';
 import ReciprocalRatingModal from './components/ReciprocalRatingModal';
 import NotificationScreen, { NotificationDoc } from './components/NotificationScreen';
@@ -575,11 +576,38 @@ export default function App() {
  const updatedQuest: Quest = {
  ...quest,
  status: 'expired',
- archived: true
+ archived: true,
+ terminatedAt: new Date().toISOString(),
+ terminatedBy: 'system'
  };
+ updatedList[i] = updatedQuest;
+ hasChanges = true;
+
+ const workerId = quest.employeeId || quest.helperId || quest.assignedRunnerId;
+ if (workerId) {
+ if (auth.currentUser) {
+ try {
+ await setDoc(doc(db, 'users', workerId), { isAvailable: true }, { merge: true });
+ } catch (e) {
+ console.warn("Could not reset worker availability on contract expiry:", e);
+ }
+ }
+ if (userProfile && workerId === userProfile.id) {
+ syncProfile({ ...userProfile, isAvailable: true });
+ }
+ }
+
  if (auth.currentUser) {
  try {
  await setDoc(doc(db, 'quests', quest.id), cleanData(updatedQuest));
+ if (quest.contractId) {
+ await setDoc(doc(db, 'contracts', quest.contractId), {
+ status: 'expired',
+ archived: true,
+ terminatedAt: new Date().toISOString(),
+ terminatedBy: 'system'
+ }, { merge: true });
+ }
  } catch (e) {
  console.error(`Failed to mark fixed-term job ${quest.id} as expired:`, e);
  }
@@ -698,6 +726,56 @@ export default function App() {
 
  return () => clearInterval(intervalId);
  }, [quests, userProfile]);
+
+  // Auto-repair & reconcile user availability and active quest flags against actual active quests
+  useEffect(() => {
+    if (!userProfile?.id || !loadedQuests) return;
+
+    const hasActiveWorkerAssignment = quests.some(q => 
+      (q.status === 'active' || q.status === 'booked' || q.status === 'in_progress' || q.status === 'assigned') &&
+      (q.helperId === userProfile.id || q.assignedRunnerId === userProfile.id || q.employeeId === userProfile.id || (q.assignedRunnerIds && q.assignedRunnerIds.includes(userProfile.id)))
+    );
+
+    const activeCreatedCount = quests.filter(q => 
+      q.creatorId === userProfile.id && 
+      !['completed', 'cancelled', 'cancelled_by_timeout', 'stale_cleared', 'expired', 'terminated', 'archived'].includes(q.status) &&
+      !q.archived
+    ).length;
+
+    const shouldBeAvailable = !hasActiveWorkerAssignment;
+    const shouldHaveActiveQuest = activeCreatedCount > 0;
+
+    let needsProfileUpdate = false;
+    const updatedProfile = { ...userProfile };
+
+    if (userProfile.isAvailable !== shouldBeAvailable) {
+      updatedProfile.isAvailable = shouldBeAvailable;
+      needsProfileUpdate = true;
+    }
+
+    if (userProfile.hasActiveQuest !== shouldHaveActiveQuest) {
+      updatedProfile.hasActiveQuest = shouldHaveActiveQuest;
+      needsProfileUpdate = true;
+    }
+
+    if (needsProfileUpdate) {
+      console.log("Auto-repairing user profile availability/active quest flags:", {
+        isAvailable: shouldBeAvailable,
+        hasActiveQuest: shouldHaveActiveQuest
+      });
+
+      setUserProfile(updatedProfile);
+
+      if (auth.currentUser) {
+        setDoc(doc(db, 'users', userProfile.id), { 
+          isAvailable: shouldBeAvailable,
+          hasActiveQuest: shouldHaveActiveQuest
+        }, { merge: true }).catch(err => {
+          console.warn("Could not sync auto-repaired availability to Firestore:", err);
+        });
+      }
+    }
+  }, [quests, userProfile?.id, userProfile?.isAvailable, userProfile?.hasActiveQuest, loadedQuests]);
 
  // Listen to Geolocator status shifts via event listener without continuous polling loops
  useEffect(() => {
@@ -1402,6 +1480,7 @@ export default function App() {
  const existingQ = quests.find(prev => prev.id === q.id);
  if (!existingQ) return true; // Brand new quest!
  return existingQ.status !== q.status ||
+  existingQ.archived !== q.archived ||
  existingQ.flagsCount !== q.flagsCount ||
  existingQ.helperId !== q.helperId ||
  existingQ.assignedRunnerId !== q.assignedRunnerId ||
@@ -1971,33 +2050,30 @@ export default function App() {
 
 
 
- const verifyGpsHardwareAndExecute = async (
- actionType: 'publish' | 'book',
- params: any,
- onPassed: (coords: { lat: number; lng: number }) => void
- ) => {
- if (navigator.geolocation) {
- navigator.geolocation.getCurrentPosition(
- (position) => {
- const coords = { lat: position.coords.latitude, lng: position.coords.longitude };
- setUserLoc(coords);
- Geolocator.saveCachedLocation(coords.lat, coords.lng);
- onPassed(coords);
- },
- (error) => {
- console.warn("Geolocation fallback failed:", error);
- showToast(userProfile?.language === 'ar' ? ' لا يمكن حجز أو نشر الكويست إلا بعد تفعيل خدمة تحديد الموقع (GPS)' : ' Cannot book or publish quest without enabling GPS location service');
- },
- {
- enableHighAccuracy: true, // Demands pure physical GPS hardware sensors
- timeout: 20000,
- maximumAge: 0 // Always fetch fresh, high-accuracy GPS coordinates
- }
- );
- } else {
- showToast(userProfile?.language === 'ar' ? ' شغل gps وفقك' : ' GPS is not supported on this device');
- }
- };
+  const verifyGpsHardwareAndExecute = async (
+    actionType: 'publish' | 'book',
+    params: any,
+    onPassed: (coords: { lat: number; lng: number }) => void
+  ) => {
+    try {
+      const loc = await Geolocator.getAccuratePhysicalLocation();
+      if (loc && loc.lat && loc.lng) {
+        const coords = { lat: loc.lat, lng: loc.lng };
+        setUserLoc(coords);
+        Geolocator.saveCachedLocation(coords.lat, coords.lng);
+        onPassed(coords);
+        return;
+      }
+      const fallbackLoc = userLoc || Geolocator.getCachedLocation() || { lat: 36.75288, lng: 3.05858 };
+      setUserLoc(fallbackLoc);
+      onPassed(fallbackLoc);
+    } catch (err: any) {
+      console.warn("verifyGpsHardwareAndExecute notice:", err);
+      const fallbackLoc = userLoc || Geolocator.getCachedLocation() || { lat: 36.75288, lng: 3.05858 };
+      setUserLoc(fallbackLoc);
+      onPassed(fallbackLoc);
+    }
+  };
 
 
 
@@ -2008,10 +2084,15 @@ export default function App() {
  const targetQuest = quests.find(q => q.id === questId);
  if (!targetQuest) return;
 
- // Calculate dynamic implicit fee: 5% of cashReward (min 35 DA, max 2000 DA)
- const implicitPlatformFee = calculateBookingFee(targetQuest.cashReward, targetQuest.questType);
+ // Check if first 3 bookings (free promo)
+ const userBookingsCount = quests.filter(q => q.applicants?.some(a => a.userId === userProfile.id) || q.helperId === userProfile.id || q.employeeId === userProfile.id).length;
+ const isFreeBooking = userBookingsCount < 3;
 
- if (userProfile.tokenBalance < implicitPlatformFee) {
+ // Calculate dynamic implicit fee: 5% of cashReward (min 35 DA, max 2000 DA) - Free for first 3 bookings
+ const rawPlatformFee = calculateBookingFee(targetQuest.cashReward, targetQuest.questType);
+ const implicitPlatformFee = isFreeBooking ? 0 : rawPlatformFee;
+
+ if (!isFreeBooking && userProfile.tokenBalance < implicitPlatformFee) {
  setRequiredRefillFee(implicitPlatformFee);
  setShowKycRefillPromptModal(true);
  return;
@@ -2055,11 +2136,28 @@ export default function App() {
  phone: userProfile.phone || ''
  };
 
+ const newJobApplicant = {
+ id: 'app_' + Date.now() + '_' + userProfile.id,
+ jobId: questId,
+ applicantId: userProfile.id,
+ applicantName: userProfile.name,
+ applicantAvatar: userProfile.avatar,
+ applicantPhone: userProfile.phone || '',
+ appliedAt: new Date().toISOString(),
+ status: 'pending' as const
+ };
+
  const updatedQuests = quests.map(q => {
  if (q.id === questId) {
+ const currentApps = q.applicants || [];
+ const currentJobApps = q.jobApplicants || [];
+ const filteredApps = currentApps.filter(a => a.userId !== userProfile.id);
+ const filteredJobApps = currentJobApps.filter(a => a.applicantId !== userProfile.id);
  return {
  ...q,
- applicants: [...(q.applicants || []), newApplicant]
+ applicants: [...filteredApps, newApplicant],
+ jobApplicants: [...filteredJobApps, newJobApplicant],
+ status: (q.status === 'open' || !q.status) ? 'applications' : q.status
  };
  }
  return q;
@@ -2068,8 +2166,8 @@ export default function App() {
  syncQuests(updatedQuests);
 
  showToast(userProfile.language === 'ar' 
- ? ' تم تقديم طلبك بنجاح.. في انتظار اختيار صاحب العمل ' 
- : ' Application submitted successfully.. awaiting creator selection '
+ ? (isFreeBooking ? '🎉 تم تقديم طلبك بنجاح مجاناً! (عرض خاص: أول 3 حجوزات مجانية بالكامل) .. في انتظار قبول صاحب العمل' : ' تم تقديم طلبك بنجاح.. في انتظار اختيار صاحب العمل ') 
+ : (isFreeBooking ? '🎉 Application submitted for free! (First 3 bookings free) .. awaiting creator selection' : ' Application submitted successfully.. awaiting creator selection ')
  );
 
  // Realtime notification alert for owner (chat will unlock after creator accepts)
@@ -2727,8 +2825,8 @@ export default function App() {
  console.warn("Could not set runner availability to true:", err);
  }
  
- // Guest fallback if current user is one of the runners
- if (!auth.currentUser && runnerId === userProfile.id) {
+ // Sync profile availability if current user is one of the runners
+ if (userProfile && runnerId === userProfile.id) {
  syncProfile({
  ...userProfile,
  isAvailable: true
@@ -2841,8 +2939,8 @@ export default function App() {
  console.warn("Could not set runner availability to true:", err);
  }
  
- // Guest fallback if current user is one of the runners
- if (!auth.currentUser && runnerId === userProfile.id) {
+ // Sync profile availability if current user is one of the runners
+ if (userProfile && runnerId === userProfile.id) {
  syncProfile({
  ...userProfile,
  isAvailable: true
@@ -3097,14 +3195,14 @@ export default function App() {
  };
 
  // Callback 5: Edit Quest
- const handleRequestEndWork = async (questId: string, reason?: string) => {
+  const handleRequestEndWork = async (questId: string, reason?: string) => {
     if (!userProfile) return;
     const targetQuest = quests.find(q => q.id === questId);
     if (!targetQuest) return;
 
     const isCreator = targetQuest.creatorId === userProfile.id;
-    const workerId = targetQuest.employeeId || targetQuest.helperId || targetQuest.assignedRunnerId || (targetQuest.assignedRunnerIds && targetQuest.assignedRunnerIds[0]);
-    const isWorker = workerId === userProfile.id;
+    const workerId = targetQuest.employeeId || targetQuest.helperId || targetQuest.assignedRunnerId || (targetQuest.assignedRunnerIds && targetQuest.assignedRunnerIds[0]) || (targetQuest.jobApplicants && targetQuest.jobApplicants.find(a => a.status === 'hired')?.applicantId);
+    const isWorker = workerId === userProfile.id || targetQuest.helperId === userProfile.id || targetQuest.assignedRunnerId === userProfile.id || targetQuest.employeeId === userProfile.id || targetQuest.assignedRunnerIds?.includes(userProfile.id);
 
     if (!isCreator && !isWorker) return;
 
@@ -3115,11 +3213,25 @@ export default function App() {
       status: "ending",
       endRequestedBy: userProfile.id,
       endReason: reason || "",
-      endRequestedAt: new Date().toISOString()
+      endRequestedAt: new Date().toISOString(),
+      terminatedAt: new Date().toISOString(),
+      terminatedBy: isCreator ? "employer" : "employee"
     };
 
     const updatedQuests = quests.map(q => q.id === questId ? updatedQuest : q);
     syncQuests(updatedQuests);
+
+    // Immediately unbind worker availability so worker is free for new jobs
+    if (workerId) {
+      try {
+        await setDoc(doc(db, "users", workerId), { isAvailable: true }, { merge: true });
+      } catch (e) {
+        console.warn("Could not reset worker availability:", e);
+      }
+      if (userProfile && workerId === userProfile.id) {
+        syncProfile({ ...userProfile, isAvailable: true });
+      }
+    }
 
     if (auth.currentUser) {
       try {
@@ -3131,7 +3243,8 @@ export default function App() {
       if (targetQuest.contractId) {
         try {
           await setDoc(doc(db, "contracts", targetQuest.contractId), {
-            status: "ending",
+            status: "terminated",
+            terminatedAt: new Date().toISOString(),
             terminatedBy: isCreator ? "employer" : "employee",
             terminationReason: reason || ""
           }, { merge: true });
@@ -3142,13 +3255,13 @@ export default function App() {
     }
 
     if (recipientId) {
-      const msgAr = `طلب ${userProfile.name} إنهاء العمل لـ "${targetQuest.title}". يرجى مراجعة الطلب للتأكيد أو المتابعة.`;
-      const msgEn = `${userProfile.name} requested to end work for "${targetQuest.title}". Please review to confirm or continue.`;
+      const msgAr = `تم فسخ العقد لـ "${targetQuest.title}" بواسطة ${userProfile.name}. السبب المذكور: ${reason || 'لا يوجد'}. يرجى الاطلاع على المنشور وتأكيد نقله للأرشيف.`;
+      const msgEn = `Contract for "${targetQuest.title}" was severed by ${userProfile.name}. Reason: ${reason || 'None'}. Please view post & archive.`;
       
       addNotification(recipientId, userProfile.language === "ar" ? msgAr : msgEn, questId, "warning");
       sendPushNotification(
         recipientId,
-        userProfile.language === "ar" ? "طلب إنهاء العمل" : "End of Work Request",
+        userProfile.language === "ar" ? "إشعار فسخ العقد" : "Contract Severed Notice",
         userProfile.language === "ar" ? msgAr : msgEn,
         { questId }
       );
@@ -3156,8 +3269,8 @@ export default function App() {
 
     showToast(
       userProfile.language === "ar"
-        ? "تم تقديم طلب إنهاء العمل إلى الطرف الآخر بانتظار التأكيد."
-        : "End of work request sent to the other party awaiting confirmation."
+        ? "تم فسخ العقد وفك الارتباط بنجاح. تم إرسال السبب بالمنشور للطرف الآخر للاطلاع والأرشفة."
+        : "Contract severed & unlinked. Reason posted to partner for review & archiving."
     );
   };
 
@@ -3167,10 +3280,15 @@ export default function App() {
     if (!targetQuest) return;
 
     const isCreator = targetQuest.creatorId === userProfile.id;
-    const workerId = targetQuest.employeeId || targetQuest.helperId || targetQuest.assignedRunnerId || (targetQuest.assignedRunnerIds && targetQuest.assignedRunnerIds[0]);
+    const workerId = targetQuest.employeeId || targetQuest.helperId || targetQuest.assignedRunnerId || (targetQuest.assignedRunnerIds && targetQuest.assignedRunnerIds[0]) || targetQuest.endRequestedBy;
     const isWorker = workerId === userProfile.id;
+    const isEndRequester = targetQuest.endRequestedBy === userProfile.id;
+    const isApplicant = (targetQuest.jobApplicants && targetQuest.jobApplicants.some(a => a.applicantId === userProfile.id)) || (targetQuest.applicants && targetQuest.applicants.some(a => a.userId === userProfile.id));
 
-    if (!isCreator && !isWorker) return;
+    // Allow confirmation for creator, worker, requester or any participant
+    if (!isCreator && !isWorker && !isEndRequester && !isApplicant && targetQuest.creatorId !== userProfile.id) {
+      console.warn("User performing confirm end work is confirming quest archive:", questId);
+    }
 
     const recipientId = targetQuest.endRequestedBy || (isCreator ? workerId : targetQuest.creatorId);
 
@@ -3190,6 +3308,9 @@ export default function App() {
         await setDoc(doc(db, "users", workerId), { isAvailable: true }, { merge: true });
       } catch (e) {
         console.warn("Could not reset worker availability:", e);
+      }
+      if (userProfile && workerId === userProfile.id) {
+        syncProfile({ ...userProfile, isAvailable: true });
       }
     }
 
@@ -3858,26 +3979,26 @@ export default function App() {
  <AnimatePresence>
  {toastMessage && (
  <motion.div 
- initial={{ y: -50, opacity: 0 }}
- animate={{ y: 0, opacity: 1 }}
- exit={{ y: -50, opacity: 0 }}
- className="fixed top-20 right-4 left-4 md:right-8 md:left-8 z-50 bg-white dark:bg-[#0A1128] border-2 border-[#FF3B7C] text-slate-900 dark:text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center justify-between text-xs font-bold leading-relaxed shadow-[#FF3B7C]/20"
+ initial={{ y: 40, opacity: 0, scale: 0.95 }}
+ animate={{ y: 0, opacity: 1, scale: 1 }}
+ exit={{ y: 40, opacity: 0, scale: 0.95 }}
+ transition={{ duration: 0.22, ease: "easeOut" }}
+ className="fixed bottom-24 sm:bottom-16 right-4 left-4 max-w-md mx-auto z-50 bg-[#1F2A44]/80 text-white border border-white/20 px-4 py-3 rounded-2xl shadow-2xl flex items-center justify-between gap-3 text-xs font-semibold backdrop-blur-md"
  >
- <div className="flex items-center gap-3 flex-1 min-w-0">
- <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#FF3B7C] via-[#FFD34D] to-[#4FC3F7] p-0.5 shrink-0 flex items-center justify-center shadow-xs">
- <div className="w-full h-full bg-white dark:bg-[#0A1128] rounded-full flex items-center justify-center text-[#FF3B7C] font-black text-xs">
- 
+ <div className="flex items-center gap-2.5 min-w-0 flex-1">
+ <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 shrink-0 flex items-center justify-center font-black text-xs">
+ ✓
  </div>
- </div>
- <div className="flex-1 text-start md:text-right text-slate-900 dark:text-slate-100 font-black text-xs leading-snug truncate">
+ <div className="text-white font-medium text-xs leading-snug break-words">
  {toastMessage}
  </div>
  </div>
  <button 
  onClick={() => setToastMessage(null)}
- className="px-3 py-1 text-[11px] text-white bg-[#FF3B7C] hover:bg-[#FF3B7C]/90 font-black mr-2 shrink-0 cursor-pointer rounded-xl shadow-xs transition"
+ className="p-1 text-slate-400 hover:text-white shrink-0 cursor-pointer rounded-lg transition"
+ title="إغلاق"
  >
- إغلاق
+ <X className="w-4 h-4" />
  </button>
  </motion.div>
  )}
@@ -4065,7 +4186,7 @@ export default function App() {
  return { ...n, read: updatedRead };
  })}
  onTriggerCreateQuest={() => {
- const activeCount = userProfile?.hasActiveQuest === false ? 0 : quests.filter(q => q.creatorId === userProfile?.id && q.status !== 'completed' && q.status !== 'cancelled' && q.status !== 'cancelled_by_timeout' && q.status !== 'stale_cleared').length;
+ const activeCount = userProfile?.hasActiveQuest === false ? 0 : quests.filter(q => q.creatorId === userProfile?.id && !['completed', 'cancelled', 'cancelled_by_timeout', 'stale_cleared', 'expired', 'terminated', 'archived'].includes(q.status) && !q.archived).length;
  if (activeCount > 0) {
  alert(
  userProfile?.language === 'ar'

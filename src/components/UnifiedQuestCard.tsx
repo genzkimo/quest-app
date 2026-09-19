@@ -169,12 +169,17 @@ export default function UnifiedQuestCard({
  // 2. State Machine Logic for Action Tray
  // Determine user state milestone
  const isCreator = quest.creatorId === userProfile.id;
+  const hasHiredWorker = !!(quest.employeeId || quest.helperId || quest.assignedRunnerId || (quest.assignedRunnerIds && quest.assignedRunnerIds.length > 0));
  const isPendingApplicant = quest.applicants?.some(a => a.userId === userProfile.id) ||
  quest.jobApplicants?.some(a => a.applicantId === userProfile.id);
  const isApprovedAndActive = (quest.helperId === userProfile.id || quest.assignedRunnerId === userProfile.id || quest.assignedRunnerIds?.includes(userProfile.id) || quest.employeeId === userProfile.id) && quest.status !== 'completed' && quest.status !== 'terminated' && quest.status !== 'expired' && quest.status !== 'archived';
  const isCompleted = quest.status === 'completed';
 
  const handleApplyJob = async () => {
+    if (onBookQuest) {
+      onBookQuest(quest.id, tokenAmount || 0);
+      return;
+    }
  try {
  const { doc, updateDoc, setDoc } = await import('firebase/firestore');
  const { db: fDb } = await import('../utils/firebase');
@@ -659,7 +664,7 @@ export default function UnifiedQuestCard({
  )}
 
  {/* Hired Profile Box if booked/assigned */}
- {(quest.status !== 'open' || !!quest.assignedRunnerId || !!quest.helperId) && (() => {
+ {(quest.status !== 'open' && quest.status !== 'applications' && (quest.status as string) !== 'pending' || !!quest.assignedRunnerId || !!quest.helperId) && (() => {
  const isOwner = userProfile.id === quest.creatorId;
  const runnerId = quest.helperId || quest.assignedRunnerId || '';
  
@@ -723,6 +728,12 @@ export default function UnifiedQuestCard({
  </div>
  </div>
 
+ {(!isOwner && !hasHiredWorker) ? (
+ <div className="p-2.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-[11px] font-extrabold text-amber-900 dark:text-amber-200 flex items-center justify-center gap-1.5 text-center w-full mt-2">
+ <Lock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+ <span>{lang === 'ar' ? 'زر الاتصال والدردشة غير مفعليْن حالياً، وسيتم تفعيلهما فور قبول صاحب المهمة لطلب الحجز' : 'Call & Chat are locked until the quest creator accepts your booking request'}</span>
+ </div>
+ ) : (
  <div className="flex items-center gap-2 pt-2 border-t border-slate-200/60 w-full">
  <button
  type="button"
@@ -745,17 +756,33 @@ export default function UnifiedQuestCard({
  <span>{lang === 'ar' ? 'دردشة' : 'Chat'}</span>
  </button>
 
- {quest.creatorPhone && (
- <a
- href={`tel:${quest.creatorPhone}`}
- onClick={(e) => e.stopPropagation()}
- className="flex-1 bg-sky-600 hover:bg-sky-500 text-white py-2 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 shadow-2xs transition-all text-center"
- >
- <Phone className="w-3.5 h-3.5 text-white shrink-0" />
- <span>{lang === 'ar' ? 'اتصال' : 'Call'}</span>
- </a>
- )}
+ {(() => {
+   const phoneNum = isOwner ? (quest.helperPhone || quest.creatorPhone) : quest.creatorPhone;
+   return phoneNum ? (
+     <a
+       href={`tel:${phoneNum}`}
+       onClick={(e) => e.stopPropagation()}
+       className="flex-1 bg-sky-600 hover:bg-sky-500 text-white py-2 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 shadow-2xs transition-all text-center"
+     >
+       <Phone className="w-3.5 h-3.5 text-white shrink-0" />
+       <span>{lang === 'ar' ? 'اتصال' : 'Call'}</span>
+     </a>
+   ) : (
+     <button
+       type="button"
+       onClick={(e) => {
+         e.stopPropagation();
+         alert(lang === 'ar' ? 'رقم الهاتف غير متوفر حالياً' : 'Phone number is not available');
+       }}
+       className="flex-1 bg-sky-600/20 text-sky-800 py-2 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all text-center cursor-pointer"
+     >
+       <Phone className="w-3.5 h-3.5 text-sky-700 shrink-0" />
+       <span>{lang === 'ar' ? 'اتصال' : 'Call'}</span>
+     </button>
+   );
+ })()}
  </div>
+ )}
  </div>
  </div>
  );
@@ -842,7 +869,7 @@ export default function UnifiedQuestCard({
  </button>
 
  {/* Rule 1: Extension Button for Creator (Pending Quest hit 7th hour) */}
- {quest.status === 'open' && (() => {
+ {(quest.status === 'open' || quest.status === 'applications') && (() => {
  const nowMs = new Date().getTime();
  const createdAtMs = new Date(quest.createdAt).getTime();
  const pendingTimeLimit = 8 * 60 * 60 * 1000;
@@ -918,6 +945,59 @@ export default function UnifiedQuestCard({
  }
  return null;
  })()}
+
+  {/* Contract Termination Request Actions for Creator */}
+  {hasHiredWorker && (quest.questType === 'long_term' || quest.status === 'active_employment' || quest.status === 'active' || quest.status === 'booked' || quest.status === 'ending' || quest.status === 'disputed') && (
+    <div className="w-full mt-2">
+      {quest.status === 'ending' ? (
+        quest.endRequestedBy === userProfile.id ? (
+          <div className="w-full bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 p-3.5 rounded-2xl font-bold text-xs text-center space-y-2">
+            <p>{lang === 'ar' ? 'تم فسخ العقد وفك الارتباط. المنشور بانتظار إطلاع العامل عليه لنقله إلى الأرشيف.' : 'Contract severed. Post awaiting employee read receipt before archiving.'}</p>
+            <button
+              type="button"
+              onClick={() => onConfirmEndWork && onConfirmEndWork(quest.id)}
+              className="w-full bg-amber-600 hover:bg-amber-700 text-white py-2 rounded-xl font-black text-xs shadow-xs cursor-pointer transition-all"
+            >
+              {lang === 'ar' ? 'نقل للأرشيف 📁' : 'Move to Archive 📁'}
+            </button>
+          </div>
+        ) : (
+          <div className="w-full space-y-2.5 p-3.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-2xl text-start">
+            <div className="text-xs font-black text-rose-800 dark:text-rose-200 text-center space-y-1">
+              <p>{lang === 'ar' ? 'وصلك إشعار استقالة وفسخ عقد العمل من العامل' : 'Resignation notice received from employee'}</p>
+              <div className="bg-white/80 dark:bg-rose-900/40 p-2.5 rounded-xl border border-rose-200/60 dark:border-rose-800/60 text-right">
+                <span className="text-[10px] text-rose-600 dark:text-rose-300 font-bold block">{lang === 'ar' ? 'السبب الموضح بالطلب:' : 'Reason provided:'}</span>
+                <p className="text-xs font-extrabold text-slate-800 dark:text-slate-100 mt-0.5">{quest.endReason || (lang === 'ar' ? 'لم يذكر سبب إضافي' : 'No specific reason provided')}</p>
+              </div>
+              <p className="text-[10px] font-semibold text-rose-700 dark:text-rose-300">
+                {lang === 'ar' ? 'تم فك ارتباط العامل. يرجى تأكيد الاطلاع ونقله للأرشيف.' : 'Worker unlinked. Click below to acknowledge and archive.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onConfirmEndWork && onConfirmEndWork(quest.id)}
+              className="w-full bg-rose-600 hover:bg-rose-700 text-white py-2.5 rounded-xl font-black text-xs shadow-md cursor-pointer text-center transition-all"
+            >
+              {lang === 'ar' ? 'تأكيد الاطلاع 📁' : 'Acknowledge 📁'}
+            </button>
+          </div>
+        )
+      ) : quest.status === 'disputed' ? (
+        <div className="w-full bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 p-3.5 rounded-2xl font-bold text-xs text-center">
+          {lang === 'ar' ? 'العقد في حالة نزاع حالياً - جاري معالجته من قِبل الإدارة' : 'Contract is in dispute state - Under administrative review'}
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setShowEndWorkModal(true)}
+          className="w-full bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-800 hover:bg-rose-50 dark:hover:bg-rose-950/50 text-rose-600 dark:text-rose-400 py-3 rounded-2xl font-black text-xs transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95 text-center shadow-xs"
+        >
+          <AlertCircle className="w-4 h-4 text-rose-500" />
+          <span>{lang === 'ar' ? 'فسخ العقد' : 'Sever Contract'}</span>
+        </button>
+      )}
+    </div>
+  )}
  </div>
  )}
 
@@ -1043,9 +1123,60 @@ export default function UnifiedQuestCard({
  }
  return null;
  })()}
- </div>
- )}
- </>
+
+  {/* Contract Termination Request Actions for Worker */}
+  {(quest.questType === 'long_term' || quest.status === 'active_employment' || quest.status === 'active' || quest.status === 'booked' || quest.status === 'ending' || quest.status === 'disputed' || isApprovedAndActive) && (
+    <div className="w-full mt-2">
+      {quest.status === 'ending' ? (
+        quest.endRequestedBy === userProfile.id ? (
+          <div className="w-full bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 p-3.5 rounded-2xl font-bold text-xs text-center space-y-2">
+            <p>{lang === 'ar' ? 'تم تقديم الاستقالة وفك الارتباط. المنشور بانتظار إطلاع صاحب العمل عليه لنقله للأرشيف.' : 'Resignation submitted & unlinked. Post awaiting employer read receipt.'}</p>
+            <button
+              type="button"
+              onClick={() => onConfirmEndWork && onConfirmEndWork(quest.id)}
+              className="w-full bg-amber-600 hover:bg-amber-700 text-white py-2 rounded-xl font-black text-xs shadow-xs cursor-pointer transition-all"
+            >
+              {lang === 'ar' ? 'نقل للأرشيف 📁' : 'Move to Archive 📁'}
+            </button>
+          </div>
+        ) : (
+          <div className="w-full space-y-2.5 p-3.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-2xl text-start">
+            <div className="text-xs font-black text-rose-800 dark:text-rose-200 text-center space-y-1">
+              <p>{lang === 'ar' ? 'وصلك إشعار إنهاء الخدمة وفسخ العقد من صاحب العمل' : 'Service termination notice received from employer'}</p>
+              <div className="bg-white/80 dark:bg-rose-900/40 p-2.5 rounded-xl border border-rose-200/60 dark:border-rose-800/60 text-right">
+                <span className="text-[10px] text-rose-600 dark:text-rose-300 font-bold block">{lang === 'ar' ? 'السبب الموضح بالطلب:' : 'Reason provided:'}</span>
+                <p className="text-xs font-extrabold text-slate-800 dark:text-slate-100 mt-0.5">{quest.endReason || (lang === 'ar' ? 'لم يذكر سبب إضافي' : 'No specific reason provided')}</p>
+              </div>
+              <p className="text-[10px] font-semibold text-rose-700 dark:text-rose-300">
+                {lang === 'ar' ? 'تم فك ارتباطك بالعقد وحسابك متاح الآن. يرجى تأكيد الاطلاع ونقله للأرشيف.' : 'Unlinked from contract & account is now available. Click below to acknowledge & archive.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onConfirmEndWork && onConfirmEndWork(quest.id)}
+              className="w-full bg-rose-600 hover:bg-rose-700 text-white py-2.5 rounded-xl font-black text-xs shadow-md cursor-pointer text-center transition-all"
+            >
+              {lang === 'ar' ? 'تأكيد الاطلاع 📁' : 'Acknowledge 📁'}
+            </button>
+          </div>
+        )
+      ) : quest.status === 'disputed' ? (
+        <div className="w-full bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 p-3.5 rounded-2xl font-bold text-xs text-center">
+          {lang === 'ar' ? 'العقد في حالة نزاع حالياً - جاري معالجته من قِبل الإدارة' : 'Contract is in dispute state - Under administrative review'}
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setShowEndWorkModal(true)}
+          className="w-full bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-800 hover:bg-rose-50 dark:hover:bg-rose-950/50 text-rose-600 dark:text-rose-400 py-3 rounded-2xl font-black text-xs transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95 text-center shadow-xs"
+        >
+          <AlertCircle className="w-4 h-4 text-rose-500" />
+          <span>{lang === 'ar' ? 'فسخ العقد' : 'Sever Contract'}</span>
+        </button>
+      )}
+    </div>
+  )}
+  </div>
  )}
 
  {/* STATE E: Completed & Historical Souvenir */}
@@ -1086,6 +1217,8 @@ export default function UnifiedQuestCard({
  >
  {lang === 'ar' ? 'الرجوع للخلف' : 'Go Back'}
  </button>
+ )}
+ </>
  )}
  </div>
  </div>
@@ -1211,6 +1344,90 @@ export default function UnifiedQuestCard({
  </div>
  );
 
+
+      {/* End Work / Contract Termination Request Modal */}
+      {showEndWorkModal && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4 z-[100005] font-sans">
+          <div 
+            className="bg-white dark:bg-[#0A1128] text-slate-900 dark:text-white border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4 text-right"
+            style={{ direction: lang === 'ar' ? 'rtl' : 'ltr' }}
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <h3 className="font-black text-lg text-rose-600 dark:text-rose-400 flex items-center gap-2">
+                <AlertCircle className="w-5 h-5" />
+                <span>
+                  {lang === 'ar' ? 'فسخ العقد' : 'Sever Contract'}
+                </span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowEndWorkModal(false)}
+                className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center hover:bg-slate-200 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs font-bold text-slate-600 dark:text-slate-300 leading-relaxed">
+              {isCreator
+                ? (lang === 'ar'
+                    ? 'سيتم إرسال طلب إنهاء الخدمة للعامل للموافقة عليه وتسوية كافة المستحقات وتعديل حالة العقد.'
+                    : 'A service termination request will be sent to the employee for approval and settlement.')
+                : (lang === 'ar'
+                    ? 'سيتم إرسال طلب الاستقالة وفسخ العقد لصاحب العمل للموافقة عليه وإخلاء الطرف واسترجاع حالة حسابك كمتاح للعمل.'
+                    : 'A resignation request will be sent to the employer for approval and clearance.')}
+            </p>
+
+            <div className="space-y-1.5">
+              <label className="block text-[11px] font-extrabold text-slate-700 dark:text-slate-300">
+                {isCreator
+                  ? (lang === 'ar' ? 'سبب إنهاء الخدمة (اختياري):' : 'Reason for service termination (optional):')
+                  : (lang === 'ar' ? 'سبب الاستقالة (اختياري):' : 'Reason for resignation (optional):')}
+              </label>
+              <textarea
+                value={endWorkReason}
+                onChange={(e) => setEndWorkReason(e.target.value)}
+                placeholder={
+                  isCreator
+                    ? (lang === 'ar' ? 'مثال: انتهاء فترة المشروع، عدم الحاجة للخدمة حالياً...' : 'e.g., Project completed...')
+                    : (lang === 'ar' ? 'مثال: الانتقال لوظيفة جديدة، عدم التفرغ...' : 'e.g., Personal reasons, moving to new role...')
+                }
+                className="w-full bg-slate-50 dark:bg-[#162035] border border-slate-200 dark:border-slate-700 rounded-2xl p-3 text-xs font-medium outline-none focus:border-rose-500 dark:focus:border-rose-500 resize-none h-24 text-right"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (onRequestEndWork) {
+                    onRequestEndWork(quest.id, endWorkReason);
+                  }
+                  setShowEndWorkModal(false);
+                  setEndWorkReason('');
+                  if (showToast) {
+                    showToast(
+                      isCreator
+                        ? (lang === 'ar' ? 'تم إرسال طلب إنهاء الخدمة بنجاح' : 'Service termination request sent successfully')
+                        : (lang === 'ar' ? 'تم إرسال طلب الاستقالة بنجاح' : 'Resignation request sent successfully')
+                    );
+                  }
+                }}
+                className="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs py-3 rounded-2xl shadow-md transition-all cursor-pointer text-center"
+              >
+                {lang === 'ar' ? 'تأكيد فسخ العقد' : 'Confirm Severing Contract'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowEndWorkModal(false)}
+                className="px-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-extrabold text-xs py-3 rounded-2xl transition-all cursor-pointer"
+              >
+                {lang === 'ar' ? 'إلغاء' : 'Cancel'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
  // If designated as modal, wrap in overlay backdrop with entry fade + scale spring physics
  if (isModal) {
  return (

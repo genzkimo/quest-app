@@ -17,7 +17,11 @@ import {
  Lock,
  FolderArchive,
  UserCheck,
- Handshake
+ Handshake,
+ MoreVertical,
+ Trash2,
+ Bell,
+ BellOff
 } from 'lucide-react';
 import { db, auth, handleFirestoreError, OperationType } from '../utils/firebase';
 import { doc, updateDoc, arrayUnion, onSnapshot, getDoc, setDoc, collection, query, where, getDocs } from 'firebase/firestore';
@@ -44,8 +48,8 @@ const LOCALES = {
  ar: {
  inboxTitle: 'الرسائل والمحادثات ',
  searchPlaceholder: 'ابحث عن اسم، أو عنوان مهمة...',
- emptyState: 'صندوقك فارغ تماماً ',
- emptyDesc: 'عندما تقدم على كويست أو تراسل كباتن، ستظهر المحادثات الحية هنا.',
+ emptyState: 'تظهر رسائلك هنا',
+ emptyDesc: '',
  roleEmployer: 'صاحب العمل ',
  roleCaptain: 'منفذ المهمة ',
  questLabel: 'كويست: ',
@@ -259,6 +263,66 @@ export default function InboxScreen({
  const [searchTerm, setSearchTerm] = useState('');
  const [activeFilter, setActiveFilter] = useState<'all' | 'unread' | 'employer' | 'captain' | 'archive'>('all');
 
+ // Soft Delete / Hidden Chats & Muted Chats state
+ const [hiddenChatTimes, setHiddenChatTimes] = useState<Record<string, number>>(() => {
+ try {
+ const saved = localStorage.getItem(`cleared_chats_${currentUserId}`);
+ return saved ? JSON.parse(saved) : {};
+ } catch {
+ return {};
+ }
+ });
+
+ const [mutedChats, setMutedChats] = useState<Record<string, boolean>>(() => {
+ try {
+ const saved = localStorage.getItem(`muted_chats_${currentUserId}`);
+ return saved ? JSON.parse(saved) : {};
+ } catch {
+ return {};
+ }
+ });
+
+ const [contextMenuChat, setContextMenuChat] = useState<any | null>(null);
+ const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+ const isLongPressActiveRef = useRef(false);
+
+ const handleTouchStart = (chat: any) => {
+ isLongPressActiveRef.current = false;
+ if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+ longPressTimerRef.current = setTimeout(() => {
+ isLongPressActiveRef.current = true;
+ if (navigator.vibrate) navigator.vibrate(40);
+ setContextMenuChat(chat);
+ }, 500);
+ };
+
+ const handleTouchEnd = () => {
+ if (longPressTimerRef.current) {
+ clearTimeout(longPressTimerRef.current);
+ longPressTimerRef.current = null;
+ }
+ };
+
+ const handleHideConversation = (chat: any) => {
+ if (!chat) return;
+ const msgs = chat.messages || [];
+ const lastMsg = msgs.length > 0 ? msgs[msgs.length - 1] : null;
+ const lastMsgTime = lastMsg?.createdAt ? new Date(lastMsg.createdAt).getTime() : Date.now();
+
+ const updatedTimes = { ...hiddenChatTimes, [chat.id]: lastMsgTime };
+ setHiddenChatTimes(updatedTimes);
+ try {
+ localStorage.setItem(`cleared_chats_${currentUserId}`, JSON.stringify(updatedTimes));
+ } catch (e) {
+ console.error(e);
+ }
+
+ if (selectedChat?.id === chat.id) {
+ setSelectedChat(null);
+ }
+ setContextMenuChat(null);
+ };
+
  // Selected chat details
  const [selectedChat, setSelectedChat] = useState<any | null>(null);
 
@@ -458,20 +522,23 @@ export default function InboxScreen({
  return !readBy.includes(currentUserId);
  };
 
- // Check if archived
- const isChatArchived = (chat: any) => {
- if (!chat) return false;
- if (chat.isArchived === true) return true;
- const qId = chat.id.split('_')[0] || chat.questId;
- if (qId) {
- const q = quests.find(item => item.id === qId);
- if (q && q.status === 'completed') {
- return true;
- }
- }
- return false;
- };
-
+  // Check if archived
+  const isChatArchived = (chat: any) => {
+    if (!chat) return false;
+    if (chat.isArchived === true || chat.isArchived === 'true') return true;
+    const qId = chat.questId || (chat.id ? chat.id.split('_')[0] : null);
+    if (!qId) return true;
+    const q = quests.find(item => item.id === qId);
+    if (!q) return true;
+    if (
+      q.archived === true ||
+      (q as any).archived === 'true' ||
+      ['completed', 'cancelled', 'expired', 'cancelled_by_timeout', 'stale_cleared', 'terminated', 'archived', 'withdrawn'].includes(q.status)
+    ) {
+      return true;
+    }
+    return false;
+  };
  // Check if chat is locked (pending booking acceptance)
  const isChatPendingBooking = (chat: any) => {
  if (!chat) return false;
@@ -759,6 +826,17 @@ export default function InboxScreen({
  // Filters logic
  const filteredChats = useMemo(() => {
  return groupedChats.filter((chat) => {
+ // Soft-delete check: if chat was cleared/hidden locally, check if a new message has arrived since
+ const hideTime = hiddenChatTimes[chat.id];
+ if (hideTime) {
+ const msgs = chat.messages || [];
+ const lastMsg = msgs.length > 0 ? msgs[msgs.length - 1] : null;
+ const lastMsgTime = lastMsg?.createdAt ? new Date(lastMsg.createdAt).getTime() : 0;
+ if (lastMsgTime <= hideTime) {
+ return false;
+ }
+ }
+
  const archived = isChatArchived(chat);
  if (activeFilter === 'archive') {
  if (!archived) return false;
@@ -783,7 +861,7 @@ export default function InboxScreen({
 
  return true;
  });
- }, [groupedChats, searchTerm, activeFilter, currentUserId, quests]);
+ }, [groupedChats, searchTerm, activeFilter, currentUserId, quests, hiddenChatTimes]);
 
  const activeQuestInfo = useMemo(() => {
  if (!selectedChat) return null;
@@ -806,7 +884,7 @@ export default function InboxScreen({
  }`}
  >
  {/* Sidebar Header */}
- <div className="p-4 bg-white border-b border-slate-100 text-slate-800 flex justify-between items-center shrink-0">
+ <div className="p-4 bg-white border-b border-slate-100/40 text-slate-800 flex justify-between items-center shrink-0">
  <div className="flex items-center gap-2">
  <MessageSquare className="w-5 h-5 text-[#1F2A44]" />
  <h2 className="text-base font-black tracking-tight text-slate-850">{t.inboxTitle}</h2>
@@ -819,7 +897,7 @@ export default function InboxScreen({
  </div>
 
  {/* Search Box */}
- <div className="p-3 border-b border-slate-100 bg-slate-50/50 shrink-0">
+ <div className="p-3 border-b border-slate-100/40 bg-slate-50/50 shrink-0">
  <div className="relative">
  <input
  type="text"
@@ -833,7 +911,7 @@ export default function InboxScreen({
  </div>
 
  {/* Category Tabs / Filters */}
- <div className="p-2.5 flex items-center gap-1.5 overflow-x-auto shrink-0 border-b border-slate-100 scrollbar-none bg-slate-50/30">
+ <div className="p-2.5 flex items-center gap-1.5 overflow-x-auto shrink-0 border-b border-slate-100/40 scrollbar-none bg-slate-50/30">
  <button
  onClick={() => setActiveFilter('all')}
  className={`px-3.5 py-1.5 rounded-full text-[10px] font-black transition-all whitespace-nowrap shrink-0 flex items-center gap-1 cursor-pointer ${
@@ -902,15 +980,22 @@ export default function InboxScreen({
  >
  <div className="p-3 bg-white space-y-2 scrollbar-thin">
  {filteredChats.length === 0 ? (
- <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400">
- <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center mb-3">
- <MessageSquare className="w-6 h-6 text-slate-300" />
+ <div className="py-12 px-4 text-center space-y-3">
+ <div className="mx-auto flex justify-center">
+ <svg className="w-24 h-24" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+ <circle cx="60" cy="60" r="50" className="fill-blue-50/80" />
+ <circle cx="60" cy="60" r="38" className="fill-indigo-50/60" />
+ <path d="M40 42C40 37.5817 43.5817 34 48 34H72C76.4183 34 80 37.5817 80 42V62C80 66.4183 76.4183 70 72 70H56L44 78V70H48C43.5817 70 40 66.4183 40 62V42Z" fill="#FFFFFF" stroke="#3B82F6" strokeWidth="3" strokeLinejoin="round" />
+ <path d="M70 66H76C79.3137 66 82 68.6863 82 72V80L76 76H70C66.6863 76 64 73.3137 64 70C64 67.7893 65.7893 66 68 66H70Z" fill="#3B82F6" />
+ <circle cx="52" cy="52" r="3" fill="#60A5FA" />
+ <circle cx="60" cy="52" r="3" fill="#3B82F6" />
+ <circle cx="68" cy="52" r="3" fill="#1D4ED8" />
+ <circle cx="92" cy="40" r="2.5" fill="#93C5FD" />
+ <circle cx="28" cy="74" r="2" fill="#93C5FD" />
+ </svg>
  </div>
- <p className="text-xs font-bold text-slate-500">
- {searchTerm ? t.noFilteredChats : t.emptyState}
- </p>
- <p className="text-[10px] text-slate-400 mt-1 max-w-[200px] leading-relaxed">
- {searchTerm ? '' : t.emptyDesc}
+ <p className="font-extrabold text-sm text-slate-700">
+ {searchTerm ? t.noFilteredChats : (isRtl ? 'تظهر رسائلك هنا' : t.emptyState)}
  </p>
  </div>
  ) : (
@@ -930,8 +1015,22 @@ export default function InboxScreen({
  return (
  <div
  key={chat.id}
- onClick={() => setSelectedChat(chat)}
- className={`p-3.5 rounded-2xl border transition-all cursor-pointer relative flex items-center gap-3 ${
+ onTouchStart={() => handleTouchStart(chat)}
+ onTouchEnd={handleTouchEnd}
+ onTouchMove={handleTouchEnd}
+ onMouseDown={() => handleTouchStart(chat)}
+ onMouseUp={handleTouchEnd}
+ onMouseLeave={handleTouchEnd}
+ onClick={(e) => {
+ if (isLongPressActiveRef.current) {
+ e.preventDefault();
+ e.stopPropagation();
+ isLongPressActiveRef.current = false;
+ return;
+ }
+ setSelectedChat(chat);
+ }}
+ className={`p-3.5 rounded-2xl border transition-all cursor-pointer relative flex items-center gap-3 group ${
  isSelected
  ? 'bg-slate-50 border-slate-200 shadow-xs ring-1 ring-slate-200'
  : isUnread
@@ -951,8 +1050,9 @@ export default function InboxScreen({
  onInspectUser(details.recipientId);
  }
  }}
- className="w-10 h-10 rounded-full relative overflow-hidden bg-slate-150 shrink-0 border border-slate-200 font-sans cursor-pointer hover:opacity-85 transition-opacity"
+ className="relative w-10 h-10 shrink-0 font-sans cursor-pointer"
  >
+ <div className="w-full h-full rounded-full overflow-hidden bg-slate-150 border border-slate-200 hover:opacity-85 transition-opacity">
  <img 
  src={recipientAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'} 
  alt={recipientName} 
@@ -962,17 +1062,18 @@ export default function InboxScreen({
  (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150';
  }}
  />
+ </div>
  {isUnread ? (
- <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-blue-500 border-2 border-white rounded-full animate-ping"></span>
-  ) : (() => {
-  const details = getInboxItemDetails(chat);
-  const lastActiveTime = getRecipientLastActiveTime(chat, details.recipientId);
-  const status = formatLastActive(lastActiveTime, lang);
-  return (
-  <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 border-2 border-white rounded-full ${status.dotColor}`}></span>
-   );
-   })()}
-   </div>
+ <span className={`absolute -bottom-0.5 ${isRtl ? '-left-0.5' : '-right-0.5'} z-30 w-3.5 h-3.5 bg-blue-500 border-2 border-white rounded-full shadow-xs`}></span>
+ ) : (() => {
+ const details = getInboxItemDetails(chat);
+ const lastActiveTime = getRecipientLastActiveTime(chat, details.recipientId);
+ const status = formatLastActive(lastActiveTime, lang);
+ return (
+ <span className={`absolute -bottom-0.5 ${isRtl ? '-left-0.5' : '-right-0.5'} z-30 w-3.5 h-3.5 border-2 border-white rounded-full shadow-xs ${status.dotColor}`}></span>
+ );
+ })()}
+ </div>
 
    <div className="flex-1 min-w-0">
      <div className="flex justify-between items-baseline mb-0.5 gap-1">
@@ -1007,9 +1108,22 @@ export default function InboxScreen({
      </p>
    </div>
 
-   {isUnread && (
-     <div className="w-2 h-2 rounded-full bg-blue-500 shrink-0"></div>
-   )}
+   <div className="flex items-center gap-1 shrink-0">
+     {isUnread && (
+       <div className="w-2 h-2 rounded-full bg-blue-500 shrink-0"></div>
+     )}
+     <button
+       type="button"
+       onClick={(e) => {
+         e.stopPropagation();
+         setContextMenuChat(chat);
+       }}
+       className="p-1.5 rounded-full hover:bg-slate-200/80 text-slate-500 hover:text-slate-800 transition-all cursor-pointer shrink-0"
+       title={isRtl ? 'خيارات المحادثة' : 'Chat Options'}
+     >
+       <MoreVertical className="w-4 h-4" />
+     </button>
+   </div>
  </div>
  );
  })
@@ -1029,7 +1143,7 @@ export default function InboxScreen({
    {selectedChat ? (
      <div className="flex-1 flex flex-col h-full">
        {/* Active Chat Header */}
-       <div className="p-4 bg-white text-slate-850 flex justify-between items-center shrink-0 shadow-xs">
+       <div className="p-4 pt-[calc(1rem+env(safe-area-inset-top,0px))] bg-white text-slate-850 flex justify-between items-center shrink-0 border-none">
          <div className="flex items-center gap-3 min-w-0">
            {/* Mobile Back Button */}
            <button 
@@ -1156,20 +1270,8 @@ export default function InboxScreen({
  const isSys = msg.senderId === 'system';
 
  if (isSys) {
-  let sysText = msg.text || '';
-  if (sysText.includes('مبروك') || sysText.includes('تم اختيارك') || sysText.includes('تفعيل العقد') || sysText.includes('تفعيل المهمة')) {
-  const qId = selectedChat.id.split('_')[0] || selectedChat.questId;
-  const q = quests.find(item => item.id === qId);
-  const isContract = q?.jobType === 'employment' || q?.isLongTerm || q?.contractType === 'long_term' || q?.contractType === 'full_time' || q?.contractType === 'part_time';
-  sysText = isContract ? 'تم تفعيل العقد' : 'تم تفعيل المهمة';
-  }
-
-  return (
-  <div key={index} className="mx-auto w-full max-w-sm text-center py-2 px-3 bg-[#1F2A44]/10 border border-[#1F2A44]/20 rounded-2xl text-xs text-[#1F2A44] font-black leading-normal flex items-center justify-center gap-1 shadow-2xs">
-  <span>{sysText}</span>
-  </div>
-  );
-  }
+  return null;
+ }
 
  return (
  <div 
@@ -1202,43 +1304,28 @@ export default function InboxScreen({
  <div ref={chatEndRef} />
  </div>
 
- {/* Chat Input Dock */}
- {isChatArchived(selectedChat) ? (
- <div 
-  className="p-4 bg-slate-100 border-t border-slate-200 text-center text-slate-500 text-xs font-black flex items-center justify-center gap-2 shrink-0 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
-  style={{ 
-    paddingBottom: isNavVisible 
-      ? 'calc(4.5rem + env(safe-area-inset-bottom, 0px) + 0.5rem)' 
-      : '1rem' 
-  }}
->
- <Lock className="w-4 h-4 text-slate-400 shrink-0" />
- <span>{t.archivedNotice || 'هذه الدردشة مؤرشفة لانتهاء المهمة '}</span>
- </div>
- ) : isChatPendingBooking(selectedChat) ? (
- <div 
-  className="p-4 bg-amber-50 border-t border-amber-200 text-center text-amber-900 text-xs font-black flex items-center justify-center gap-2 shrink-0 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
-  style={{ 
-    paddingBottom: isNavVisible 
-      ? 'calc(4.5rem + env(safe-area-inset-bottom, 0px) + 0.5rem)' 
-      : '1rem' 
-  }}
->
- <Lock className="w-4 h-4 text-amber-600 shrink-0" />
- <span>{lang === 'ar' ? ' التواصل بالدردشة مغلق حالياً، وسيتم تفعيله فور قبول صاحب المهمة لطلب الحجز ' : ' Chat is locked until the creator accepts the booking request '}</span>
- </div>
- ) : (
- <div 
-  className="p-3 bg-white/95 backdrop-blur-md border-t border-slate-150 flex items-center gap-2 shrink-0 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
-  style={{ 
-    paddingBottom: isNavVisible 
-      ? 'calc(4.5rem + env(safe-area-inset-bottom, 0px) + 0.75rem)' 
-      : '0.75rem' 
-  }}
->
- <input
- type="text"
- placeholder={t.typeMessage}
+  {/* Chat Input Dock */}
+  {isChatArchived(selectedChat) ? (
+    <div className={`p-4 bg-amber-50/80 text-center text-amber-800 text-xs font-black flex items-center justify-center gap-2 shrink-0 border-t border-amber-200/60 ${isNavVisible ? "pb-20 md:pb-4" : "pb-4"}`}>
+      <FolderArchive className="w-4 h-4 text-amber-600 shrink-0" />
+      <span>
+        {lang === "ar" 
+          ? "المحادثة مغلقة ومؤرشفة لعدم وجود مهمة نشطة تربط بين الطرفين" 
+          : lang === "fr"
+          ? "Discussion fermée et archivée (aucune mission active)"
+          : "Conversation closed & archived (no active quest links both parties)"}
+      </span>
+    </div>
+  ) : isChatPendingBooking(selectedChat) ? (
+    <div className={`p-4 bg-amber-50 text-center text-amber-900 text-xs font-black flex items-center justify-center gap-2 shrink-0 ${isNavVisible ? "pb-20 md:pb-4" : "pb-4"}`}>
+      <Lock className="w-4 h-4 text-amber-600 shrink-0" />
+      <span>{lang === "ar" ? " التواصل بالدردشة مغلق حالياً، وسيتم تفعيله فور قبول صاحب المهمة لطلب الحجز " : " Chat is locked until the creator accepts the booking request "}</span>
+    </div>
+  ) : (
+    <div className={`p-3 bg-white/95 backdrop-blur-md flex items-center gap-2 shrink-0 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] ${isNavVisible ? "mb-16 md:mb-0" : "mb-0"}`}>
+      <input
+        type="text"
+        placeholder={t.typeMessage}
  value={chatInputText}
  onChange={(e) => setChatInputText(e.target.value)}
  onKeyDown={(e) => {
@@ -1271,6 +1358,99 @@ export default function InboxScreen({
  </div>
  )}
  </div>
+
+ {/* Long Press Context Menu Action Sheet Modal */}
+ <AnimatePresence>
+ {contextMenuChat && (
+ <motion.div
+ initial={{ opacity: 0 }}
+ animate={{ opacity: 1 }}
+ exit={{ opacity: 0 }}
+ onClick={() => setContextMenuChat(null)}
+ className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-end sm:items-center justify-center p-4 font-sans"
+ >
+ <motion.div
+ initial={{ y: 50, scale: 0.95 }}
+ animate={{ y: 0, scale: 1 }}
+ exit={{ y: 50, scale: 0.95 }}
+ onClick={(e) => e.stopPropagation()}
+ className="bg-white w-full max-w-sm rounded-3xl p-5 space-y-4 shadow-xl border border-slate-150 text-right"
+ style={{ direction: isRtl ? 'rtl' : 'ltr' }}
+ >
+ <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+ <div className="flex items-center gap-3">
+ <div className="w-10 h-10 rounded-full bg-slate-150 flex items-center justify-center text-slate-700 font-bold text-sm shrink-0 overflow-hidden">
+ <img 
+ src={getInboxItemDetails(contextMenuChat).recipientAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'} 
+ alt="" 
+ className="w-full h-full object-cover" 
+ />
+ </div>
+ <div className="min-w-0">
+ <h4 className="font-extrabold text-xs text-slate-800 truncate">
+ {getInboxItemDetails(contextMenuChat).recipientName}
+ </h4>
+ <p className="text-[10px] text-slate-400 truncate max-w-[200px]">
+ {contextMenuChat.questTitle || (isRtl ? 'محادثة مباشرة' : 'Direct Chat')}
+ </p>
+ </div>
+ </div>
+ <button
+ onClick={() => setContextMenuChat(null)}
+ className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 transition-colors cursor-pointer"
+ >
+ <X className="w-4 h-4" />
+ </button>
+ </div>
+
+ <div className="space-y-1.5 pt-1">
+ {/* Soft Delete / Hide Conversation */}
+ <button
+ onClick={() => handleHideConversation(contextMenuChat)}
+ className="w-full flex items-center justify-between p-3 rounded-2xl hover:bg-rose-50 text-rose-600 transition-colors group cursor-pointer"
+ >
+ <div className="flex items-center gap-3">
+ <div className="w-8 h-8 rounded-xl bg-rose-100/70 group-hover:bg-rose-100 flex items-center justify-center text-rose-600 shrink-0">
+ <Trash2 className="w-4 h-4" />
+ </div>
+ <div className="text-right">
+ <span className="text-xs font-black block">
+ {isRtl ? 'حذف المحادثة' : 'Hide Conversation'}
+ </span>
+ <span className="text-[9.5px] text-rose-400 block font-normal">
+ {isRtl ? 'ستختفي المحادثة وتظهر مجدداً فور وصول رسالة جديدة' : 'Hides until a new message arrives'}
+ </span>
+ </div>
+ </div>
+ </button>
+
+ {/* Mute/Unmute Notifications */}
+ <button
+ onClick={() => {
+ const chat = contextMenuChat;
+ const newMuted = { ...mutedChats, [chat.id]: !mutedChats[chat.id] };
+ setMutedChats(newMuted);
+ try {
+ localStorage.setItem(`muted_chats_${currentUserId}`, JSON.stringify(newMuted));
+ } catch (e) {}
+ setContextMenuChat(null);
+ }}
+ className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-slate-50 text-slate-700 transition-colors cursor-pointer"
+ >
+ <div className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center text-slate-600 shrink-0">
+ {mutedChats[contextMenuChat.id] ? <Bell className="w-4 h-4 text-emerald-600" /> : <BellOff className="w-4 h-4" />}
+ </div>
+ <span className="text-xs font-bold">
+ {mutedChats[contextMenuChat.id] 
+ ? (isRtl ? 'إلغاء كتم الإشعارات' : 'Unmute Notifications')
+ : (isRtl ? 'كتم الإشعارات' : 'Mute Notifications')}
+ </span>
+ </button>
+ </div>
+ </motion.div>
+ </motion.div>
+ )}
+ </AnimatePresence>
  </div>
  );
 }

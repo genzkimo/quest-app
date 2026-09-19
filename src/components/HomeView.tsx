@@ -28,6 +28,7 @@ import {
  Upload,
  Image as ImageIcon,
  Camera,
+ Frown,
  Trash,
  Eye,
  Plus,
@@ -353,37 +354,41 @@ export default function HomeView({
  const [userComments, setUserComments] = useState<Record<string, { author: string; avatar: string; text: string; time: string }[]>>(MOCK_QUEST_COMMENTS);
  const [newCommentTexts, setNewCommentTexts] = useState<Record<string, string>>({});
 
- const handleBookTaskClick = (quest: Quest, e: React.MouseEvent) => {
- e.stopPropagation();
- 
- // Strict GPS Location check: Booking requires active GPS location
- if (gpsDenied || !userLoc) {
- showToast(
- lang === 'ar' 
- ? ' لا يمكن حجز الكويست إلا بعد تفعيل خدمة تحديد الموقع (GPS)' 
- : ' Cannot book quest without enabling GPS location service'
- );
- requestHomeLocation();
- return;
- }
-
- // Check Token balance (Requires 5%, min 35 tokens, max 2000 tokens)
- const fee = calculateBookingFee(quest.cashReward, quest.questType);
- if (userProfile.tokenBalance < fee) {
- showToast(lang === 'ar' ? ' رصيد غير كافٍ لدفع رسوم الحجز.' : ' Insufficient balance for booking fee.');
- return;
- }
-
- // Confirm booking to parent
- onBookQuest(quest.id, fee);
- setSelectedQuest(null);
-
- // Audio effects & haptic vibrator alerts on booking contract
- const audioEnabled = userProfile.audioEffectsEnabled !== false;
- const hapticEnabled = userProfile.hapticFeedbackEnabled !== false;
- playLockAndLoadCoins(audioEnabled);
- triggerHaptic('sharp', hapticEnabled);
- };
+  const handleBookTaskClick = async (quest: Quest, e: React.MouseEvent) => {
+    e.stopPropagation();
+    let activeLoc = userLoc || Geolocator.getCachedLocation();
+    if (!activeLoc && !gpsDenied) {
+      try {
+        const fetched = await Geolocator.getCurrentPhysicalLocation();
+        if (fetched) {
+          activeLoc = { lat: fetched.lat, lng: fetched.lng };
+          setUserLoc(activeLoc);
+        }
+      } catch (err) {
+        console.warn("HomeView location fetch failed:", err);
+      }
+    }
+    if (gpsDenied && !activeLoc) {
+      showToast(
+        lang === 'ar'
+          ? ' يرجى تفعيل السماح بالموقع (GPS) في متصفحك أو جهازك لحجز المهمة'
+          : ' Please enable location permissions (GPS) to book the quest'
+      );
+      requestHomeLocation();
+      return;
+    }
+    const fee = calculateBookingFee(quest.cashReward, quest.questType);
+    if (userProfile.tokenBalance < fee) {
+      showToast(lang === 'ar' ? ' رصيد غير كافٍ لدفع رسوم الحجز.' : ' Insufficient balance for booking fee.');
+      return;
+    }
+    onBookQuest(quest.id, fee);
+    setSelectedQuest(null);
+    const audioEnabled = userProfile.audioEffectsEnabled !== false;
+    const hapticEnabled = userProfile.hapticFeedbackEnabled !== false;
+    playLockAndLoadCoins(audioEnabled);
+    triggerHaptic('sharp', hapticEnabled);
+  };
 
  const handleFlagClick = (quest: Quest, e: React.MouseEvent) => {
  e.stopPropagation();
@@ -692,30 +697,21 @@ export default function HomeView({
  </div>
 
  {filteredQuests.length === 0 ? (
- <div className="bg-white py-12 px-4 rounded-3xl border border-gray-100 text-center space-y-4 shadow-xs">
- <div className="w-14 h-14 bg-gray-50 text-gray-400 rounded-full flex items-center justify-center mx-auto">
- <SlidersHorizontal className="w-6 h-6 text-gray-300" />
+ <div className="py-10 px-4 text-center space-y-3">
+ <div className="mx-auto flex justify-center">
+ <svg className="w-24 h-24" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+ <circle cx="60" cy="60" r="50" className="fill-slate-100/80" />
+ <circle cx="60" cy="60" r="38" className="fill-rose-50/70" />
+ <path d="M60 28C46.7 28 36 38.7 36 52C36 68 60 92 60 92C60 92 84 68 84 52C84 38.7 73.3 28 60 28Z" fill="#FFF0F5" stroke="#FF3B7C" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+ <circle cx="52" cy="48" r="2.5" fill="#64748B" />
+ <circle cx="68" cy="48" r="2.5" fill="#64748B" />
+ <path d="M53 58C56 55 64 55 67 58" stroke="#64748B" strokeWidth="2.5" strokeLinecap="round" />
+ <circle cx="60" cy="60" r="56" stroke="#CBD5E1" strokeWidth="1.5" strokeDasharray="3 4" />
+ </svg>
  </div>
- <h3 className="font-extrabold text-xs text-slate-700">{lang === 'ar' ? 'لا توجد كويستات مطابقة لخيارات الفلترة' : 'No local chores match your filters'}</h3>
- <p className="text-xs text-gray-400 max-w-sm mx-auto leading-relaxed">
- {userLoc && !gpsDenied
- ? (lang === 'ar' ? 'حاول كتابة كلمات أخرى أو تبديل خيار التصنيف.' : 'Try changing search terms or category tags.')
- : (lang === 'ar' ? 'حاول كتابة كلمات أخرى أو تبديل خيار التصنيف أو انقر أسفله لتحديث موقعك وعرض المهام.' : 'Change the categorized tag or clear seek tags, or tap below to update location.')
- }
+ <p className="font-extrabold text-sm text-slate-700">
+ {lang === 'ar' ? 'لا توجد كويستات حالياً' : 'No quests available currently'}
  </p>
- {(!userLoc || gpsDenied) && (
- <button
- type="button"
- onClick={requestHomeLocation}
- disabled={isGpsRequesting}
- className="mt-2 px-5 py-2.5 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white rounded-2xl text-xs font-black shadow-sm transition-all cursor-pointer flex items-center justify-center gap-2 mx-auto"
- >
- <MapPin className="w-4 h-4 text-[#FF3B7C]" />
- {isGpsRequesting
- ? (lang === 'ar' ? 'جاري تحديد الموقع... ' : 'Locating... ')
- : (lang === 'ar' ? 'تحديد الموقع وعرض المهام ' : 'Update Location & Show Tasks ')}
- </button>
- )}
  </div>
  ) : (
  <div className="space-y-6 max-w-2xl mx-auto">
@@ -1195,32 +1191,21 @@ export default function HomeView({
  </button>
  </div>
  ) : inRangeQuests.length === 0 ? (
- <div className="bg-white border border-gray-100 p-8 rounded-3xl text-center space-y-3 shadow-xs">
- <div className="w-12 h-12 bg-[#FF3B7C]/10 text-[#FF3B7C] rounded-full flex items-center justify-center mx-auto animate-pulse">
- <MapPin className="w-5 h-5 animate-bounce" />
+ <div className="py-10 px-4 text-center space-y-3">
+ <div className="mx-auto flex justify-center">
+ <svg className="w-24 h-24" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+ <circle cx="60" cy="60" r="50" className="fill-slate-100/80" />
+ <circle cx="60" cy="60" r="38" className="fill-rose-50/70" />
+ <path d="M60 28C46.7 28 36 38.7 36 52C36 68 60 92 60 92C60 92 84 68 84 52C84 38.7 73.3 28 60 28Z" fill="#FFF0F5" stroke="#FF3B7C" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+ <circle cx="52" cy="48" r="2.5" fill="#64748B" />
+ <circle cx="68" cy="48" r="2.5" fill="#64748B" />
+ <path d="M53 58C56 55 64 55 67 58" stroke="#64748B" strokeWidth="2.5" strokeLinecap="round" />
+ <circle cx="60" cy="60" r="56" stroke="#CBD5E1" strokeWidth="1.5" strokeDasharray="3 4" />
+ </svg>
  </div>
- <h4 className="font-extrabold text-xs text-slate-700">
- {lang === 'ar' ? 'لا توجد كويستات قريبة في حيك حالياً ' : 'No nearby quests in your neighborhood currently '}
- </h4>
- <p className="text-[11px] text-gray-400 max-w-xs mx-auto leading-relaxed">
- {userLoc && !gpsDenied
- ? (lang === 'ar' ? 'تصفح باقي الكويستات بالأسفل أو عد لاحقاً لرؤية كويستات جديدة!' : 'Inspect available quests below or check back later for new ones!')
- : (lang === 'ar' ? 'انقر على الزر أدناه لتحديث موقعك وعرض المهام القريبة، أو تصفح الكويستات بالأسفل!' : 'Tap the button below to update your location & show nearby tasks, or inspect quests below!')
- }
+ <p className="font-extrabold text-sm text-slate-700">
+ {lang === 'ar' ? 'لا توجد كويستات حالياً' : 'No quests available currently'}
  </p>
- {(!userLoc || gpsDenied) && (
- <button
- type="button"
- onClick={requestHomeLocation}
- disabled={isGpsRequesting}
- className="mt-2 px-5 py-2.5 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white rounded-2xl text-xs font-black shadow-sm transition-all cursor-pointer flex items-center justify-center gap-2 mx-auto"
- >
- <MapPin className="w-4 h-4 text-[#FF3B7C]" />
- {isGpsRequesting
- ? (lang === 'ar' ? 'جاري تحديد الموقع... ' : 'Locating... ')
- : (lang === 'ar' ? 'تحديد الموقع وعرض المهام ' : 'Update Location & Show Tasks ')}
- </button>
- )}
  </div>
  ) : (
  <>

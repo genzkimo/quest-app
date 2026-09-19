@@ -4,17 +4,25 @@
 @theme {
   --font-sans: "Cairo", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* Strict 6-Color Palette Definition */
+  --color-hotpink: #FF3B7C;
+  --color-yellow-accent: #FFD34D;
+  --color-skyblue: #38BDF8;
+  --color-navy: #1F2A44;
+  --color-white-bg: #FFFFFF;
+  --color-black-text: #0F172A;
 }
 
 /* Custom smooth transitions and styling overrides */
 html, body {
   font-family: var(--font-sans);
   direction: rtl; /* Arabic reading format */
-  background-color: #f8fafc; /* Soft off-white */
-  color: #1e293b; /* Charcoal gray for excellent readability */
+  background-color: #ffffff; /* Pure White background */
+  color: #0f172a; /* Deep charcoal/black for text */
 }
 
-/* Hide scrollbars for a cleaner look on bento or sliders */
+/* Hide scrollbars for a cleaner look */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
@@ -23,129 +31,218 @@ html, body {
   scrollbar-width: none;
 }
 
-/* Ultra-Clean Global Dark Mode Overrides */
-html.dark, html.dark body {
-  background-color: #040610 !important;
-  color: #f8fafc !important;
+/* ---------------------------------------------------
+   STRICT 6-COLOR PALETTE SYSTEM & CONTRAST PROTECTION
+   1. Hot Pink:  #FF3B7C
+   2. Yellow:    #FFD34D
+   3. Sky Blue:  #38BDF8
+   4. Navy:      #1F2A44
+   5. White:     #FFFFFF
+   6. Black:     #0F172A
+   --------------------------------------------------- */
+
+/* --- 1. SOLID HOT PINK BUTTONS / BADGES (#FF3B7C) --- */
+.bg-rose-500, .bg-rose-600, .bg-rose-700, .bg-rose-800, .bg-rose-900,
+.bg-red-500, .bg-red-600, .bg-red-700,
+.bg-pink-500, .bg-pink-600,
+.bg-purple-500, .bg-purple-600, .bg-purple-700,
+.bg-violet-500, .bg-violet-600, .bg-indigo-500, .bg-indigo-600, .bg-fuchsia-500 {
+  background-color: #FF3B7C !important;
+  color: #FFFFFF !important;
 }
 
-/* Base Card & Layout Containers */
+/* Force all text & icons inside solid Hot Pink containers to be WHITE for maximum contrast */
+.bg-rose-500 *, .bg-rose-600 *, .bg-rose-700 *,
+.bg-red-500 *, .bg-red-600 *,
+.bg-pink-500 *, .bg-purple-500 *, .bg-purple-600 *, .bg-indigo-600 * {
+  color: #FFFFFF !important;
+}
+
+/* --- 2. LIGHT/TINTED HOT PINK CONTAINERS (10% Opacity) --- */
+.bg-rose-50, .bg-rose-100, .bg-rose-200, .bg-rose-950,
+.bg-red-50, .bg-red-100, .bg-pink-50, .bg-purple-50, .bg-fuchsia-50 {
+  background-color: rgba(255, 59, 124, 0.1) !important;
+  border-color: rgba(255, 59, 124, 0.3) !important;
+}
+
+/* Text inside light pink containers: Dark Navy in light mode, White in dark mode */
+.bg-rose-50 *, .bg-rose-100 *, .bg-red-50 *, .bg-pink-50 *, .bg-purple-50 * {
+  color: #0F172A !important;
+}
+html.dark .bg-rose-50 *, html.dark .bg-rose-100 *, html.dark .bg-red-50 *, html.dark .bg-pink-50 * {
+  color: #FFFFFF !important;
+}
+
+/* Standalone Hot Pink text (when not in a pink container) */
+.text-rose-500, .text-rose-600, .text-rose-700, .text-rose-800,
+.text-red-500, .text-red-600, .text-pink-500, .text-pink-600,
+.text-purple-500, .text-purple-600, .text-violet-500, .text-indigo-500, .text-indigo-600 {
+  color: #FF3B7C !important;
+}
+
+.border-rose-200, .border-rose-300, .border-rose-400, .border-rose-500, .border-rose-600,
+.border-red-200, .border-red-300, .border-red-500, .border-pink-500, .border-purple-500 {
+  border-color: #FF3B7C !important;
+}
+
+
+/* --- 3. SOLID SKY BLUE BADGES / BUTTONS (#38BDF8) --- */
+.bg-sky-500, .bg-sky-500, .bg-sky-500, .bg-sky-500,
+.bg-sky-500, .bg-sky-500,
+.bg-sky-600, .bg-sky-600,
+.bg-cyan-500, .bg-cyan-600, .bg-sky-400, .bg-sky-500, .bg-sky-600 {
+  background-color: #38BDF8 !important;
+  color: #0F172A !important;
+}
+
+/* Force all text & icons inside solid Sky Blue containers to be BLACK/NAVY for contrast */
+.bg-sky-500 *, .bg-sky-500 *, .bg-sky-500 *, .bg-sky-500 *, .bg-sky-600 *, .bg-cyan-500 *, .bg-sky-500 * {
+  color: #0F172A !important;
+}
+
+/* --- 4. LIGHT/TINTED SKY BLUE CONTAINERS (12% Opacity) --- */
+.bg-sky-500, .bg-sky-500, .bg-sky-500,
+.bg-sky-500, .bg-sky-500, .bg-sky-600, .bg-cyan-50, .bg-sky-50, .bg-sky-100 {
+  background-color: rgba(56, 189, 248, 0.12) !important;
+  border-color: rgba(56, 189, 248, 0.3) !important;
+}
+
+/* Text inside light blue containers */
+.bg-sky-500 *, .bg-sky-500 *, .bg-sky-500 *, .bg-sky-600 *, .bg-cyan-50 *, .bg-sky-50 * {
+  color: #0F172A !important;
+}
+html.dark .bg-sky-500 *, html.dark .bg-sky-500 *, html.dark .bg-sky-500 * {
+  color: #FFFFFF !important;
+}
+
+/* Standalone Sky Blue text & borders */
+.text-sky-500, .text-sky-500, .text-sky-500, .text-sky-500, .text-sky-500,
+.text-sky-500, .text-sky-500, .text-sky-600, .text-sky-600, .text-cyan-500, .text-cyan-600, .text-sky-500, .text-sky-600 {
+  color: #38BDF8 !important;
+}
+
+.border-sky-500, .border-sky-500, .border-sky-500, .border-sky-500, .border-sky-500,
+.border-sky-500, .border-sky-500, .border-sky-600, .border-cyan-300 {
+  border-color: #38BDF8 !important;
+}
+
+
+/* --- 5. SOLID YELLOW BADGES / BUTTONS (#FFD34D) --- */
+.bg-amber-300, .bg-amber-400, .bg-amber-500, .bg-amber-600,
+.bg-yellow-300, .bg-yellow-400, .bg-yellow-500,
+.bg-orange-400, .bg-orange-500 {
+  background-color: #FFD34D !important;
+  color: #0F172A !important;
+}
+
+.bg-amber-400 *, .bg-amber-500 *, .bg-yellow-400 *, .bg-yellow-500 * {
+  color: #0F172A !important;
+}
+
+/* --- 6. LIGHT/TINTED YELLOW CONTAINERS (15% Opacity) --- */
+.bg-amber-50, .bg-amber-100, .bg-amber-200,
+.bg-yellow-50, .bg-yellow-100, .bg-orange-50 {
+  background-color: rgba(255, 211, 77, 0.15) !important;
+  border-color: rgba(255, 211, 77, 0.4) !important;
+}
+
+.bg-amber-50 *, .bg-amber-100 *, .bg-yellow-50 * {
+  color: #0F172A !important;
+}
+html.dark .bg-amber-50 *, html.dark .bg-amber-100 * {
+  color: #FFFFFF !important;
+}
+
+/* Standalone Yellow text */
+.text-amber-400, .text-amber-500, .text-amber-600, .text-amber-700, .text-amber-800, .text-amber-900,
+.text-yellow-400, .text-yellow-500, .text-yellow-600, .text-orange-500 {
+  color: #0F172A !important;
+}
+html.dark .text-amber-400, html.dark .text-amber-500, html.dark .text-amber-600,
+html.dark .text-yellow-400, html.dark .text-yellow-500 {
+  color: #FFD34D !important;
+}
+
+.border-amber-200, .border-amber-300, .border-amber-400, .border-amber-500, .border-yellow-300 {
+  border-color: #FFD34D !important;
+}
+
+
+/* --- 7. DEEP NAVY (#1F2A44) DARK MODE & CARDS --- */
+html.dark, html.dark body {
+  background-color: #1F2A44 !important;
+  color: #FFFFFF !important;
+}
+
 html.dark [class*="bg-[#FFFFFF]"],
 html.dark .bg-white,
 html.dark .bg-slate-50,
 html.dark .bg-gray-50 {
-  background-color: #0b0f1a !important;
+  background-color: #1F2A44 !important;
 }
 
 html.dark .bg-slate-100,
 html.dark .bg-gray-100 {
-  background-color: #101626 !important;
+  background-color: #162035 !important;
 }
 
 html.dark .bg-slate-200,
 html.dark .bg-gray-200 {
-  background-color: #1a2337 !important;
-  color: #ffffff !important;
+  background-color: #2a3859 !important;
+  color: #FFFFFF !important;
 }
 
-/* Deep Header and Bottom Navigation bar rules */
+/* Header and Navigation bar rules */
+header, nav, .bg-\[\#1F2A44\] {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
 html.dark header,
-html.dark .bg-\[\#FFFFFF\] {
-  background-color: #0b0f1a !important;
-  border-bottom: 2px solid #161e30 !important;
+html.dark nav {
+  background-color: #1F2A44 !important;
 }
 
-html.dark nav,
-html.dark .bg-white\/90,
-html.dark .backdrop-blur-md {
-  background-color: rgba(11, 15, 26, 0.9) !important;
-  border-top: 1px solid #1e293b !important;
-}
-
-/* Beautiful High-Contrast Harmonious Text Typography for Premium Legibility */
-html.dark .text-[#1F2A44] {
-  color: #f8fafc !important;
-}
+/* Typography for legibility */
 html.dark .text-slate-900,
 html.dark .text-gray-900,
 html.dark .text-slate-800,
 html.dark .text-gray-800,
 html.dark h1, html.dark h2, html.dark h3, html.dark h4, html.dark h5, html.dark h6 {
-  color: #ffffff !important;
+  color: #FFFFFF !important;
 }
 
 html.dark .text-slate-700,
 html.dark .text-gray-700,
 html.dark .text-slate-600,
 html.dark .text-gray-600 {
-  color: #cbd5e1 !important;
+  color: #E2E8F0 !important;
 }
 
 html.dark .text-slate-500,
 html.dark .text-gray-500,
 html.dark .text-slate-400,
 html.dark .text-gray-400 {
-  color: #94a3b8 !important;
+  color: #94A3B8 !important;
 }
 
-/* Button & Action overrides that were too bright */
+/* Button & Action overrides */
 html.dark button[class*="bg-[#FFFFFF]"], 
 html.dark button.bg-white,
 html.dark .bg-white button,
-html.dark a.bg-white,
-html.dark [class*="hover:bg-slate-200"]:hover,
-html.dark .bg-slate-100 button {
-  background-color: #141b2d !important;
-  color: #ffffff !important;
-  border-color: #222d42 !important;
+html.dark a.bg-white {
+  background-color: #162035 !important;
+  color: #FFFFFF !important;
+  border-color: #2a3859 !important;
 }
 
-html.dark button[class*="bg-[#FFFFFF]"]:hover, 
-html.dark button.bg-white:hover,
-html.dark .bg-white button:hover {
-  background-color: #1c263f !important;
-}
-
-/* Specialized badge & balance indicator highlights */
-html.dark .bg-\[\#FFD34D\]\/10 {
-  background-color: rgba(255, 211, 77, 0.12) !important;
-}
-html.dark .text-amber-600 {
-  color: #fbbf24 !important;
-}
-html.dark .bg-slate-150 {
-  background-color: #151d32 !important;
-}
-
-/* Rings & Borders alignment */
-html.dark .ring-white {
-  --tw-ring-color: #0b0f1a !important;
-}
-
-/* Elegant Borders and Separators in Dark Mode */
-html.dark .border-gray-100, 
-html.dark .border-gray-150, 
-html.dark .border-gray-200,
-html.dark .border-slate-100,
-html.dark .border-slate-200,
-html.dark .border-slate-300,
-html.dark .divide-gray-150,
-html.dark .divide-gray-200,
-html.dark .divide-slate-100 {
-  border-color: #161e30 !important;
-}
-
+/* Inputs in Dark Mode */
 html.dark input, html.dark select, html.dark textarea {
-  background-color: #0d1222 !important;
-  color: #ffffff !important;
-  border-color: #1e293b !important;
+  background-color: #162035 !important;
+  color: #FFFFFF !important;
+  border-color: #2a3859 !important;
 }
 
-html.dark .shadow-sm, html.dark .shadow, html.dark .shadow-md, html.dark .shadow-lg {
-  box-shadow: 0 4px 20px -2px rgba(2, 4, 10, 0.75) !important;
-}
-
-/* Low Performance Mode Overrides for weaker devices */
+/* Low Performance Mode Overrides */
 html.low-perf *, 
 html.low-perf *::before, 
 html.low-perf *::after {
@@ -154,16 +251,59 @@ html.low-perf *::after {
   box-shadow: none !important;
   text-shadow: none !important;
 }
-html.low-perf .backdrop-blur-md,
-html.low-perf .backdrop-blur-xl,
-html.low-perf .backdrop-blur-sm,
-html.low-perf .backdrop-blur-xs {
-  background-color: rgba(255, 255, 255, 0.98) !important;
+
+/* Edge-to-Edge Safe Area Insets for Modern Phones */
+:root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
 }
-html.dark.low-perf .backdrop-blur-md,
-html.dark.low-perf .backdrop-blur-xl,
-html.dark.low-perf .backdrop-blur-sm,
-html.dark.low-perf .backdrop-blur-xs {
-  background-color: rgba(11, 15, 26, 0.98) !important;
+
+html, body, #root {
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin: 0;
+  padding: 0;
+  overscroll-behavior-y: none;
 }
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.pt-safe-top {
+  padding-top: max(0.75rem, env(safe-area-inset-top, 0px));
+}
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.pb-safe-bottom {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+}
+.pl-safe {
+  padding-left: env(safe-area-inset-left, 0px);
+}
+.pr-safe {
+  padding-right: env(safe-area-inset-right, 0px);
+}
+.mt-safe {
+  margin-top: env(safe-area-inset-top, 0px);
+}
+.mb-safe {
+  margin-bottom: env(safe-area-inset-bottom, 0px);
+}
+.top-safe {
+  top: env(safe-area-inset-top, 0px);
+}
+.bottom-safe {
+  bottom: env(safe-area-inset-bottom, 0px);
+}
+.h-safe-top {
+  height: env(safe-area-inset-top, 0px);
+}
+.h-safe-bottom {
+  height: env(safe-area-inset-bottom, 0px);
+}
+
 

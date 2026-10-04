@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { AuthService } from '../services/auth.service';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,

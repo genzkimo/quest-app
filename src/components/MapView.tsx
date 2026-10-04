@@ -23,11 +23,20 @@ import { db } from '../utils/firebase';
 import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
 import { translations } from '../data/translations';
 import { playLockAndLoadCoins, triggerHaptic } from '../utils/audio';
+import { isQuestExpired } from '../utils/questExpiry';
 import UnifiedQuestCard from './UnifiedQuestCard';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Geolocator } from '../utils/geolocator';
 import { Capacitor } from '@capacitor/core';
+
+// Complete Algeria Geographic Bounds & Center (covering all 58 wilayas from coastal north to deep south)
+const ALGERIA_BOUNDS: L.LatLngBoundsExpression = [
+  [18.9, -8.7], // South-West corner (Bordj Badji Mokhtar, In Guezzam, Tindouf)
+  [37.2, 12.0]  // North-East corner (Annaba, El Taref, Tebessa, border)
+];
+const ALGERIA_CENTER: L.LatLngExpression = [28.0339, 1.6596];
+const ALGERIA_DEFAULT_ZOOM = 5;
 
 interface MapViewProps {
  quests: Quest[];
@@ -46,9 +55,10 @@ interface MapViewProps {
  setMapSelectedQuest?: (quest: Quest | null) => void;
  onCloseMap?: () => void;
  setQuests?: (quests: Quest[]) => void;
+ userLoc?: { lat: number; lng: number } | null;
 }
 
-export default function MapView({ 
+function MapView({ 
  quests, 
  userProfile, 
  lang, 
@@ -64,10 +74,20 @@ export default function MapView({
  mapSelectedQuest,
  setMapSelectedQuest,
  onCloseMap,
- setQuests
+ setQuests,
+ userLoc: propUserLoc
 }: MapViewProps) {
  const [gpsActive, setGpsActive] = useState(false);
+ const [isGpsConfirmed, setIsGpsConfirmed] = useState(false);
  const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(null); 
+ const hasFlownToUserLocRef = useRef<boolean>(false);
+ const lastStableRouteIndexRef = useRef<number>(0);
+
+ useEffect(() => {
+   if (propUserLoc && isGpsConfirmed && (!userLoc || userLoc.lat !== propUserLoc.lat || userLoc.lng !== propUserLoc.lng)) {
+     setUserLoc(propUserLoc);
+   }
+ }, [propUserLoc, isGpsConfirmed]);
  const [selectedQuest, setSelectedQuest] = useState<Quest | null>(null);
  const [pinnedQuest, setPinnedQuest] = useState<Quest | null>(null);
  const [userLocAccuracy, setUserLocAccuracy] = useState<number | null>(null);
@@ -260,12 +280,14 @@ export default function MapView({
  useEffect(() => {
  if (navigatingQuest) {
  setIsFullScreen(true);
- if (gpsActive && userLoc) {
+ if (isGpsConfirmed && userLoc) {
  setNavStartLoc({ lat: userLoc.lat, lng: userLoc.lng });
+ } else {
+ triggerGPSGet(true);
  }
  setNavProgress(0);
  }
- }, [navigatingQuest, gpsActive, userLoc]);
+ }, [navigatingQuest, isGpsConfirmed, userLoc]);
 
  const prevNavIdRef = useRef<string | null>(null);
  useEffect(() => {
@@ -283,6 +305,7 @@ export default function MapView({
  const mapInstanceRef = useRef<L.Map | null>(null);
  const markersRef = useRef<L.Marker[]>([]);
  const polylineRef = useRef<L.Polyline | null>(null);
+ const polylineGlowRef = useRef<L.Polyline | null>(null);
  const lastGpsUpdateTimeRef = useRef<number>(0);
 
  // Calculate degree heading/angle between two coordinates
@@ -358,18 +381,15 @@ export default function MapView({
  return closestIndex;
  }, [calculateDistanceMeters]);
 
- // Dynamic Route Fetching & Recalculation: update on mode change, drift > 80m, or distance traveled > 300m
+ // Dynamic Route Fetching & Recalculation: ONLY active when navigatingQuest AND isGpsConfirmed AND userLoc
  useEffect(() => {
- if (!navigatingQuest) {
+ if (!navigatingQuest || !isGpsConfirmed || !userLoc) {
  if (lockedRoutePoints.length > 0) {
  setLockedRoutePoints([]);
  lastRouteFetchKeyRef.current = '';
  lastRouteStartRef.current = null;
+ lastStableRouteIndexRef.current = 0;
  }
- return;
- }
-
- if (!userLoc) {
  return;
  }
 
@@ -379,7 +399,6 @@ export default function MapView({
 
  const fetchRoutePath = async (start: { lat: number; lng: number }, end: { lat: number; lng: number }, mode: 'driving' | 'cycling' | 'walking') => {
  if (!start || !end || isNaN(start.lat) || isNaN(start.lng) || isNaN(end.lat) || isNaN(end.lng)) {
- console.warn("Invalid coordinates provided to fetchRoutePath:", start, end);
  return;
  }
 
@@ -420,9 +439,11 @@ export default function MapView({
 
  if (fetchedPoints && fetchedPoints.length > 0) {
  setLockedRoutePoints(fetchedPoints);
- } else {
- // Guaranteed fallback if all OSRM servers are offline
+ lastStableRouteIndexRef.current = 0;
+ } else if (lockedRoutePoints.length === 0) {
+ // Guaranteed fallback if all OSRM servers are offline on initial start
  setLockedRoutePoints([[start.lat, start.lng], [end.lat, end.lng]]);
+ lastStableRouteIndexRef.current = 0;
  }
 
  isFetchingRouteRef.current = false;
@@ -430,7 +451,6 @@ export default function MapView({
  };
 
  if (lockedRoutePoints.length === 0) {
- // First route locking
  fetchRoutePath(userLoc, endCoords, travelMode);
  return;
  }
@@ -438,23 +458,16 @@ export default function MapView({
  // Measure actual routing drift distance in meters
  const currentDrift = getDistanceToPolyline(userLoc.lat, userLoc.lng, lockedRoutePoints);
 
- // Measure distance moved since last route fetch
- const distFromLastFetch = lastRouteStartRef.current 
- ? calculateDistanceMeters(userLoc.lat, userLoc.lng, lastRouteStartRef.current.lat, lastRouteStartRef.current.lng)
- : Infinity;
-
- // Recalculate if user drifted > 80m off route or moved > 300m along route
- if ((currentDrift > 80 || distFromLastFetch > 300) && !isFetchingRouteRef.current) {
- if (currentDrift > 80) {
+ // Recalculate only if user truly drifted > 80m off route (preserving route line stability during normal motion)
+ if (currentDrift > 80 && !isFetchingRouteRef.current) {
  showToast(
  lang === 'ar'
  ? ` تم الانحراف عن المسار بـ ${Math.round(currentDrift)}م.. جاري تحديث المسار!`
- : ` Drifted ${Math.round(currentDrift)}m from path (>80m). Recalculating route!`
+ : ` Drifted ${Math.round(currentDrift)}m from path. Recalculating route!`
  );
- }
  fetchRoutePath(userLoc, endCoords, travelMode);
  }
- }, [userLoc?.lat, userLoc?.lng, navigatingQuest?.id, travelMode, lockedRoutePoints.length, getQuestCoords, getDistanceToPolyline, calculateDistanceMeters, lang]);
+ }, [userLoc?.lat, userLoc?.lng, isGpsConfirmed, navigatingQuest?.id, travelMode, lockedRoutePoints.length, getQuestCoords, getDistanceToPolyline, lang]);
 
  // Synchronize dynamic position mapping closer to target along the locked route (only in simulation when GPS is inactive)
  useEffect(() => {
@@ -500,7 +513,7 @@ export default function MapView({
  // Visible quests: include open & pending quests for public discovery + booked/active quests for involved users
  const visibleQuests = useMemo(() => {
  return quests.filter(q => {
- if (q.status === 'completed' || q.status === 'cancelled' || q.status === 'cancelled_by_timeout' || q.status === 'stale_cleared' || q.status === 'terminated' || q.status === 'expired' || q.status === 'archived' || q.archived) return false;
+ if (q.status === 'completed' || q.status === 'cancelled' || q.status === 'cancelled_by_timeout' || q.status === 'stale_cleared' || q.status === 'terminated' || q.status === 'expired' || q.status === 'archived' || q.archived || isQuestExpired(q)) return false;
 
  // Requirement 2: Hide tasks that workers have arrived at from everyone EXCEPT the worker who arrived
  if (q.status === 'arrived') {
@@ -549,6 +562,7 @@ export default function MapView({
  const fetchedLoc = { lat: loc.lat, lng: loc.lng };
  const accuracy = loc.accuracy ? Math.round(loc.accuracy) : 25;
  setUserLoc(fetchedLoc);
+ setIsGpsConfirmed(true);
  setIsLocStale(false);
  setUserLocAccuracy(accuracy);
  setGpsActive(true);
@@ -558,6 +572,12 @@ export default function MapView({
  setIsGpsServiceEnabled(true);
  setIsGpsLost(false);
  Geolocator.saveCachedLocation(fetchedLoc.lat, fetchedLoc.lng);
+
+ if (mapInstanceRef.current && !hasFlownToUserLocRef.current && !navigatingQuest) {
+   hasFlownToUserLocRef.current = true;
+   userHasMovedCameraRef.current = false;
+   mapInstanceRef.current.flyTo([fetchedLoc.lat, fetchedLoc.lng], 15, { animate: true, duration: 1.8 });
+ }
  },
  (error) => {
  console.warn("Geolocation watch update error:", error);
@@ -585,6 +605,7 @@ export default function MapView({
  const accuracy = accurate.accuracy ? Math.round(accurate.accuracy) : 15;
 
  setUserLoc(fetchedLoc);
+ setIsGpsConfirmed(true);
  setIsLocStale(false);
  lastLocUpdateTimeRef.current = Date.now();
  setUserLocAccuracy(accuracy);
@@ -596,16 +617,25 @@ export default function MapView({
  setIsGpsLost(false);
  Geolocator.saveCachedLocation(fetchedLoc.lat, fetchedLoc.lng);
 
- userHasMovedCameraRef.current = false;
- setIsUserInteracting(false);
- isUserInteractingRef.current = false;
+ if (!hasFlownToUserLocRef.current) {
+   hasFlownToUserLocRef.current = true;
+   userHasMovedCameraRef.current = false;
+   setIsUserInteracting(false);
+   isUserInteractingRef.current = false;
 
- if (mapInstanceRef.current) {
- const currentZoom = mapInstanceRef.current.getZoom();
- const targetZoom = Math.max(currentZoom, 15);
- mapInstanceRef.current.flyTo([fetchedLoc.lat, fetchedLoc.lng], targetZoom, { animate: true, duration: 1 });
+   if (mapInstanceRef.current) {
+     if (navigatingQuest) {
+       const dest = getQuestCoords(navigatingQuest);
+       mapInstanceRef.current.fitBounds([
+         [fetchedLoc.lat, fetchedLoc.lng],
+         [dest.lat, dest.lng]
+       ], { padding: [60, 60] });
+     } else {
+       mapInstanceRef.current.flyTo([fetchedLoc.lat, fetchedLoc.lng], 15, { animate: true, duration: 1.8 });
+     }
+   }
  }
- showToast(lang === 'ar' ? ' تم تحديد موقعك الفعلي بنجاح وتوسيط الخريطة!' : ' GPS location synced & centered!');
+ showToast(lang === 'ar' ? ' تم تأكيد موقعك الفعلي بنجاح وتوسيط الخريطة!' : ' GPS location verified & centered!');
  startGpsWatch();
  return;
  } catch (err: any) {
@@ -674,36 +704,42 @@ export default function MapView({
  }, [selectedQuest, userLoc, gpsActive]);
 
  // Handle Book Quest inside Map Modal or popup trigger
- const handleMapBookClick = (quest: Quest) => {
- // Strict GPS Location check: Booking requires active GPS location
- if (gpsDenied || !gpsActive || !userLoc) {
- showToast(
- lang === 'ar' 
- ? ' لا يمكن حجز الكويست إلا بعد تفعيل خدمة تحديد الموقع (GPS)' 
- : ' Cannot book quest without enabling GPS location service'
- );
- triggerGPSGet(true);
- return;
- }
-
- const fee = calculateBookingFee(quest.cashReward, quest.questType);
- if (userProfile.tokenBalance < fee) {
- showToast(lang === 'ar' ? ' رصيد غير كافٍ لدفع رسوم الحجز.' : ' Insufficient balance for booking fee.');
- return;
- }
-
- onBookQuest(quest.id, fee);
- setSelectedQuest(null);
-
- showToast(lang === 'ar' 
- ? ' تم التقديم والطلب بنجاح! في انتظار موافقة صاحب العمل لتفعيل العقد وبدء تتبع المسار ' 
- : ' Applied successfully! Awaiting creator approval to activate the contract and launch active GPS routing ');
-
- const audioEnabled = userProfile.audioEffectsEnabled !== false;
- const hapticEnabled = userProfile.hapticFeedbackEnabled !== false;
- playLockAndLoadCoins(audioEnabled);
- triggerHaptic('sharp', hapticEnabled);
- };
+  const handleMapBookClick = async (quest: Quest) => {
+    let activeLoc = userLoc || Geolocator.getCachedLocation();
+    if (!activeLoc && !gpsDenied) {
+      try {
+        const fetched = await Geolocator.getAccuratePhysicalLocation();
+        if (fetched) {
+          activeLoc = { lat: fetched.lat, lng: fetched.lng };
+        }
+      } catch (err) {
+        console.warn("Map location fetch failed:", err);
+      }
+    }
+    if (gpsDenied && !activeLoc) {
+      showToast(
+        lang === 'ar'
+          ? ' يرجى تفعيل السماح بالموقع (GPS) في متصفحك أو جهازك لحجز المهمة'
+          : ' Please enable location permissions (GPS) to book the quest'
+      );
+      triggerGPSGet(true);
+      return;
+    }
+    const fee = calculateBookingFee(quest.cashReward, quest.questType);
+    if (userProfile.tokenBalance < fee) {
+      showToast(lang === 'ar' ? ' رصيد غير كافٍ لدفع رسوم الحجز.' : ' Insufficient balance for booking fee.');
+      return;
+    }
+    onBookQuest(quest.id, fee);
+    setSelectedQuest(null);
+    showToast(lang === 'ar'
+      ? ' تم التقديم والطلب بنجاح! في انتظار موافقة صاحب العمل لتفعيل العقد وبدء تتبع المسار '
+      : ' Applied successfully! Awaiting creator approval to activate the contract and launch active GPS routing ');
+    const audioEnabled = userProfile.audioEffectsEnabled !== false;
+    const hapticEnabled = userProfile.hapticFeedbackEnabled !== false;
+    playLockAndLoadCoins(audioEnabled);
+    triggerHaptic('sharp', hapticEnabled);
+  };
 
  // Permission-aware GPS initialization & online/offline recovery
  useEffect(() => {
@@ -761,13 +797,16 @@ export default function MapView({
  useEffect(() => {
  if (mapContainerRef.current && !mapInstanceRef.current) {
  const map = L.map(mapContainerRef.current, {
- center: [34.0, 3.5], // Centered beautifully at macro national level over Algeria
- zoom: 6, // View the entire national map at startup
+ center: ALGERIA_CENTER,
+ zoom: ALGERIA_DEFAULT_ZOOM,
  zoomControl: false,
  zoomAnimation: true,
  fadeAnimation: true,
  markerZoomAnimation: true
  });
+
+ // Always fit complete boundaries of Algeria initially upon entry
+ map.fitBounds(ALGERIA_BOUNDS, { padding: [15, 15] });
 
  setMapZoom(map.getZoom());
 
@@ -831,6 +870,14 @@ export default function MapView({
  accuracyCircleRef.current.remove();
  accuracyCircleRef.current = null;
  }
+ if (polylineGlowRef.current) {
+ polylineGlowRef.current.remove();
+ polylineGlowRef.current = null;
+ }
+ if (polylineRef.current) {
+ polylineRef.current.remove();
+ polylineRef.current = null;
+ }
  if (mapInstanceRef.current) {
  mapInstanceRef.current.off('dragstart');
  mapInstanceRef.current.off('zoomstart');
@@ -873,10 +920,14 @@ export default function MapView({
  mapInstanceRef.current.setView([navCoords.lat, navCoords.lng], currentZoom);
  }
  }
- } else if (hasCenteredGPS && gpsActive && userLoc) {
- // ONLY auto-center/pan if the user is NOT interacting and hasn't manually adjusted their map view
- if (!isUserInteractingRef.current && !userHasMovedCameraRef.current) {
- mapInstanceRef.current.setView([userLoc.lat, userLoc.lng], currentZoom);
+ } else if (userLoc) {
+ // When location is captured, fly directly to user location!
+ if (!hasFlownToUserLocRef.current) {
+   hasFlownToUserLocRef.current = true;
+   userHasMovedCameraRef.current = false;
+   mapInstanceRef.current.flyTo([userLoc.lat, userLoc.lng], 15, { animate: true, duration: 1.5 });
+ } else if (hasCenteredGPS && gpsActive && !isUserInteractingRef.current && !userHasMovedCameraRef.current) {
+   mapInstanceRef.current.setView([userLoc.lat, userLoc.lng], mapInstanceRef.current.getZoom());
  }
  }
  }
@@ -890,14 +941,14 @@ export default function MapView({
  // A map of desired markers to place on the map
  const desiredMarkers = new Map<string, { latlng: L.LatLngExpression; icon: L.DivIcon; onClick?: () => void }>();
 
- // Add User Current Location pulsing radar icon (Blue when active & updated, Gray when stale >10s or lost)
- if (userLoc) {
+ // Add User Current Location pulsing radar icon (ONLY after confirmed GPS acquisition)
+ if (isGpsConfirmed && userLoc) {
  const isGray = isLocStale || isGpsLost || !gpsActive || (typeof navigator !== 'undefined' && !navigator.onLine);
  const pingBg = isGray ? 'bg-[#9CA3AF]/30' : 'bg-[#4FC3F7]/30';
  const pulseBg = isGray ? 'bg-[#9CA3AF]/10' : 'bg-[#4FC3F7]/10';
  const dotBg = isGray ? 'bg-[#9CA3AF]' : 'bg-[#4FC3F7]';
  const shadowColor = isGray ? 'rgba(156,163,175,0.8)' : 'rgba(79,195,247,0.8)';
- const pingAnim = isGray ? '' : 'animate-ping';
+ const pingAnim = isGray ? '' : 'shadow-md';
  const pulseAnim = isGray ? '' : 'animate-pulse';
 
  const userIcon = L.divIcon({
@@ -925,8 +976,8 @@ export default function MapView({
  className: 'destination-marker-glow',
  html: `
  <div class="relative flex flex-col items-center justify-center cursor-pointer">
- <div class="absolute -inset-1.5 bg-[#FF3B7C]/40 rounded-full animate-ping"></div>
- <div class="absolute -inset-3 bg-[#FF3B7C]/15 rounded-full animate-pulse"></div>
+ <div class="absolute -inset-1 bg-[#FF3B7C]/30 rounded-full"></div>
+ <div class="absolute -inset-2 bg-[#FF3B7C]/15 rounded-full"></div>
  <div class="w-10 h-10 bg-slate-950 border-2 border-[#FF3B7C] rounded-full shadow-[0_0_15px_rgba(255,59,124,0.9)] flex items-center justify-center z-20 text-md hover:scale-110 transition duration-200">
  
  </div>
@@ -957,7 +1008,7 @@ export default function MapView({
  className: `custom-selected-pin-${targetQuest.id}`,
  html: `
  <div class="relative flex flex-col items-center">
- <div class="absolute -inset-1.5 bg-gradient-to-r from-[#FFD34D] to-[#FF3B7C] opacity-60 rounded-full animate-ping"></div>
+ <div class="absolute -inset-1 bg-gradient-to-r from-[#FFD34D] to-[#FF3B7C] opacity-50 rounded-full"></div>
  <div class="p-2 rounded-full shadow-2xl border border-white bg-slate-950 text-white hover:scale-110 transition-all">
  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FFD34D" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>
  </div>
@@ -1059,7 +1110,7 @@ export default function MapView({
  className: `custom-leaf-pin-${quest.id}`,
  html: `
  <div class="relative flex flex-col items-center">
- ${isUrgent ? '<div class="absolute -inset-1.5 bg-[#FF3B7C]/40 rounded-full animate-ping"></div>' : ''}
+ ${isUrgent ? '<div class="absolute -inset-1 bg-[#FF3B7C]/30 rounded-full"></div>' : ''}
  <div class="p-2 rounded-full shadow-lg border-2 border-white transition-all text-white ${
  isUrgent ? 'bg-[#FF3B7C]' : 'bg-[#FFD34D] text-[#1F2A44]'
  }">
@@ -1177,14 +1228,17 @@ export default function MapView({
  accuracyCircleRef.current = null;
  }
 
- // Update Polyline starting dynamically from userLoc to destination
+ // Update Polyline starting dynamically from userLoc to destination (ONLY when GPS is confirmed)
+ const isNavReady = !!(navigatingQuest && isGpsConfirmed && userLoc);
  const navCoords = navigatingQuest ? getQuestCoords(navigatingQuest) : null;
- const shouldShowPolyline = !!(navigatingQuest && userLoc && navCoords);
+ const shouldShowPolyline = !!(isNavReady && navCoords);
  let plinePoints: L.LatLngExpression[] = [];
  if (shouldShowPolyline && userLoc) {
  if (lockedRoutePoints.length > 0) {
  const closestIdx = getClosestPointIndex(userLoc.lat, userLoc.lng, lockedRoutePoints);
- const remainingPointsAhead = lockedRoutePoints.slice(closestIdx);
+ const stableIdx = Math.max(lastStableRouteIndexRef.current, Math.min(closestIdx, lastStableRouteIndexRef.current + 3));
+ lastStableRouteIndexRef.current = stableIdx;
+ const remainingPointsAhead = lockedRoutePoints.slice(stableIdx);
  if (remainingPointsAhead.length > 0) {
  plinePoints = [[userLoc.lat, userLoc.lng], ...remainingPointsAhead] as L.LatLngExpression[];
  } else {
@@ -1202,12 +1256,26 @@ export default function MapView({
  }
 
  if (shouldShowPolyline && plinePoints.length > 0) {
+ // 1. Outer Glow Casing Line
+ if (polylineGlowRef.current) {
+ polylineGlowRef.current.setLatLngs(plinePoints);
+ } else {
+ polylineGlowRef.current = L.polyline(plinePoints, {
+ color: '#FF3B7C',
+ weight: 10,
+ opacity: 0.35,
+ lineCap: 'round',
+ lineJoin: 'round'
+ }).addTo(map);
+ }
+
+ // 2. Crisp Core Route Line
  if (polylineRef.current) {
  polylineRef.current.setLatLngs(plinePoints);
  } else {
  const pline = L.polyline(plinePoints, {
  color: '#FF3B7C',
- weight: 6,
+ weight: 5,
  opacity: 0.95,
  lineCap: 'round',
  lineJoin: 'round',
@@ -1216,12 +1284,16 @@ export default function MapView({
  polylineRef.current = pline;
  }
  } else {
+ if (polylineGlowRef.current) {
+ polylineGlowRef.current.remove();
+ polylineGlowRef.current = null;
+ }
  if (polylineRef.current) {
  polylineRef.current.remove();
  polylineRef.current = null;
  }
  }
- }, [filteredMapQuests, gpsActive, userLoc, userLocAccuracy, lang, navigatingQuest, selectedQuest, lockedRoutePoints, travelMode, mapZoom, userProfile.hapticFeedbackEnabled, getQuestCoords, isLocStale, isGpsLost, getClosestPointIndex]);
+ }, [filteredMapQuests, gpsActive, isGpsConfirmed, userLoc, userLocAccuracy, lang, navigatingQuest, selectedQuest, lockedRoutePoints, travelMode, mapZoom, userProfile.hapticFeedbackEnabled, getQuestCoords, isLocStale, isGpsLost, getClosestPointIndex]);
 
  const remainingDistance = useMemo(() => {
  if (!navigatingQuest || !userLoc) return 0;
@@ -1392,6 +1464,130 @@ export default function MapView({
  </button>
  )}
 
+ {/* Non-intrusive GPS Activation Pill on Map when not yet confirmed */}
+ <AnimatePresence>
+ {!isGpsConfirmed && !navigatingQuest && (
+   <motion.div
+     initial={{ y: -30, opacity: 0 }}
+     animate={{ y: 0, opacity: 1 }}
+     exit={{ y: -30, opacity: 0 }}
+     className="absolute top-16 sm:top-20 left-4 right-4 max-w-sm mx-auto z-[45] bg-slate-950/90 text-white px-3.5 py-2.5 rounded-2xl border border-sky-400/40 shadow-xl backdrop-blur-md flex items-center justify-between gap-3 text-start select-none"
+     style={{ direction: isRtl ? 'rtl' : 'ltr' }}
+   >
+     <div className="flex items-center gap-2.5 min-w-0">
+       <MapPin className="w-4 h-4 text-sky-400 shrink-0 animate-bounce" />
+       <span className="text-[11px] font-bold text-slate-200 truncate">
+         {isRtl ? 'تحديد الموقع الميداني غير مفعّل' : 'Field GPS location disabled'}
+       </span>
+     </div>
+     <button
+       onClick={() => triggerGPSGet(true)}
+       disabled={isLocating}
+       className="px-3 py-1.5 bg-sky-500 hover:bg-sky-400 active:scale-95 text-slate-950 text-[10px] font-black rounded-xl transition cursor-pointer shrink-0 shadow-sm flex items-center gap-1.5"
+     >
+       <Compass className={`w-3.5 h-3.5 ${isLocating ? 'animate-spin' : ''}`} />
+       <span>{isLocating ? (isRtl ? 'جاري القفل...' : 'Locating...') : (isRtl ? 'تفعيل موقعي' : 'Enable GPS')}</span>
+     </button>
+   </motion.div>
+ )}
+ </AnimatePresence>
+
+ {/* GPS Calibration Waiting Banner during Navigation */}
+ <AnimatePresence>
+ {navigatingQuest && (!isGpsConfirmed || !userLoc) && (
+   <motion.div
+     initial={{ y: -50, opacity: 0 }}
+     animate={{ y: 0, opacity: 1 }}
+     exit={{ y: -50, opacity: 0 }}
+     className="absolute top-16 sm:top-20 left-4 right-4 max-w-md mx-auto bg-slate-950/95 text-white p-4 rounded-2xl border border-sky-400/50 shadow-2xl z-[10006] backdrop-blur-md flex items-center justify-between gap-3 text-start select-none"
+     style={{ direction: isRtl ? 'rtl' : 'ltr' }}
+   >
+     <div className="flex items-center gap-3">
+       <div className="relative w-10 h-10 rounded-xl bg-sky-500/20 border border-sky-400/40 flex items-center justify-center shrink-0">
+         <Compass className="w-5 h-5 text-sky-400 animate-spin" />
+         <span className="absolute -top-1 -right-1 w-3 h-3 bg-sky-400 rounded-full animate-ping" />
+       </div>
+       <div>
+         <h4 className="text-xs font-black text-white flex items-center gap-1.5">
+           <span>{isRtl ? 'جاري تحديد موقعك الدقيق لتفعيل الملاحة...' : 'Acquiring precise GPS fix...'}</span>
+         </h4>
+         <p className="text-[10px] text-slate-300 font-bold mt-0.5">
+           {isRtl ? 'الملاحة المباشرة تتطلب إشارة GPS دقيقة ومؤكدة لضمان استقرار المسار' : 'Navigation requires a verified GPS lock for line stability'}
+         </p>
+       </div>
+     </div>
+     <button
+       onClick={handleExitNavigation}
+       className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white text-[10px] font-extrabold rounded-xl transition cursor-pointer border border-white/10 shrink-0"
+     >
+       {isRtl ? 'إلغاء' : 'Cancel'}
+     </button>
+   </motion.div>
+ )}
+ </AnimatePresence>
+
+ {/* Top Live Navigation Turn / Direction HUD */}
+ <AnimatePresence>
+ {navigatingQuest && isGpsConfirmed && userLoc && (
+   <motion.div
+     initial={{ y: -80, opacity: 0 }}
+     animate={{ y: 0, opacity: 1 }}
+     exit={{ y: -80, opacity: 0 }}
+     className="absolute top-16 sm:top-20 left-4 right-4 max-w-lg mx-auto z-[10006] bg-slate-950/95 backdrop-blur-md rounded-2xl border border-rose-500/50 shadow-2xl p-3 flex items-center justify-between gap-3 text-white"
+     style={{ direction: isRtl ? 'rtl' : 'ltr' }}
+   >
+     <div className="flex items-center gap-3 min-w-0">
+       <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#FFD34D] to-[#FF3B7C] flex items-center justify-center shrink-0 shadow-md">
+         <Compass 
+           className="w-5 h-5 text-white transition-transform duration-300"
+           style={{ transform: `rotate(${currentHeading}deg)` }}
+         />
+       </div>
+       <div className="min-w-0 text-start">
+         <div className="flex items-center gap-1.5">
+           <span className="text-[10px] font-black text-rose-400 uppercase tracking-wider">
+             {isRtl ? 'الملاحة المباشرة' : 'Live Route'}
+           </span>
+           <span className="text-gray-400 text-[10px]">•</span>
+           <span className="text-[10px] font-extrabold text-[#FFD34D]">
+             {remainingDistance < 1 ? `${Math.round(remainingDistance * 1000)} م` : `${remainingDistance} كم`}
+           </span>
+           <span className="text-gray-400 text-[10px]">•</span>
+           <span className="text-[10px] font-extrabold text-white">
+             ~{etaMinutes} {isRtl ? 'د' : 'min'}
+           </span>
+         </div>
+         <p className="text-xs font-black text-white truncate max-w-[200px] sm:max-w-xs mt-0.5">
+           {navigatingQuest.title}
+         </p>
+       </div>
+     </div>
+
+     <div className="flex items-center gap-1.5 shrink-0">
+       <button
+         onClick={() => {
+           if (mapInstanceRef.current && userLoc) {
+             userHasMovedCameraRef.current = false;
+             mapInstanceRef.current.flyTo([userLoc.lat, userLoc.lng], 16, { animate: true, duration: 1 });
+           }
+         }}
+         className="p-2 bg-white/10 hover:bg-white/20 text-white rounded-xl transition cursor-pointer"
+         title={isRtl ? 'توسيط موقعي' : 'Recenter GPS'}
+       >
+         <Target className="w-4 h-4 text-sky-400" />
+       </button>
+       <button
+         onClick={handleExitNavigation}
+         className="p-2 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 rounded-xl transition cursor-pointer"
+         title={isRtl ? 'إنهاء الملاحة' : 'Exit Navigation'}
+       >
+         <X className="w-4 h-4" />
+       </button>
+     </div>
+   </motion.div>
+ )}
+ </AnimatePresence>
+
  {/* Floating Assistant Controls (أزرار المساعدة العائمة) */}
  <motion.div 
  animate={isMobile ? {
@@ -1468,7 +1664,7 @@ export default function MapView({
  onClick={() => setIsInfoPanelMinimized(false)}
  >
  <div className="flex items-center gap-2.5 min-w-0">
- <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping shrink-0" />
+ <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-md shrink-0" />
  <span className="text-xs font-black text-rose-400 shrink-0">
  {lang === 'ar' ? 'تتبع المسار' : 'Live Tracking'}
  </span>
@@ -1516,7 +1712,7 @@ export default function MapView({
  
  <div className="space-y-0.5 min-w-0 text-start">
  <span className="text-[9px] text-rose-400 font-extrabold tracking-wider uppercase flex items-center gap-1">
- <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping"></span>
+ <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-md"></span>
  {lang === 'ar' ? 'نظام تتبع المسار' : 'SATELLITE NAVIGATION HUD'}
  </span>
  <h4 className="font-extrabold text-white text-xs sm:text-sm truncate max-w-[180px] sm:max-w-xs">{navigatingQuest.title}</h4>
@@ -2156,3 +2352,5 @@ export default function MapView({
  </div>
  );
 }
+
+export default React.memo(MapView);

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { isQuestExpired } from '../utils/questExpiry';
 import { 
  Plus, 
  MapPin, 
@@ -81,7 +82,7 @@ const CATEGORIES_LIST: QuestCategory[] = [
  'صيانة', 'توصيل', 'تعليم', 'تسوق', 'تقنية', 'مساعدة منزلية', 'رعاية أليفة', 'أخرى'
 ];
 
-export default function MyQuestsView({
+function MyQuestsView({
  quests,
  currentUserId,
  lang,
@@ -115,11 +116,55 @@ export default function MyQuestsView({
   const [endWorkQuestModal, setEndWorkQuestModal] = useState<Quest | null>(null);
   const [endWorkReasonText, setEndWorkReasonText] = useState("");
   const scrolledQuestIdRef = useRef<string | null>(null);
- const activeQuestCount = userProfile?.hasActiveQuest === false ? 0 : quests.filter(q => q.creatorId === currentUserId && !['completed', 'cancelled', 'cancelled_by_timeout', 'stale_cleared', 'expired', 'terminated', 'archived'].includes(q.status) && !q.archived).length;
- const [activeTab, setActiveTab ] = useState<'obligations' | 'created'>(() => {
+ const activeQuestCount = userProfile?.hasActiveQuest === false ? 0 : quests.filter(q => q.creatorId === currentUserId && !['completed', 'cancelled', 'cancelled_by_timeout', 'stale_cleared', 'expired', 'terminated', 'archived'].includes(q.status) && !q.archived && !isQuestExpired(q)).length;
+ const getSmartInitialTab = (): 'created' | 'obligations' => {
  if (initialTab) return initialTab;
- return activeQuestCount > 0 ? 'created' : 'obligations';
- });
+
+ const activeCreated = quests.filter(q => 
+ q.creatorId === currentUserId && 
+ !['completed', 'cancelled', 'cancelled_by_timeout', 'stale_cleared', 'expired', 'terminated', 'archived'].includes(q.status) && 
+ !q.archived && 
+ !isQuestExpired(q)
+ );
+
+ const activeBooked = quests.filter(q => 
+ (q.helperId === currentUserId || q.assignedRunnerId === currentUserId || q.assignedRunnerIds?.includes(currentUserId) || q.employeeId === currentUserId || q.applicants?.some(a => a.userId === currentUserId) || q.jobApplicants?.some(a => a.applicantId === currentUserId)) &&
+ !['completed', 'cancelled', 'cancelled_by_timeout', 'stale_cleared', 'expired', 'terminated', 'archived'].includes(q.status) &&
+ !q.archived &&
+ !isQuestExpired(q)
+ );
+
+ if (activeCreated.length > 0 && activeBooked.length === 0) return 'created';
+ if (activeBooked.length > 0 && activeCreated.length === 0) return 'obligations';
+ if (activeCreated.length > 0 && activeBooked.length > 0) {
+ const latestCreatedTime = Math.max(...activeCreated.map(q => new Date(q.createdAt || 0).getTime()), 0);
+ const latestBookedTime = Math.max(...activeBooked.map(q => {
+ const myApp = q.applicants?.find(a => a.userId === currentUserId);
+ const myJobApp = q.jobApplicants?.find(a => a.applicantId === currentUserId);
+ const appliedTime = myApp ? new Date((myApp as any).appliedAt || 0).getTime() : 0;
+ const jobAppliedTime = myJobApp ? new Date((myJobApp as any).appliedAt || 0).getTime() : 0;
+ const questTime = new Date((q as any).updatedAt || q.createdAt || 0).getTime();
+ return Math.max(appliedTime, jobAppliedTime, questTime);
+ }), 0);
+
+ return latestBookedTime > latestCreatedTime ? 'obligations' : 'created';
+ }
+
+ const allCreated = quests.filter(q => q.creatorId === currentUserId);
+ const allBooked = quests.filter(q => q.helperId === currentUserId || q.assignedRunnerId === currentUserId || q.applicants?.some(a => a.userId === currentUserId) || q.jobApplicants?.some(a => a.applicantId === currentUserId));
+
+ if (allCreated.length > 0 && allBooked.length === 0) return 'created';
+ if (allBooked.length > 0 && allCreated.length === 0) return 'obligations';
+ if (allCreated.length > 0 && allBooked.length > 0) {
+ const latestCreated = Math.max(...allCreated.map(q => new Date(q.createdAt || 0).getTime()), 0);
+ const latestBooked = Math.max(...allBooked.map(q => new Date(q.createdAt || 0).getTime()), 0);
+ return latestBooked > latestCreated ? 'obligations' : 'created';
+ }
+
+ return 'created';
+ };
+
+ const [activeTab, setActiveTab] = useState<'obligations' | 'created'>(getSmartInitialTab);
 
  const handleRefresh = async () => {
  try {
@@ -127,12 +172,14 @@ export default function MyQuestsView({
  const questsSnapshot = await getDocs(questsQuery);
  const fetchedQuests: Quest[] = [];
  questsSnapshot.forEach((doc) => {
- fetchedQuests.push({ id: doc.id, ...doc.data() } as any);
+   const qData = { id: doc.id, ...doc.data() } as Quest;
+   if (!isQuestExpired(qData)) {
+     fetchedQuests.push(qData);
+   }
  });
  if (setQuests && fetchedQuests.length > 0) {
  setQuests(fetchedQuests);
  }
- showToast(lang === 'ar' ? ' تم تحديث قائمة الكويستات والمهمات بنجاح!' : ' Quests and tasks refreshed successfully!');
  } catch (error) {
  console.error("Failed to refresh quests in MyQuestsView:", error);
  showToast(lang === 'ar' ? ' فشل تحديث البيانات.' : ' Failed to update data.');
@@ -228,6 +275,8 @@ export default function MyQuestsView({
  if (onClearInitialTab) {
  onClearInitialTab();
  }
+ } else {
+ setActiveTab(getSmartInitialTab());
  }
  }, [initialTab, onClearInitialTab]);
 
@@ -321,8 +370,7 @@ export default function MyQuestsView({
  const resLoc = resolveNeighborhoodFromCoords(cached.lat, cached.lng, '', lang);
  if (resLoc) setNewLoc(resLoc);
  } else {
- setGpsCoords({ lat: 35.184, lng: 4.556 });
- setNewLoc('بن سرور');
+ setGpsCoords(null);
  }
  showToast(
  lang === 'ar' ? ' تم تحديد الموقع الجغرافي' : ' Location tagged'
@@ -510,7 +558,7 @@ export default function MyQuestsView({
 
  const createdQuests = quests.filter(q => 
  (q.creatorId === currentUserId) && 
- (showHistory ? (isHistoryStatus(q.status) || q.archived) : (isActiveStatus(q.status) && !q.archived))
+ (showHistory ? (isHistoryStatus(q.status) || q.archived || isQuestExpired(q)) : (isActiveStatus(q.status) && !q.archived && !isQuestExpired(q)))
  );
 
  const [archiveFilter, setArchiveFilter] = useState<'all' | 'quick' | 'long_term' | 'completed' | 'finished'>('all');
@@ -552,10 +600,13 @@ export default function MyQuestsView({
  e.preventDefault();
  if (!newTitle || !newDesc) return;
 
- const coords = gpsCoords || { lat: 35.184, lng: 4.556 };
- const lat = coords.lat;
- const lng = coords.lng;
- const locString = newLoc.trim() || resolveNeighborhoodFromCoords(lat, lng, 'بن سرور', lang);
+ if (!gpsCoords) {
+ showToast(lang === 'ar' ? ' يرجى تحديد موقعك الجغرافي أولاً' : ' Please tag your GPS location first');
+ return;
+ }
+ const lat = gpsCoords.lat;
+ const lng = gpsCoords.lng;
+ const locString = newLoc.trim() || resolveNeighborhoodFromCoords(lat, lng, '', lang);
 
  onPostNewQuest({
  title: newTitle,
@@ -607,23 +658,8 @@ export default function MyQuestsView({
  audioEffectsEnabled={userProfile?.audioEffectsEnabled !== false}
  hapticFeedbackEnabled={userProfile?.hapticFeedbackEnabled !== false}
  >
- <div className="space-y-6 pb-32 font-sans text-[#1F2A44]" style={{ direction: isRtl ? 'rtl' : 'ltr' }}>
+ <div className="space-y-6 pt-3.5 sm:pt-5 pb-32 font-sans text-[#1F2A44] px-3 sm:px-6 w-full" style={{ direction: isRtl ? 'rtl' : 'ltr' }}>
  
- {/* Minimal Header: Only Archive Toggle Icon-Button */}
- <div className="flex justify-end items-center">
- <button
- onClick={() => setShowHistory(!showHistory)}
- className={`p-2.5 rounded-2xl border shadow-sm transition-all duration-300 cursor-pointer flex items-center justify-center ${
- showHistory
- ? 'bg-amber-100 border-amber-300 text-amber-800 ring-2 ring-amber-300/50'
- : 'bg-white border-gray-150 text-[#1F2A44] hover:bg-gray-50'
- }`}
- title={showHistory ? (lang === 'ar' ? 'العقود النشطة ' : 'Active Contracts') : (lang === 'ar' ? 'سجل المهام ' : 'History Log')}
- >
- <History className="w-5 h-5 text-current" />
- </button>
- </div>
-
  {/* Persistent Tabs (The PinnedTabBar) */}
  <div className="flex bg-gray-100 p-1.5 rounded-2xl border border-gray-200 items-center gap-2">
  {activeQuestCount > 0 ? (
@@ -1718,6 +1754,26 @@ export default function MyQuestsView({
  </div>
  )}
 
+ {/* Bottom Archive & History Access Button */}
+ <div className="pt-6 pb-2 flex justify-center">
+ <button
+ type="button"
+ onClick={() => setShowHistory(!showHistory)}
+ className={`w-full max-w-sm py-3 px-5 rounded-2xl font-black text-xs transition-all duration-300 cursor-pointer flex items-center justify-center gap-2.5 shadow-sm active:scale-95 border ${
+ showHistory
+ ? 'bg-amber-100 dark:bg-amber-500/20 border-amber-300 dark:border-amber-500/40 text-amber-900 dark:text-amber-200 ring-2 ring-amber-400/30'
+ : 'bg-white dark:bg-[#151F32] border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#1A2640]'
+ }`}
+ >
+ <History className="w-4 h-4 text-amber-500 shrink-0" />
+ <span>
+ {showHistory
+ ? (lang === 'ar' ? 'الرجوع إلى العقود والمهام النشطة' : 'Back to Active Contracts')
+ : (lang === 'ar' ? 'عرض سجل الأرشيف والمهام السابقة' : 'View Archived Tasks & History Log')}
+ </span>
+ </button>
+ </div>
+
  {/* Delete/Cancel Confirmation Modal */}
  <AnimatePresence>
  {deleteConfirmQuestId && (
@@ -2721,3 +2777,5 @@ export default function MyQuestsView({
  </PullToRefresh>
  );
 }
+
+export default React.memo(MyQuestsView);

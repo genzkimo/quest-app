@@ -1,8 +1,9 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { ArrowLeft, ArrowRight, Search } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Search, Clock } from 'lucide-react';
 import { Quest, UserProfile } from '../types';
 import UnifiedQuestCard from './UnifiedQuestCard';
+import { isQuestExpired } from '../utils/questExpiry';
 
 interface QuestDetailScreenProps {
  questId: string;
@@ -45,15 +46,20 @@ export default function QuestDetailScreen({
  const lang = userProfile.language;
  const isRTL = lang === 'ar';
 
- if (!quest) {
+ if (!quest || (isQuestExpired(quest) && quest.status !== 'completed' && quest.status !== 'terminated')) {
  return (
- <div className="flex flex-col items-center justify-center py-20 text-center space-y-4 font-sans">
- <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center">
- <Search className="w-8 h-8 text-slate-400" />
+ <div className="flex flex-col items-center justify-center py-20 text-center space-y-4 font-sans px-4">
+ <div className="w-16 h-16 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-500 flex items-center justify-center border border-amber-200">
+ <Clock className="w-8 h-8" />
  </div>
- <h3 className="text-xl font-black text-slate-800">
- {isRTL ? 'المهمة غير موجودة' : 'Quest Not Found'}
+ <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">
+ {isRTL ? 'انتهت صلاحية هذه المهمة' : 'This Quest Has Expired'}
  </h3>
+ <p className="text-xs text-slate-500 max-w-sm leading-relaxed">
+ {isRTL 
+   ? 'تم سحب هذه المهمة تلقائياً من المنصة لتجاوزها مهلة النشر (8 ساعات) دون حجز.'
+   : 'This quest was automatically withdrawn after reaching the 8-hour publication timeout.'}
+ </p>
  <button
  onClick={onBack}
  className="bg-sky-600 hover:bg-sky-500 text-white font-black text-xs px-6 py-2.5 rounded-full transition-all active:scale-95 cursor-pointer shadow-md"
@@ -73,7 +79,7 @@ export default function QuestDetailScreen({
  <div className="flex items-center justify-between mb-4 px-2">
  <button
  onClick={onBack}
- className="flex items-center gap-1.5 text-xs font-black text-[#1F2A44] hover:text-[#1F2A44]/80 py-2.5 px-4 bg-slate-100 hover:bg-slate-200/80 rounded-full transition-all active:scale-95 cursor-pointer shadow-xs"
+ className="flex items-center gap-1.5 text-xs font-black text-[#1F2A44] dark:text-slate-100 hover:text-[#1F2A44]/80 py-2.5 px-4 bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-750 rounded-full transition-all active:scale-95 cursor-pointer shadow-xs border border-slate-200/60 dark:border-slate-700/80"
  >
  {isRTL ? (
  <>
@@ -88,7 +94,7 @@ export default function QuestDetailScreen({
  )}
  </button>
  
- <span className="text-[10px] font-black font-mono text-slate-400 uppercase tracking-widest bg-slate-50 px-3 py-1.5 rounded-full border border-slate-100">
+ <span className="text-[10px] font-black font-mono text-slate-400 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800 px-3 py-1.5 rounded-full border border-slate-100 dark:border-slate-700">
  {isRTL ? 'تفاصيل الكويست' : 'Quest details'}
  </span>
  </div>

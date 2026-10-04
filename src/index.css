@@ -1,6 +1,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --font-sans: "Cairo", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
@@ -168,58 +170,153 @@ html.dark .text-yellow-400, html.dark .text-yellow-500 {
 }
 
 
-/* --- 7. DEEP NAVY (#1F2A44) DARK MODE & CARDS --- */
+/* --- 7. SOPHISTICATED LAYERED DARK THEME (#0B1120 / #151F32 / #1F2A44) --- */
 html.dark, html.dark body {
-  background-color: #1F2A44 !important;
-  color: #FFFFFF !important;
+  background-color: #0B1120 !important;
+  color: #F8FAFC !important;
 }
 
-html.dark [class*="bg-[#FFFFFF]"],
+/* Layer 1: Elevated Primary Cards (Crisp contrast against #0B1120 canvas) */
 html.dark .bg-white,
-html.dark .bg-slate-50,
-html.dark .bg-gray-50 {
-  background-color: #1F2A44 !important;
+html.dark [class*="bg-[#FFFFFF]"],
+html.dark [class*="bg-white"] {
+  background-color: #151F32 !important;
 }
 
-html.dark .bg-slate-100,
-html.dark .bg-gray-100 {
-  background-color: #162035 !important;
+/* Layer 2: Recessed wells, inner sections, bio containers, and info blocks */
+html.dark [class*="bg-slate-50"],
+html.dark [class*="bg-gray-50"],
+html.dark [class*="bg-stone-50"],
+html.dark [class*="bg-zinc-50"] {
+  background-color: #0F172A !important;
 }
 
-html.dark .bg-slate-200,
-html.dark .bg-gray-200 {
-  background-color: #2a3859 !important;
-  color: #FFFFFF !important;
+/* Layer 3: Interactive pills, secondary buttons, search bars */
+html.dark [class*="bg-slate-100"],
+html.dark [class*="bg-gray-100"],
+html.dark [class*="bg-stone-100"],
+html.dark [class*="bg-zinc-100"] {
+  background-color: #1A2640 !important;
+  color: #F8FAFC !important;
 }
 
-/* Header and Navigation bar rules */
-header, nav, .bg-\[\#1F2A44\] {
-  border-color: rgba(255, 255, 255, 0.1) !important;
+/* Layer 4: Neutral tags, secondary pills, subtle borders */
+html.dark [class*="bg-slate-200"],
+html.dark [class*="bg-gray-200"],
+html.dark [class*="bg-stone-200"],
+html.dark [class*="bg-slate-300"],
+html.dark [class*="bg-gray-300"] {
+  background-color: #223250 !important;
+  color: #F8FAFC !important;
+}
+
+/* Harmonious Pastel Badges and Icon Containers in Dark Mode (No Blinding White/Light Patches) */
+html.dark [class*="bg-blue-50"],
+html.dark [class*="bg-sky-50"] {
+  background-color: rgba(56, 189, 248, 0.12) !important;
+  border-color: rgba(56, 189, 248, 0.25) !important;
+}
+
+html.dark [class*="bg-amber-50"],
+html.dark [class*="bg-amber-100"],
+html.dark [class*="bg-yellow-50"] {
+  background-color: rgba(245, 158, 11, 0.14) !important;
+  border-color: rgba(245, 158, 11, 0.25) !important;
+}
+
+html.dark [class*="bg-red-50"],
+html.dark [class*="bg-rose-50"],
+html.dark [class*="bg-pink-50"] {
+  background-color: rgba(255, 59, 124, 0.14) !important;
+  border-color: rgba(255, 59, 124, 0.25) !important;
+}
+
+html.dark [class*="bg-emerald-50"],
+html.dark [class*="bg-green-50"] {
+  background-color: rgba(16, 185, 129, 0.14) !important;
+  border-color: rgba(16, 185, 129, 0.25) !important;
+}
+
+html.dark [class*="bg-indigo-50"],
+html.dark [class*="bg-purple-50"] {
+  background-color: rgba(99, 102, 241, 0.14) !important;
+  border-color: rgba(99, 102, 241, 0.25) !important;
+}
+
+/* Hairline borders in dark mode for crisp definition without glare */
+html.dark [class*="border-slate-100"],
+html.dark [class*="border-slate-150"],
+html.dark [class*="border-slate-200"],
+html.dark [class*="border-gray-100"],
+html.dark [class*="border-gray-150"],
+html.dark [class*="border-gray-200"] {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+html.dark [class*="border-slate-300"],
+html.dark [class*="border-gray-300"] {
+  border-color: rgba(255, 255, 255, 0.15) !important;
+}
+
+html.dark .border-white {
+  border-color: #151F32 !important;
+}
+
+/* Header and Navigation bar seamless cloud surfaces (No borders, gradient fade into page) */
+header, nav {
+  border: none !important;
 }
 
 html.dark header,
 html.dark nav {
-  background-color: #1F2A44 !important;
+  border: none !important;
 }
 
-/* Typography for legibility */
+/* Typography for legibility - Salvage text-[#1F2A44] from becoming invisible */
+html.dark .text-\[\#1F2A44\],
+html.dark [class*="text-[#1F2A44]"] {
+  color: #F8FAFC !important;
+}
+
+/* Enhanced colored texts inside badges in dark mode */
+html.dark .text-amber-700,
+html.dark .text-amber-800 {
+  color: #FCD34D !important;
+}
+
+html.dark .text-sky-700,
+html.dark .text-sky-800,
+html.dark .text-blue-700,
+html.dark .text-blue-800 {
+  color: #7DD3FC !important;
+}
+
+html.dark .text-rose-700,
+html.dark .text-rose-800,
+html.dark .text-red-700 {
+  color: #FDA4AF !important;
+}
+
 html.dark .text-slate-900,
 html.dark .text-gray-900,
+html.dark .text-slate-850,
 html.dark .text-slate-800,
 html.dark .text-gray-800,
 html.dark h1, html.dark h2, html.dark h3, html.dark h4, html.dark h5, html.dark h6 {
-  color: #FFFFFF !important;
+  color: #F8FAFC !important;
 }
 
 html.dark .text-slate-700,
 html.dark .text-gray-700,
+html.dark .text-slate-650,
 html.dark .text-slate-600,
 html.dark .text-gray-600 {
-  color: #E2E8F0 !important;
+  color: #CBD5E1 !important;
 }
 
 html.dark .text-slate-500,
 html.dark .text-gray-500,
+html.dark .text-slate-450,
 html.dark .text-slate-400,
 html.dark .text-gray-400 {
   color: #94A3B8 !important;
@@ -228,21 +325,35 @@ html.dark .text-gray-400 {
 /* Button & Action overrides */
 html.dark button[class*="bg-[#FFFFFF]"], 
 html.dark button.bg-white,
-html.dark .bg-white button,
 html.dark a.bg-white {
-  background-color: #162035 !important;
-  color: #FFFFFF !important;
-  border-color: #2a3859 !important;
+  background-color: #1C273E !important;
+  color: #F8FAFC !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Toggle Switch styling for both Light & Dark modes */
+button[role="switch"][class*="bg-[#FF3B7C]"] {
+  background-color: #FF3B7C !important;
+}
+
+.toggle-knob,
+html.dark .toggle-knob {
+  background-color: #FFFFFF !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45) !important;
 }
 
 /* Inputs in Dark Mode */
 html.dark input, html.dark select, html.dark textarea {
-  background-color: #162035 !important;
-  color: #FFFFFF !important;
-  border-color: #2a3859 !important;
+  background-color: #0F172A !important;
+  color: #F8FAFC !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
 }
 
-/* Low Performance Mode Overrides */
+html.dark input::placeholder, html.dark textarea::placeholder {
+  color: #64748B !important;
+}
+
+/* Low Performance Mode Overrides & GPU Optimizations */
 html.low-perf *, 
 html.low-perf *::before, 
 html.low-perf *::after {
@@ -250,6 +361,27 @@ html.low-perf *::after {
   -webkit-backdrop-filter: none !important;
   box-shadow: none !important;
   text-shadow: none !important;
+}
+
+/* GPU Rendering & UI Thread Performance Pipeline Fixes */
+@media (max-width: 768px) {
+  /* On mobile WebViews, heavy backdrop-filter blurs cause severe GPU spikes (>16ms).
+     Replace blurs with solid/opaque fallbacks to maintain a locked 60 FPS under 16ms. */
+  .backdrop-blur-xl, .backdrop-blur-2xl, .backdrop-blur-lg, .backdrop-blur-md, .backdrop-blur-sm, .backdrop-blur-xs {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
+
+/* Hardware-Accelerated Compositing Layers for fixed overlays and modals without excessive memory allocation */
+.fixed, .sticky {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+/* Optimize animated blur elements to prevent continuous GPU raster re-calculations */
+.blur-3xl.animate-pulse, .blur-2xl.animate-pulse, .blur-xl.animate-pulse {
+  animation: none !important;
 }
 
 /* Edge-to-Edge Safe Area Insets for Modern Phones */
@@ -304,6 +436,30 @@ html, body, #root {
 }
 .h-safe-bottom {
   height: env(safe-area-inset-bottom, 0px);
+}
+
+/* Negative Space & Design Rhythm Enhancements */
+.card-breathable {
+  padding: 1.5rem; /* 24px */
+  border-radius: 1.5rem; /* 24px */
+}
+@media (min-width: 640px) {
+  .card-breathable {
+    padding: 1.75rem; /* 28px */
+  }
+}
+
+.btn-proportional {
+  padding-left: 1.5rem;  /* 24px */
+  padding-right: 1.5rem; /* 24px */
+  padding-top: 0.75rem;  /* 12px */
+  padding-bottom: 0.75rem;/* 12px */
+  white-space: nowrap;
+}
+
+.text-rhythm {
+  line-height: 1.625;
+  letter-spacing: -0.011em;
 }
 
 

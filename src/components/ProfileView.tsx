@@ -50,21 +50,23 @@ import {
  Building2,
  Handshake,
  FolderArchive,
- Coins
+ Coins,
+ IdCard
 } from 'lucide-react';
 import { UserProfile, Badge, HunterReview, GodfatherReview, Quest } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import PullToRefresh from './PullToRefresh';
+import InfoButton from './InfoButton';
+import { lockBodyScroll } from '../utils/scrollLock';
 import { translations } from '../data/translations';
 import { playCoinSound, triggerHaptic, playCameraShutter } from '../utils/audio';
 import { compressImage } from '../utils/imageCompressor';
 import LeaderboardView from './LeaderboardView';
 import { formatJoinedDate, formatReviewDate } from '../utils/dateFormatter';
+import { formatDisplayId12 } from '../utils/userIdFormatter';
 
 // رابط الخادم الوسيط (غيّره إلى رابط Render الخاص بك بعد الرفع)
 const API_BASE_URL = 'https://quest-app-jne8.onrender.com';
-
-
 
 interface ProfileViewProps {
  userProfile: UserProfile;
@@ -99,7 +101,7 @@ const AVATAR_PRESETS = [
  'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=150&auto=format&fit=crop&q=80'
 ];
 
-export default function ProfileView({ 
+function ProfileView({ 
  userProfile, 
  badges, 
  lang,
@@ -125,6 +127,7 @@ export default function ProfileView({
 }: ProfileViewProps) {
  const [isEditing, setIsEditing] = useState(false);
  const [showLeaderboardScreen, setShowLeaderboardScreen] = useState(false);
+ const [leaderboardInitialTab, setLeaderboardInitialTab] = useState<'leaders' | 'challenges' | 'badges'>('leaders');
  const [showSupportForm, setShowSupportForm] = useState(false);
  const [supportMessage, setSupportMessage] = useState('');
  const [supportSubject, setSupportSubject] = useState('');
@@ -204,7 +207,6 @@ export default function ProfileView({
  onUpdateProfile(userSnap.data());
  }
  }
- showToast(lang === 'ar' ? ' تم تحديث بيانات حسابك الشخصي!' : ' Profile data refreshed successfully!');
  } catch (error) {
  console.error("Failed to refresh profile:", error);
  showToast(lang === 'ar' ? ' فشل تحديث الملف الشخصي.' : ' Failed to update profile.');
@@ -540,7 +542,7 @@ export default function ProfileView({
  };
 
  // Top up gateway states with Manual Proof-of-Payment Verification
- const [refillPaymentMethod, setRefillPaymentMethod] = useState<'baridimob' | 'ccp'>('baridimob');
+ const [refillPaymentMethod, setRefillPaymentMethod] = useState<'baridimob' | 'ccp' | 'paypal'>('baridimob');
  const [refillAmount, setRefillAmount] = useState<number>(3000);
  const [refillReference, setRefillReference] = useState('');
  const [refillDate, setRefillDate] = useState(new Date().toISOString().split('T')[0]);
@@ -578,8 +580,17 @@ export default function ProfileView({
  reason_arabic?: string;
  } | null>(null);
 
- const [activeProfileTab, setActiveProfileTab] = useState<'verified' | 'gallery' | 'badges'>('verified');
+ const [activeProfileTab, setActiveProfileTab] = useState<'gallery' | 'badges'>('gallery');
+ const [showReviewsModal, setShowReviewsModal] = useState(false);
+ const [showContactInfoModal, setShowContactInfoModal] = useState(false);
  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+
+  // Lock body scroll completely when modals are open using bulletproof freeze
+  useEffect(() => {
+    if (showReviewsModal || showContactInfoModal || !!lightboxUrl) {
+      return lockBodyScroll();
+    }
+  }, [showReviewsModal, showContactInfoModal, lightboxUrl]);
 
  const dict = translations[lang];
  const isRtl = lang === 'ar';
@@ -941,7 +952,7 @@ export default function ProfileView({
  setKycAiResult(null);
 
  try {
-const response = await fetch(`${API_BASE_URL}/api/kyc/verify`, {
+ const response = await fetch(`${API_BASE_URL}/api/kyc/verify`, {
  method: 'POST',
  headers: { 'Content-Type': 'application/json' },
  body: JSON.stringify({
@@ -1268,7 +1279,7 @@ const response = await fetch(`${API_BASE_URL}/api/kyc/verify`, {
  setRefillLoading(true);
 
  try {
-const response = await fetch(`${API_BASE_URL}/api/wallet/initiate-paypal-refill`, {
+ const response = await fetch(`${API_BASE_URL}/api/wallet/initiate-paypal-refill`, {
  method: 'POST',
  headers: { 'Content-Type': 'application/json' },
  body: JSON.stringify({
@@ -1368,7 +1379,7 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/initiate-paypal-refill`
 
  // Step 2 & 3: API call to the server-side validation which handles database logging and balance updates securely
  try {
-const response = await fetch(`${API_BASE_URL}/api/wallet/refill-manual`, {
+ const response = await fetch(`${API_BASE_URL}/api/wallet/refill-manual`, {
  method: 'POST',
  headers: { 'Content-Type': 'application/json' },
  body: JSON.stringify({
@@ -1485,15 +1496,14 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/refill-manual`, {
  receiptImage: refillReceiptBase64
  });
 
- const fallbackResult = {
+ const fallbackResult: { status: "REJECTED" | "SUSPICIOUS" | "APPROVED"; confidence_score?: number; extracted_data?: { amount_dzd?: string; date?: string; reference_number?: string; }; reason_arabic?: string; } = {
  status: "SUSPICIOUS",
  confidence_score: 0.5,
  extracted_data: {
- amount_dzd: refillAmount ? String(refillAmount) : null,
- date: refillDate ? String(refillDate) : null,
+ amount_dzd: refillAmount ? String(refillAmount) : undefined,
+ date: refillDate ? String(refillDate) : undefined,
  reference_number: refId
  },
- fraud_detected: false,
  reason_arabic: reasonText
  };
 
@@ -1519,7 +1529,7 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/refill-manual`, {
  setOtpError('');
 
  try {
-const response = await fetch(`${API_BASE_URL}/api/wallet/verify-otp-refill`, {
+ const response = await fetch(`${API_BASE_URL}/api/wallet/verify-otp-refill`, {
  method: 'POST',
  headers: { 'Content-Type': 'application/json' },
  body: JSON.stringify({
@@ -1629,6 +1639,7 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/verify-otp-refill`, {
  onClaimChallengePoints={onClaimChallengePoints}
  onSimulateActivity={onSimulateActivity}
  onUpdateProfile={(updated) => onUpdateProfile(updated)}
+ initialTab={leaderboardInitialTab}
  />
  </div>
  );
@@ -1678,7 +1689,7 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/verify-otp-refill`, {
  {activeSubmenu === 'main' && (
  <div className="space-y-4 animate-in fade-in duration-200">
  {/* Relocated KYC Incentive Banner */}
- {userProfile.idVerificationStatus !== 'verified' ? (
+ {userProfile.idVerificationStatus !== 'verified' && (
  <div 
  onClick={() => setActiveSubmenu('verification')}
  className="bg-gradient-to-r from-[#1F2A44] to-[#2b3c5e] border-l-4 border-[#FF3B7C] text-[#FFFFFF] p-5 rounded-3xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-lg active:scale-98 transition-all cursor-pointer select-none"
@@ -1711,22 +1722,6 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/verify-otp-refill`, {
  ? (lang === 'ar' ? 'قيد المراجعة الإدارية ' : 'Pending Live Review ')
  : (lang === 'ar' ? 'تأكيد الهوية الآن ' : 'Verify ID & Claim ')}
  </button>
- </div>
- ) : (
- <div className="bg-[#1F2A44] border-l-4 border-[#38BDF8] text-white p-5 rounded-3xl flex items-start gap-4 shadow-lg select-none">
- <div className="bg-[#38BDF8]/10 p-2 rounded-xl text-[#38BDF8] shrink-0 mt-0.5">
- <Zap className="w-5 h-5 text-[#38BDF8] fill-[#38BDF8]/20" />
- </div>
- <div className="space-y-0.5 text-right">
- <h4 className="text-xs font-black text-[#38BDF8] tracking-wider uppercase">
- {lang === 'ar' ? ' أنت عضو معتمد الآن في كويست الجزائر!' : ' Verified Syndicate Hunter Clearances Enabled!'}
- </h4>
- <p className="text-[10px] text-gray-300 font-medium leading-relaxed">
- {lang === 'ar' 
- ? 'تم التحقق من هويتك بنجاح وحصلت على شارة الأمان الزرقاء لتوقيع العقود الكبرى.' 
- : 'Identity check fully approved. Enjoy extra safety, custom contract locks and priority support lines.'}
- </p>
- </div>
  </div>
  )}
 
@@ -1797,8 +1792,8 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/verify-otp-refill`, {
  className="w-full bg-white hover:bg-gray-50 border border-gray-150 p-4 rounded-2xl flex items-center justify-between shadow-xs transition-all cursor-pointer text-right group"
  >
  <div className="flex items-center gap-3">
- <div className="p-3 bg-red-50 text-[#FF3B7C] rounded-xl group-hover:scale-105 transition-transform">
- <CreditCard className="w-5 h-5 text-[#FF3B7C]" />
+ <div className="p-3 bg-red-50 dark:bg-rose-500/15 text-[#FF3B7C] dark:text-[#FF6584] rounded-xl group-hover:scale-105 transition-transform border border-red-100 dark:border-rose-500/20">
+ <CreditCard className="w-5 h-5 text-[#FF3B7C] dark:text-[#FF6584]" />
  </div>
  <div className="text-right">
  <h4 className="text-xs font-black text-[#1F2A44]">
@@ -1810,7 +1805,7 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/verify-otp-refill`, {
  </div>
  </div>
  <div className="flex items-center gap-2">
- <span className="text-[10px] font-mono font-black text-[#FF3B7C] bg-red-50 px-2 py-0.5 rounded-lg">
+ <span className="text-[10px] font-mono font-black text-[#FF3B7C] dark:text-[#FF6584] bg-red-50 dark:bg-rose-500/20 px-2 py-0.5 rounded-lg border border-red-100 dark:border-rose-500/30">
  {userProfile.tokenBalance} د.ج
  </span>
  <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform ${isRtl ? 'rotate-180 group-hover:-translate-x-1' : 'group-hover:translate-x-1'}`} />
@@ -1859,7 +1854,7 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/verify-otp-refill`, {
  </div>
  </div>
  <div className="flex items-center gap-2">
- <span className="text-[9px] font-black bg-amber-100 text-amber-700 px-2 py-0.5 rounded-md">
+ <span className="text-[9px] font-black bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-md border border-amber-200/60 dark:border-amber-500/30">
  +100 د.ج
  </span>
  <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform ${isRtl ? 'rotate-180 group-hover:-translate-x-1' : 'group-hover:translate-x-1'}`} />
@@ -1873,8 +1868,8 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/verify-otp-refill`, {
  className="w-full bg-white hover:bg-gray-50 border border-gray-150 p-4 rounded-2xl flex items-center justify-between shadow-xs transition-all cursor-pointer text-right group"
  >
  <div className="flex items-center gap-3">
- <div className="p-3 bg-blue-50 text-[#1F2A44] rounded-xl group-hover:scale-105 transition-transform">
- <MessageSquare className="w-5 h-5 text-[#1F2A44]" />
+ <div className="p-3 bg-sky-50 dark:bg-sky-500/15 text-sky-600 dark:text-sky-400 rounded-xl group-hover:scale-105 transition-transform border border-sky-100 dark:border-sky-500/20">
+ <MessageSquare className="w-5 h-5 text-sky-600 dark:text-sky-400" />
  </div>
  <div className="text-right">
  <h4 className="text-xs font-black text-[#1F2A44]">
@@ -1904,30 +1899,30 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/verify-otp-refill`, {
  </div>
 
  {authenticatedUser ? (
- <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 bg-sky-50/40 rounded-2xl border border-sky-500/10">
+ <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 bg-sky-50/40 dark:bg-[#1A2640] rounded-2xl border border-sky-500/10 dark:border-slate-700/80">
  <button
  onClick={onSignOut}
- className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-[#FF3B7C] font-black text-[10px] rounded-xl transition-all cursor-pointer border border-[#FF3B7C]/20"
+ className="px-3 py-1.5 bg-red-50 dark:bg-rose-500/15 hover:bg-red-100 dark:hover:bg-rose-500/25 text-[#FF3B7C] dark:text-[#FF6584] font-black text-[10px] rounded-xl transition-all cursor-pointer border border-[#FF3B7C]/20 dark:border-rose-500/30"
  >
  {lang === 'ar' ? 'فصل الحساب السحابي' : 'Disconnect Cloud'}
  </button>
 
  <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
  <div className="text-right">
- <span className="text-[10px] font-bold text-gray-400 block uppercase tracking-wide">
+ <span className="text-[10px] font-bold text-gray-400 dark:text-slate-400 block uppercase tracking-wide">
  {lang === 'ar' ? 'الحساب المتصل سحابياً' : 'Connected Google Account'}
  </span>
- <span className="text-xs font-black text-gray-800 block">
+ <span className="text-xs font-black text-gray-800 dark:text-white block">
  {authenticatedUser.displayName || 'صياد سحابي'}
  </span>
- <span className="text-[9.5px] font-medium text-gray-500 block font-mono">
+ <span className="text-[9.5px] font-medium text-gray-500 dark:text-slate-400 block font-mono">
  {authenticatedUser.email}
  </span>
  </div>
  <img 
  src={authenticatedUser.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=50'} 
  alt="Google user" 
- className="w-10 h-10 rounded-full border-2 border-sky-300 object-cover bg-slate-100" 
+ className="w-10 h-10 rounded-full border-2 border-sky-400 object-cover bg-slate-100 dark:bg-slate-800" 
  referrerPolicy="no-referrer"
  onError={(e) => {
  (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150';
@@ -1964,7 +1959,7 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/verify-otp-refill`, {
  {/* Back to Profile main button */}
  <button
  onClick={() => setShowSettingsScreen(false)}
- className="w-full text-center py-3 bg-[#1F2A44] text-white hover:bg-[#1A253D] font-black text-xs rounded-xl shadow-md cursor-pointer transition-colors"
+ className="w-full text-center py-3 bg-[#1F2A44] dark:bg-[#1A2640] text-white hover:bg-[#1A253D] dark:hover:bg-[#233355] font-black text-xs rounded-xl shadow-md cursor-pointer transition-all border border-transparent dark:border-slate-700/80"
  >
  {lang === 'ar' ? 'العودة لصفحة الحساب الشخصي ' : 'Close and Back to User Profile '}
  </button>
@@ -3080,24 +3075,22 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/verify-otp-refill`, {
  <div className={`p-4 flex justify-between items-center ${isRtl ? '' : 'flex-row-reverse'}`}>
  <button 
  dir="ltr"
+ role="switch"
+ aria-checked={enableNotifications}
  onClick={handleToggleNotifications}
- className={`w-11 h-6 rounded-full p-0.5 cursor-pointer ${
- lang === 'ar' ? '' : 'transition-colors duration-200'
- } ${
- enableNotifications ? 'bg-[#FF3B7C]' : 'bg-gray-300'
+ className={`w-11 h-6 rounded-full p-0.5 cursor-pointer transition-colors duration-200 relative shrink-0 ${
+ enableNotifications ? 'bg-[#FF3B7C] shadow-[0_0_12px_rgba(255,59,124,0.4)]' : 'bg-gray-300 dark:bg-slate-700'
  }`}
  >
- <div className={`bg-white w-5 h-5 rounded-full shadow-xs ${
- lang === 'ar' ? '' : 'transition-transform duration-200'
- } ${
+ <div className={`toggle-knob bg-white w-5 h-5 rounded-full shadow-md transition-transform duration-200 ${
  enableNotifications ? 'translate-x-5' : 'translate-x-0'
  }`}></div>
  </button>
  <div className={`space-y-0.5 ${isRtl ? 'text-right' : 'text-left'}`}>
- <h5 className="font-extrabold text-xs text-[#1F2A44]">
+ <h5 className="font-extrabold text-xs text-[#1F2A44] dark:text-white">
  {lang === 'ar' ? 'الإشعارات الميدانية المهمة' : lang === 'fr' ? 'Notifications de terrain importantes' : 'Critical Field Notifications'}
  </h5>
- <p className="text-[9px] text-gray-400 font-semibold">
+ <p className="text-[9px] text-gray-400 dark:text-slate-400 font-semibold">
  {lang === 'ar' ? 'تلقي تنبيهات عند نشر مهام عاجلة بالقرب منك' : lang === 'fr' ? 'Recevoir des alertes pour les tâches urgentes proches' : 'Get alerted immediately when urgent tasks are posted nearby'}
  </p>
  </div>
@@ -3107,25 +3100,23 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/verify-otp-refill`, {
  <div className={`p-4 flex justify-between items-center ${isRtl ? '' : 'flex-row-reverse'}`}>
  <button 
  dir="ltr"
+ role="switch"
+ aria-checked={audioEffectsEnabled}
  onClick={handleToggleAudioEffects}
- className={`w-11 h-6 rounded-full p-0.5 cursor-pointer ${
- lang === 'ar' ? '' : 'transition-colors duration-200'
- } ${
- audioEffectsEnabled ? 'bg-[#FF3B7C]' : 'bg-gray-300'
+ className={`w-11 h-6 rounded-full p-0.5 cursor-pointer transition-colors duration-200 relative shrink-0 ${
+ audioEffectsEnabled ? 'bg-[#FF3B7C] shadow-[0_0_12px_rgba(255,59,124,0.4)]' : 'bg-gray-300 dark:bg-slate-700'
  }`}
  >
- <div className={`bg-white w-5 h-5 rounded-full shadow-xs ${
- lang === 'ar' ? '' : 'transition-transform duration-200'
- } ${
+ <div className={`toggle-knob bg-white w-5 h-5 rounded-full shadow-md transition-transform duration-200 ${
  audioEffectsEnabled ? 'translate-x-5' : 'translate-x-0'
  }`}></div>
  </button>
  <div className={`space-y-0.5 ${isRtl ? 'text-right' : 'text-left'} flex items-center gap-2 ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
  <div className={isRtl ? 'text-right' : 'text-left'}>
- <h5 className="font-extrabold text-xs text-[#1F2A44]">
+ <h5 className="font-extrabold text-xs text-[#1F2A44] dark:text-white">
  {lang === 'ar' ? 'التأثيرات الصوتية للنظام' : lang === 'fr' ? 'Effets sonores du système' : 'System Sound Effects'}
  </h5>
- <p className="text-[9px] text-gray-400 font-semibold font-sans">
+ <p className="text-[9px] text-gray-400 dark:text-slate-400 font-semibold font-sans">
  {lang === 'ar' ? 'تشغيل أصوات توكيد حية عند شحن الرصد أو حجز كويست' : lang === 'fr' ? 'Jouer des effets sonores lors du rechargement ou de l\'engagement' : 'Play realistic feedback sounds on balance refills or booking'}
  </p>
  </div>
@@ -3137,25 +3128,23 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/verify-otp-refill`, {
  <div className={`p-4 flex justify-between items-center ${isRtl ? '' : 'flex-row-reverse'}`}>
  <button 
  dir="ltr"
+ role="switch"
+ aria-checked={hapticFeedbackEnabled}
  onClick={handleToggleHapticFeedback}
- className={`w-11 h-6 rounded-full p-0.5 cursor-pointer ${
- lang === 'ar' ? '' : 'transition-colors duration-200'
- } ${
- hapticFeedbackEnabled ? 'bg-[#FF3B7C]' : 'bg-gray-300'
+ className={`w-11 h-6 rounded-full p-0.5 cursor-pointer transition-colors duration-200 relative shrink-0 ${
+ hapticFeedbackEnabled ? 'bg-[#FF3B7C] shadow-[0_0_12px_rgba(255,59,124,0.4)]' : 'bg-gray-300 dark:bg-slate-700'
  }`}
  >
- <div className={`bg-white w-5 h-5 rounded-full shadow-xs ${
- lang === 'ar' ? '' : 'transition-transform duration-200'
- } ${
+ <div className={`toggle-knob bg-white w-5 h-5 rounded-full shadow-md transition-transform duration-200 ${
  hapticFeedbackEnabled ? 'translate-x-5' : 'translate-x-0'
  }`}></div>
  </button>
  <div className={`space-y-0.5 ${isRtl ? 'text-right' : 'text-left'} flex items-center gap-2 ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
  <div className={isRtl ? 'text-right' : 'text-left'}>
- <h5 className="font-extrabold text-xs text-[#1F2A44]">
+ <h5 className="font-extrabold text-xs text-[#1F2A44] dark:text-white">
  {lang === 'ar' ? 'الاهتزاز الحسي التفاعلي' : lang === 'fr' ? 'Retours haptiques tactiles' : 'Interactive Haptic Feedback'}
  </h5>
- <p className="text-[9px] text-gray-400 font-semibold">
+ <p className="text-[9px] text-gray-400 dark:text-slate-400 font-semibold">
  {lang === 'ar' ? 'بث نبضات اهتزاز ذكية بالجهاز لدعم التفاعلات باللمس' : lang === 'fr' ? 'Émettre des vibrations intelligentes lors des interactions' : 'Emit smart vibration pulses for tactile feedback on touch'}
  </p>
  </div>
@@ -3164,28 +3153,26 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/verify-otp-refill`, {
  </div>
 
  {/* Low Performance Mode / Speed Boost */}
- <div className={`p-4 flex justify-between items-center border-t border-gray-100/70 ${isRtl ? '' : 'flex-row-reverse'}`}>
+ <div className={`p-4 flex justify-between items-center border-t border-gray-100/70 dark:border-slate-800 ${isRtl ? '' : 'flex-row-reverse'}`}>
  <button 
  dir="ltr"
+ role="switch"
+ aria-checked={lowPerformanceModeEnabled}
  onClick={handleToggleLowPerformanceMode}
- className={`w-11 h-6 rounded-full p-0.5 cursor-pointer ${
- lang === 'ar' ? '' : 'transition-colors duration-200'
- } ${
- lowPerformanceModeEnabled ? 'bg-[#FF3B7C]' : 'bg-gray-300'
+ className={`w-11 h-6 rounded-full p-0.5 cursor-pointer transition-colors duration-200 relative shrink-0 ${
+ lowPerformanceModeEnabled ? 'bg-[#FF3B7C] shadow-[0_0_12px_rgba(255,59,124,0.4)]' : 'bg-gray-300 dark:bg-slate-700'
  }`}
  >
- <div className={`bg-white w-5 h-5 rounded-full shadow-xs ${
- lang === 'ar' ? '' : 'transition-transform duration-200'
- } ${
+ <div className={`toggle-knob bg-white w-5 h-5 rounded-full shadow-md transition-transform duration-200 ${
  lowPerformanceModeEnabled ? 'translate-x-5' : 'translate-x-0'
  }`}></div>
  </button>
  <div className={`space-y-0.5 ${isRtl ? 'text-right' : 'text-left'} flex items-center gap-2 ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
  <div className={isRtl ? 'text-right' : 'text-left'}>
- <h5 className="font-extrabold text-xs text-[#1F2A44]">
+ <h5 className="font-extrabold text-xs text-[#1F2A44] dark:text-white">
  {lang === 'ar' ? 'وضع تسريع الأجهزة الضعيفة' : lang === 'fr' ? 'Mode Performance (Appareils Faibles)' : 'Low Performance Speed Boost'}
  </h5>
- <p className="text-[9px] text-gray-400 font-semibold">
+ <p className="text-[9px] text-gray-400 dark:text-slate-400 font-semibold">
  {lang === 'ar' ? 'تقليل المؤثرات الانتقالية وإيقاف الخلفيات المعقدة لزيادة سلاسة التطبيق' : lang === 'fr' ? 'Désactiver les flous et les animations pour plus de fluidité' : 'Reduce transition speed and disable blurs for maximum FPS'}
  </p>
  </div>
@@ -3197,23 +3184,21 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/verify-otp-refill`, {
  <div className={`p-4 flex justify-between items-center ${isRtl ? '' : 'flex-row-reverse'}`}>
  <button 
  dir="ltr"
+ role="switch"
+ aria-checked={privacyEnabled}
  onClick={handleTogglePrivacy}
- className={`w-11 h-6 rounded-full p-0.5 cursor-pointer ${
- lang === 'ar' ? '' : 'transition-colors duration-200'
- } ${
- privacyEnabled ? 'bg-[#FF3B7C]' : 'bg-gray-300'
+ className={`w-11 h-6 rounded-full p-0.5 cursor-pointer transition-colors duration-200 relative shrink-0 ${
+ privacyEnabled ? 'bg-[#FF3B7C] shadow-[0_0_12px_rgba(255,59,124,0.4)]' : 'bg-gray-300 dark:bg-slate-700'
  }`}
  >
- <div className={`bg-white w-5 h-5 rounded-full shadow-xs ${
- lang === 'ar' ? '' : 'transition-transform duration-200'
- } ${
+ <div className={`toggle-knob bg-white w-5 h-5 rounded-full shadow-md transition-transform duration-200 ${
  privacyEnabled ? 'translate-x-5' : 'translate-x-0'
  }`}></div>
  </button>
  <div className={`space-y-0.5 ${isRtl ? 'text-right' : 'text-left'} flex items-center gap-2 ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
  <div className={isRtl ? 'text-right' : 'text-left'}>
- <h5 className="font-extrabold text-xs text-[#1F2A44]">{dict.privacyHeader}</h5>
- <p className="text-[9px] text-gray-400 font-semibold font-sans">{dict.privacySubtitle}</p>
+ <h5 className="font-extrabold text-xs text-[#1F2A44] dark:text-white">{dict.privacyHeader}</h5>
+ <p className="text-[9px] text-gray-400 dark:text-slate-400 font-semibold font-sans">{dict.privacySubtitle}</p>
  </div>
  <Moon className="w-4 h-4 text-[#FF3B7C] shrink-0" />
  </div>
@@ -3937,785 +3922,314 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/verify-otp-refill`, {
  >
  <div className="space-y-6 pb-32 font-sans text-[#1F2A44]" style={{ direction: isRtl ? 'rtl' : 'ltr' }}>
  
- {/* Dynamic Profile Header with adaptive banner */}
- <div className="bg-white border border-gray-150 rounded-3xl p-6 shadow-sm relative overflow-hidden">
- <div className="absolute top-0 right-0 left-0 h-28 bg-gradient-to-r from-[#1F2A44] to-[#1E2E4E]"></div>
+ {/* Dynamic Profile Header with adaptive banner filling screen edge-to-edge */}
+      {/* Full-width Edge-to-Edge Banner */}
+        <div className="w-full h-32 sm:h-40 bg-gradient-to-r from-[#1F2A44] via-[#1A2640] to-[#1E2E4E] relative">
+          {/* Floating Settings Gear Icon Button on the top dynamic corner */}
+          <button 
+            onClick={() => {
+              setShowSettingsScreen(true);
+              setActiveSubmenu('main');
+            }}
+            className={`absolute ${isRtl ? 'left-4' : 'right-4'} top-4 bg-white/10 hover:bg-white/20 text-white backdrop-blur-md p-2 rounded-full z-20 cursor-pointer transition-all duration-200 border border-white/20 shadow-xs active:scale-95`}
+            title={lang === 'ar' ? 'الإعدادات العامة' : 'Settings'}
+          >
+            <Settings className="w-5 h-5 animate-spin" style={{ animationDuration: '6s' }} />
+          </button>
 
- {/* Floating Settings Gear Icon Button on the top dynamic corner */}
- <button 
- onClick={() => {
- setShowSettingsScreen(true);
- setActiveSubmenu('main');
- }}
- className={`absolute ${isRtl ? 'left-4' : 'right-4'} top-4 bg-white/10 hover:bg-white/20 text-white backdrop-blur-md p-2 rounded-full z-20 cursor-pointer transition-all duration-200 border border-white/20`}
- title={lang === 'ar' ? 'الإعدادات العامة' : 'Settings'}
- >
- <Settings className="w-5 h-5 animate-spin" style={{ animationDuration: '6s' }} />
- </button>
+          {/* Floating Leaderboard Trophy Icon Button on the top dynamic corner */}
+          <button 
+            onClick={() => {
+              setLeaderboardInitialTab('leaders');
+              setShowLeaderboardScreen(true);
+            }}
+            className={`absolute ${isRtl ? 'left-14' : 'right-14'} top-4 bg-white/10 hover:bg-white/20 text-[#FFD34D] backdrop-blur-md p-2 rounded-full z-20 cursor-pointer transition-all duration-200 border border-white/20 shadow-xs active:scale-95`}
+            title={lang === 'ar' ? 'قائمة المتصدرين والنقاط' : 'Leaderboard & Points'}
+          >
+            <Trophy className="w-5 h-5" />
+          </button>
+        </div>
 
- {/* Floating Leaderboard Trophy Icon Button on the top dynamic corner */}
- <button 
- onClick={() => {
- setShowLeaderboardScreen(true);
- }}
- className={`absolute ${isRtl ? 'left-14' : 'right-14'} top-4 bg-white/10 hover:bg-white/20 text-[#FFD34D] backdrop-blur-md p-2 rounded-full z-20 cursor-pointer transition-all duration-200 border border-white/20`}
- title={lang === 'ar' ? 'قائمة المتصدرين والنقاط' : 'Leaderboard & Points'}
- >
- <Trophy className="w-5 h-5" />
- </button>
-
- <div className="relative pt-12 flex flex-col items-center">
- <div className="relative">
- <img 
- src={selectedAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'} 
- alt={name}
- className="w-24 h-24 rounded-full border-4 border-white object-cover shadow-md bg-white cursor-pointer"
- onClick={() => isEditing && setShowAvatarChooser(!showAvatarChooser)}
- referrerPolicy="no-referrer"
- onError={(e) => {
- (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150';
- }}
- />
- {userProfile.idVerificationStatus === 'verified' && (
- <span className="absolute bottom-0 right-0 p-1.5 bg-[#4FC3F7] text-white rounded-full border-2 border-white shadow-md animate-pulse">
- <ShieldCheck className="w-4.5 h-4.5 text-[#1F2A44] fill-[#4FC3F7]" />
- </span>
- )}
- </div>
-
- {/* Preset image selector */}
- {isEditing && showAvatarChooser && (
- <div className="bg-gray-50 border border-gray-200 p-2.5 rounded-2xl flex gap-1.5 mt-3 flex-wrap justify-center items-center shadow-inner">
- {/* Hidden file input for custom gallery avatar */}
- <input 
- type="file" 
- id="profile-avatar-gallery-picker"
- ref={avatarInputRef}
- accept="image/*,image/heic,image/heif,.heic,.heif"
- className="hidden"
- onChange={handleAvatarFileChange}
- />
- <input 
- type="file" 
- id="profile-avatar-camera-picker"
- ref={avatarCameraInputRef}
- accept="image/*,image/heic,image/heif,.heic,.heif"
- capture="user"
- className="hidden"
- onChange={handleAvatarFileChange}
- />
-
- <label
- htmlFor="profile-avatar-camera-picker"
- onClick={() => playCameraShutter(audioEffectsEnabled)}
- className="w-10 h-10 rounded-full border border-dashed border-pink-400 bg-pink-50/70 hover:bg-pink-100 flex items-center justify-center cursor-pointer shadow-xs select-none"
- title={lang === 'ar' ? 'التقاط سيلفي بالكاميرا' : 'Take selfie with camera'}
- >
- <Camera className="w-4 h-4 text-pink-500" />
- </label>
-
- <label
- htmlFor="profile-avatar-gallery-picker"
- onClick={() => playCameraShutter(audioEffectsEnabled)}
- className="w-10 h-10 rounded-full border border-dashed border-[#4FC3F7] bg-sky-50/50 hover:bg-sky-50 flex items-center justify-center cursor-pointer shadow-xs select-none"
- title={lang === 'ar' ? 'رفع صورة من المعرض' : 'Upload custom photograph from Gallery'}
- >
- <ImageIcon className="w-4 h-4 text-[#4FC3F7]" />
- </label>
-
- {AVATAR_PRESETS.map((preset, idx) => (
- <img 
- key={idx} 
- src={preset} 
- alt="preset" 
- className="w-10 h-10 rounded-full object-cover border-2 border-white hover:scale-105 cursor-pointer"
- onClick={() => {
- setSelectedAvatar(preset);
- setShowAvatarChooser(false);
- }}
- />
- ))}
- </div>
- )}
-
- <div className="text-center mt-3.5 space-y-1 w-full max-w-sm">
- {isEditing ? (
- <div className="space-y-2 mt-2">
- <input 
- type="text" 
- value={name} 
- onChange={(e) => setName(e.target.value)} 
- placeholder={lang === 'ar' ? 'أدخل اسمك الكامل...' : 'Enter your full name...'}
- className="w-full text-center py-2 px-3 bg-gray-50 border border-gray-150 rounded-xl text-xs font-black"
- />
- <div className="space-y-2 bg-slate-50 p-2.5 rounded-xl border border-gray-150">
- <div className="grid grid-cols-2 gap-2">
- <div>
- <label className="text-[9px] font-bold text-gray-400 block mb-1 text-right">
- {lang === 'ar' ? 'البلدية' : 'Commune'}
- </label>
- <select
- value={selectedCommune}
- onChange={(e) => setSelectedCommune(e.target.value)}
- className="w-full text-xs font-semibold py-1.5 px-2 bg-white border border-gray-200 rounded-xl focus:border-[#4FC3F7] focus:outline-none text-right cursor-pointer"
- >
- {selectedWilayaObj.communes.map((c) => (
- <option key={c} value={c}>
- {c}
- </option>
- ))}
- </select>
- </div>
- <div>
- <label className="text-[9px] font-bold text-gray-400 block mb-1 text-right">
- {lang === 'ar' ? 'الولاية' : 'Wilaya'}
- </label>
- <select
- value={selectedWilayaCode}
- onChange={(e) => handleWilayaChange(e.target.value)}
- className="w-full text-xs font-semibold py-1.5 px-2 bg-white border border-gray-200 rounded-xl focus:border-[#4FC3F7] focus:outline-none text-right cursor-pointer"
- >
- {ALGERIA_WILAYAS.map((w) => (
- <option key={w.code} value={w.code}>
- {lang === 'ar' ? w.nameAr : w.nameFr}
- </option>
- ))}
- </select>
- </div>
- </div>
- <input 
- type="text" 
- value={phone} 
- onChange={(e) => setPhone(e.target.value)} 
- placeholder={lang === 'ar' ? 'رقم الهاتف' : 'Phone'}
- className="w-full text-center py-1.5 px-3 bg-white border border-gray-150 rounded-xl text-xs font-black font-mono"
- />
- </div>
- </div>
- ) : (
- <>
- <h3 className="text-lg font-black">{userProfile.name}</h3>
-
- {/* Copiable Account ID Badge */}
- <div 
- id="user-id-badge"
- className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-50 border border-gray-150 hover:bg-slate-100 active:scale-95 text-slate-500 rounded-xl text-[10px] font-mono font-bold cursor-pointer transition-all select-all shadow-xs"
- title={lang === 'ar' ? 'اضغط أو اضغط ضغطاً مطولاً لنسخ معرف الحساب' : 'Click or hold down to copy Account ID'}
- onClick={() => handleCopyIdWithFeedback(userProfile.id)}
- onMouseDown={() => handleStartPress(userProfile.id)}
- onMouseUp={handleCancelPress}
- onMouseLeave={handleCancelPress}
- onTouchStart={() => handleStartPress(userProfile.id)}
- onTouchEnd={handleCancelPress}
- onContextMenu={(e) => {
- e.preventDefault();
- handleCopyIdWithFeedback(userProfile.id);
- }}
- >
- <span className="font-sans font-black text-gray-400">ID:</span>
- <span className="text-slate-700 bg-slate-100 px-1 py-0.5 rounded font-black">{userProfile.id}</span>
- </div>
- 
- {/* 
- Verified Worker status badge display per instructions:
- Verified users get Sky Blue Verification badge (color #4FC3F7)
- */}
- <div className="flex flex-col items-center gap-1.5">
- {userProfile.idVerificationStatus === 'verified' ? (
- <div className="inline-flex items-center gap-1 px-3 py-1 bg-[#4FC3F7]/10 text-[#4FC3F7] rounded-full text-[10px] font-black border border-[#4FC3F7]/30 uppercase tracking-widest">
- <ShieldCheck className="w-3.5 h-3.5 text-[#4FC3F7]" />
- <span>{dict.verifiedBadge}</span>
- </div>
- ) : userProfile.idVerificationStatus === 'pending' ? (
- <div className="inline-flex items-center gap-1 px-3 py-1 bg-amber-50 text-amber-700 rounded-full text-[10px] font-black border border-amber-200 uppercase tracking-widest animate-pulse">
- <Sparkles className="w-3.5 h-3.5" />
- <span>{dict.pendingVerification}</span>
- </div>
- ) : ((userProfile as any).idVerificationStatus === 'rejected' || (userProfile as any).verificationStatus === 'rejected') ? (
- <div className="flex flex-col items-center gap-1">
- <div className="inline-flex items-center gap-1 px-3 py-1 bg-rose-50 text-rose-600 rounded-full text-[10px] font-black border border-rose-200 uppercase tracking-widest">
- <ShieldAlert className="w-3.5 h-3.5/65" />
- <span>{lang === 'ar' ? 'طلب توثيق مرفوض ' : 'Identity Verification Rejected '}</span>
- </div>
- {(userProfile as any).rejectionReason && (
- <p className="text-[10px] text-rose-500 font-bold max-w-xs text-center mt-1 bg-rose-50 px-2 py-1 rounded-lg">
- {lang === 'ar' ? 'السبب: ' : 'Reason: '} {(userProfile as any).rejectionReason}
- </p>
- )}
- </div>
- ) : (
- <div className="inline-flex items-center gap-1 px-3 py-1 bg-red-50 text-[#FF3B7C] rounded-full text-[10px] font-black border border-red-150 uppercase tracking-widest">
- <ShieldQuestion className="w-3.5 h-3.5 text-[#FF3B7C]" />
- <span>{dict.unverifiedBadge}</span>
- </div>
- )}
-
- {/* Flexible Short Bio field block with inline-editing layout */}
- <div className="mt-2 bg-gray-50/75 hover:bg-gray-100/80 p-3 rounded-2xl border border-gray-200/60 inline-block max-w-xs w-full text-center group relative transition-all duration-250">
- <p className="text-[9px] uppercase font-black text-gray-400 tracking-wider mb-0.5">
- {lang === 'ar' ? ' السيرة الذاتية للرانر (Bio)' : ' Runner Field Biography'}
- </p>
- {isEditingMainBio ? (
- <div className="flex items-center gap-1.5 mt-1.5 justify-center">
- <input 
- type="text" 
- value={tempBio}
- maxLength={100}
- onChange={(e) => setTempBio(e.target.value)}
- className="py-1 px-2 border border-[#4FC3F7]/50 rounded-lg text-[11px] font-bold text-center bg-white flex-1 focus:outline-none focus:border-[#4FC3F7]"
- placeholder={lang === 'ar' ? 'اكتب مهاراتك هنا...' : "I can repair or deliver quickly..."}
- autoFocus
- />
- <button 
- onClick={handleSaveBio}
- className="p-1 px-2 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-[10px] font-black transition-transform active:scale-95 cursor-pointer flex items-center justify-center"
- title="Save Bio"
- >
- <Check className="w-3.5 h-3.5" />
- </button>
- <button 
- onClick={() => {
- setIsEditingMainBio(false);
- setTempBio(mainBio);
- }}
- className="p-1 px-2 bg-gray-200 hover:bg-gray-300 text-gray-600 rounded-lg text-[10px] font-black transition-transform active:scale-95 cursor-pointer flex items-center justify-center"
- title="Cancel"
- >
- <X className="w-3.5 h-3.5" />
- </button>
- </div>
- ) : (
- <div className="flex items-center justify-center gap-1 mt-1">
- <p className="text-[11px] font-black leading-relaxed text-[#1F2A44] break-words">
- {mainBio || (lang === 'ar' ? ' السيرة الذاتية (Bio) لم تكتب بعد' : ' No Skills Bio Added Yet')}
- </p>
- <button
- onClick={() => {
- setTempBio(mainBio);
- setIsEditingMainBio(true);
- }}
- className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-200/80 rounded-md transition-all shrink-0 cursor-pointer text-[#4FC3F7] hover:scale-105"
- title="Edit Bio"
- >
- <Edit2 className="w-3 h-3 text-[#4FC3F7] inline" />
- </button>
- </div>
- )}
- </div>
- </div>
-
- <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-gray-500 font-bold mt-2.5">
- <span className="flex items-center gap-1 bg-slate-50 border border-gray-150 px-2.5 py-1 rounded-full text-[11px]">
- <MapPin className="w-3.5 h-3.5 text-[#FF3B7C]" />
- {userProfile.city}
- </span>
- <span className="flex items-center gap-1 font-mono bg-slate-50 border border-gray-150 px-2.5 py-1 rounded-full text-[11px]">
- <Phone className="w-3.5 h-3.5 text-[#4FC3F7]" />
- {userProfile.phone}
- </span>
- <span className="flex items-center gap-1 bg-sky-50 text-sky-700 border border-sky-200/80 px-2.5 py-1 rounded-full text-[11px] font-extrabold shadow-2xs">
- <Clock className="w-3.5 h-3.5 text-sky-600" />
- {formatJoinedDate(userProfile.createdAt, lang)}
- </span>
- </div>
- </>
- )}
- </div>
- </div>
- </div>
-
-
- {/* Stats Bento Block Layout */}
- <div className="grid grid-cols-3 gap-3">
- <div className="bg-white border border-gray-150 p-4 rounded-2xl text-center space-y-0.5 shadow-sm">
- <span className="text-xl font-black block font-mono flex items-center justify-center gap-1">
- <Briefcase className="w-4 h-4 text-sky-500" />
- {dynamicCompleted}
- </span>
- <span className="text-[9px] text-[#1F2A44] font-extrabold uppercase tracking-wide block">{dict.questsCompletedLabel}</span>
- </div>
- <div className="bg-white border border-gray-150 p-4 rounded-2xl text-center space-y-0.5 shadow-sm">
- <span className="text-xl font-black text-amber-500 block font-mono flex items-center justify-center gap-1">
- <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
- {dynamicRating.toFixed(1)} 
- </span>
- <span className="text-[9px] text-[#1F2A44] font-extrabold uppercase tracking-wide block">{lang === 'ar' ? 'التقييم العام' : 'Reputation'}</span>
- </div>
- <div className="bg-white border border-gray-150 p-4 rounded-2xl text-center space-y-0.5 shadow-sm">
- <span className="text-xl font-black block font-mono flex items-center justify-center gap-1">
- <FileText className="w-4 h-4 text-indigo-500" />
- {dynamicCreated}
- </span>
- <span className="text-[9px] text-[#1F2A44] font-extrabold uppercase tracking-wide block">{lang === 'ar' ? 'مهام ناشر' : 'Posted Chores'}</span>
- </div>
- </div>
-
- 
-  {/* Current Employment & Employment History Section */}
-  <div className="space-y-3 text-right">
-    {/* Current Employment Card for Worker OR Active Employees Count for Employer */}
-    {(() => {
-      const activeHiredEmployees = quests?.filter(q =>
-        q.questType === "long_term" &&
-        q.creatorId === userProfile.id &&
-        (q.status === "active_employment" || q.status === "active" || q.status === "ending" || q.status === "disputed") &&
-        !q.archived
-      ) || [];
-
-      const workerCurrentJob = quests?.find(q =>
-        q.questType === "long_term" &&
-        (q.employeeId === userProfile.id || q.helperId === userProfile.id) &&
-        (q.status === "active_employment" || q.status === "active" || q.status === "ending" || q.status === "disputed") &&
-        !q.archived
-      );
-
-      const isEmployerProfile = activeHiredEmployees.length > 0 || (userProfile.questsCreated && userProfile.questsCreated > 0 && !workerCurrentJob);
-
-      if (isEmployerProfile) {
-        return (
-          <div className="bg-white border border-sky-150 rounded-2xl p-4 shadow-xs space-y-3">
-            <div className="flex items-center justify-between border-b border-gray-100 pb-2">
-              <span className="text-[10px] font-black uppercase text-indigo-800 bg-indigo-50 px-2.5 py-0.5 rounded-full flex items-center gap-1 border border-indigo-100">
-                <Building2 className="w-3 h-3 text-indigo-600" />
-                {lang === "ar" ? "عدد الموظفين حالياً" : "Current Employees"}
-              </span>
-              <span className="text-[10px] font-extrabold text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-200">
-                {activeHiredEmployees.length} {lang === "ar" ? (activeHiredEmployees.length === 1 ? "موظف نشط" : "موظفين نشطين") : "Active Employee(s)"}
-              </span>
-            </div>
-
-            {activeHiredEmployees.length > 0 ? (
-              <div className="space-y-2 pt-1">
-                {activeHiredEmployees.map(empJob => (
-                  <div key={empJob.id} className="bg-slate-50/80 border border-slate-200/70 rounded-xl p-2.5 text-xs space-y-1">
-                    <div className="flex items-center justify-between">
-                      <h5 className="font-extrabold text-[#1F2A44]">{empJob.title}</h5>
-                      <span className="text-[9px] font-extrabold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                        {empJob.status === "ending"
-                          ? (lang === "ar" ? "قيد طلب الإنهاء" : "Ending Pending")
-                          : empJob.status === "disputed"
-                          ? (lang === "ar" ? "نزاع قائم" : "Disputed")
-                          : (lang === "ar" ? "عقد نشط" : "Active")}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between text-[10px] text-gray-500 font-bold">
-                      <span>{empJob.helperName ? `${lang === "ar" ? "الموظف: " : "Employee: "}${empJob.helperName}` : (lang === "ar" ? "عامل مُعيّن" : "Assigned Worker")}</span>
-                      <span className="text-emerald-600 font-extrabold">{empJob.cashReward} د.ج</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-[11px] text-gray-400 font-semibold py-1">
-                {lang === "ar" ? "لا يوجد موظفون حالياً تحت كفالتك أو وظائفك المعلنة." : "No active employees currently assigned under your published listings."}
-              </p>
-            )}
-          </div>
-        );
-      }
-
-      return (
-        <div className="bg-white border border-sky-150 rounded-2xl p-4 shadow-xs space-y-2">
-          <div className="flex items-center justify-between border-b border-gray-100 pb-2">
-            <span className="text-[10px] font-black uppercase text-sky-800 bg-sky-50 px-2.5 py-0.5 rounded-full flex items-center gap-1">
-              <Briefcase className="w-3 h-3 text-sky-600" />
-              {lang === "ar" ? "العمل الحالي" : "Current Employment"}
-            </span>
-            {workerCurrentJob ? (
-              <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                {workerCurrentJob.status === "ending"
-                  ? (lang === "ar" ? "قيد طلب الإنهاء" : "Termination Pending")
-                  : workerCurrentJob.status === "disputed"
-                  ? (lang === "ar" ? "نزاع قائم" : "Disputed")
-                  : (lang === "ar" ? "عقد نشط (ACTIVE)" : "Active Employment")}
+      {/* Unified Single Flow Container: Avatar, Name, 4 Buttons, Bio, Gallery in one continuous flow without artificial box or separation */}
+      <div className="max-w-2xl mx-auto px-3.5 sm:px-6 space-y-3">
+        {/* Avatar & Name */}
+        <div className="relative -mt-16 sm:-mt-20 flex flex-col items-center text-center">
+          {/* 1. Avatar with Verified Shield Badge */}
+          <div className="relative mb-2">
+            <img 
+              src={selectedAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'} 
+              alt={name}
+              className="w-22 h-22 sm:w-26 sm:h-26 rounded-full border-4 border-white object-cover shadow-md bg-white cursor-pointer hover:scale-105 transition-transform"
+              onClick={() => isEditing && setShowAvatarChooser(!showAvatarChooser)}
+              referrerPolicy="no-referrer"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150';
+              }}
+            />
+            {userProfile.idVerificationStatus === 'verified' ? (
+              <span className="absolute bottom-0 right-0 p-1 bg-[#4FC3F7] text-white rounded-full border-2 border-white shadow-md animate-pulse">
+                <ShieldCheck className="w-4 h-4 text-[#1F2A44] fill-[#4FC3F7]" />
               </span>
             ) : (
-              <span className="text-[10px] font-extrabold text-sky-700 bg-sky-50 px-2.5 py-0.5 rounded-full border border-sky-200">
-                {lang === "ar" ? "متاح للعمل (AVAILABLE)" : "Available for Work"}
+              <span className="absolute bottom-0 right-0 p-1 bg-rose-500 text-white rounded-full border-2 border-white shadow-md">
+                <ShieldAlert className="w-4 h-4 text-white" />
               </span>
             )}
           </div>
 
-          {workerCurrentJob ? (
-            <div className="text-xs space-y-1 pt-1">
-              <h5 className="font-extrabold text-[#1F2A44]">{workerCurrentJob.title}</h5>
-              <div className="flex items-center justify-between text-[11px] text-gray-500 font-bold">
-                <span>{workerCurrentJob.creatorName ? `${lang === "ar" ? "صاحب العمل: " : "Employer: "}${workerCurrentJob.creatorName}` : ""}</span>
-                <span className="text-emerald-600 font-extrabold">{workerCurrentJob.cashReward} د.ج / {workerCurrentJob.salaryPeriod === "monthly" ? (lang === "ar" ? "شهرياً" : "Monthly") : workerCurrentJob.salaryPeriod === "weekly" ? (lang === "ar" ? "أسبوعياً" : "Weekly") : (lang === "ar" ? "يومياً" : "Daily")}</span>
-              </div>
+          {/* Preset image selector */}
+          {isEditing && showAvatarChooser && (
+            <div className="bg-gray-50 border border-gray-200 p-2.5 rounded-2xl flex gap-1.5 mb-3 flex-wrap justify-center items-center shadow-inner max-w-sm">
+              <input 
+                type="file" 
+                id="profile-avatar-gallery-picker"
+                ref={avatarInputRef}
+                accept="image/*,image/heic,image/heif,.heic,.heif"
+                className="hidden"
+                onChange={handleAvatarFileChange}
+              />
+              <input 
+                type="file" 
+                id="profile-avatar-camera-picker"
+                ref={avatarCameraInputRef}
+                accept="image/*,image/heic,image/heif,.heic,.heif"
+                capture="user"
+                className="hidden"
+                onChange={handleAvatarFileChange}
+              />
+
+              <label
+                htmlFor="profile-avatar-camera-picker"
+                onClick={() => playCameraShutter(audioEffectsEnabled)}
+                className="w-10 h-10 rounded-full border border-dashed border-pink-400 bg-pink-50/70 hover:bg-pink-100 flex items-center justify-center cursor-pointer shadow-xs select-none"
+                title={lang === 'ar' ? 'التقاط سيلفي بالكاميرا' : 'Take selfie with camera'}
+              >
+                <Camera className="w-4 h-4 text-pink-500" />
+              </label>
+
+              <label
+                htmlFor="profile-avatar-gallery-picker"
+                onClick={() => playCameraShutter(audioEffectsEnabled)}
+                className="w-10 h-10 rounded-full border border-dashed border-[#4FC3F7] bg-sky-50/50 hover:bg-sky-50 flex items-center justify-center cursor-pointer shadow-xs select-none"
+                title={lang === 'ar' ? 'رفع صورة من المعرض' : 'Upload custom photograph from Gallery'}
+              >
+                <ImageIcon className="w-4 h-4 text-[#4FC3F7]" />
+              </label>
+
+              {AVATAR_PRESETS.map((preset, idx) => (
+                <img 
+                  key={idx} 
+                  src={preset} 
+                  alt="preset" 
+                  className="w-10 h-10 rounded-full object-cover border-2 border-white hover:scale-105 cursor-pointer"
+                  onClick={() => {
+                    setSelectedAvatar(preset);
+                    setShowAvatarChooser(false);
+                  }}
+                />
+              ))}
             </div>
-          ) : (
-            <p className="text-[11px] text-gray-400 font-semibold py-1">
-              {lang === "ar" ? "لا يوجد عمل حالي قائم. حسابك متاح للتقديم على وظائف جديدة." : "No current employment active. Profile is available for new applications."}
-            </p>
           )}
-        </div>
-      );
-    })()}
 
-    {/* Employment History List */}
-    {(() => {
-      const pastJobs = quests?.filter(q =>
-        q.questType === "long_term" &&
-        (q.employeeId === userProfile.id || q.helperId === userProfile.id || q.creatorId === userProfile.id) &&
-        (q.archived || q.status === "completed" || q.status === "terminated" || q.status === "expired")
-      ) || [];
-
-      if (pastJobs.length === 0) return null;
-
-      return (
-        <div className="bg-white border border-gray-150 rounded-2xl p-4 shadow-xs space-y-2.5">
-          <h4 className="text-[11px] font-black text-[#1F2A44] uppercase tracking-wider flex items-center gap-1.5 border-b border-gray-100 pb-2">
-            <Clock className="w-3.5 h-3.5 text-slate-500" />
-            <span>{lang === "ar" ? "سجل الأعمال والخبرات الوظيفية السابقة" : "Employment History"}</span>
-          </h4>
-
-          <div className="space-y-2">
-            {pastJobs.map(job => (
-              <div key={job.id} className="bg-slate-50/70 border border-slate-200/60 rounded-xl p-3 text-xs space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="font-extrabold text-[#1F2A44]">{job.title}</span>
-                  <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-md bg-slate-200/80 text-slate-700">
-                    {job.status === "expired"
-                      ? (lang === "ar" ? "منتهي الصلاحية" : "Expired")
-                      : (lang === "ar" ? "منتهي ومؤرشف" : "Ended & Archived")}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-[10px] text-gray-500 font-bold">
-                  <span>{job.creatorName ? `${lang === "ar" ? "صاحب العمل: " : "Employer: "}${job.creatorName}` : ""}</span>
-                  <span>{job.cashReward} د.ج</span>
-                </div>
-                {job.terminatedAt && (
-                  <div className="text-[9.5px] text-gray-400 font-semibold pt-0.5">
-                    {lang === "ar" ? "تاريخ الانتهاء: " : "Ended: "}{new Date(job.terminatedAt).toLocaleDateString(lang === "ar" ? "ar-DZ" : "en-US")}
+          {/* Name & Verification Badge */}
+          <div className="text-center space-y-1 w-full max-w-sm">
+            {isEditing ? (
+              <div className="space-y-2 mt-2">
+                <input 
+                  type="text" 
+                  value={name} 
+                  onChange={(e) => setName(e.target.value)} 
+                  placeholder={lang === 'ar' ? 'أدخل اسمك الكامل...' : 'Enter your full name...'}
+                  className="w-full text-center py-2 px-3 bg-gray-50 border border-gray-150 rounded-xl text-xs font-black"
+                />
+                <div className="space-y-2 bg-slate-50 p-2.5 rounded-xl border border-gray-150">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[9px] font-bold text-gray-400 block mb-1 text-right">
+                        {lang === 'ar' ? 'البلدية' : 'Commune'}
+                      </label>
+                      <select
+                        value={selectedCommune}
+                        onChange={(e) => setSelectedCommune(e.target.value)}
+                        className="w-full text-xs font-semibold py-1.5 px-2 bg-white border border-gray-200 rounded-xl focus:border-[#4FC3F7] focus:outline-none text-right cursor-pointer"
+                      >
+                        {selectedWilayaObj.communes.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[9px] font-bold text-gray-400 block mb-1 text-right">
+                        {lang === 'ar' ? 'الولاية' : 'Wilaya'}
+                      </label>
+                      <select
+                        value={selectedWilayaCode}
+                        onChange={(e) => handleWilayaChange(e.target.value)}
+                        className="w-full text-xs font-semibold py-1.5 px-2 bg-white border border-gray-200 rounded-xl focus:border-[#4FC3F7] focus:outline-none text-right cursor-pointer"
+                      >
+                        {ALGERIA_WILAYAS.map((w) => (
+                          <option key={w.code} value={w.code}>
+                            {lang === 'ar' ? w.nameAr : w.nameFr}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
-                )}
+                  <input 
+                    type="text" 
+                    value={phone} 
+                    onChange={(e) => setPhone(e.target.value)} 
+                    placeholder={lang === 'ar' ? 'رقم الهاتف' : 'Phone'}
+                    className="w-full text-center py-1.5 px-3 bg-white border border-gray-150 rounded-xl text-xs font-black font-mono"
+                  />
+                </div>
               </div>
-            ))}
+            ) : (
+              <h3 className="text-xl font-black text-[#1F2A44] tracking-tight">{userProfile.name}</h3>
+            )}
           </div>
         </div>
-      );
-    })()}
-  </div>
 
-  {/* Admin secure command tile */}
- {isAdminUser && (
- <div className="bg-[#1F2A44] border-2 border-[#FFD34D] rounded-3xl p-5 shadow-lg flex items-center justify-between text-white animate-pulse">
- <div className="space-y-1 text-right">
- <h4 className="font-black text-xs text-[#FFD34D] tracking-wider uppercase flex items-center gap-2">
- <span> {lang === 'ar' ? 'بوابة الإدارة المركزية' : 'Central Admin Gate'}</span>
+        {/* 2. Symmetrical 4-Card Stats Grid with Full Width & Plenty of Breathing Room */}
+          <div className="w-full grid grid-cols-4 gap-1.5 sm:gap-2.5 text-center mt-4">
+            {/* 1. التقييمات */}
+            <button
+              id="profile-rating-badge-btn"
+              type="button"
+              onClick={() => {
+                playSoftClick(userProfile.audioEffectsEnabled !== false);
+                setShowReviewsModal(true);
+              }}
+              className="relative overflow-hidden bg-gradient-to-b from-amber-50 to-amber-100/50 hover:from-amber-100 hover:to-amber-200/50 dark:from-amber-950/30 dark:to-amber-900/20 dark:hover:from-amber-900/40 dark:hover:to-amber-900/30 border-2 border-amber-300/80 hover:border-amber-400 dark:border-amber-600/40 p-2 sm:p-2.5 rounded-2xl flex flex-col items-center justify-center shadow-xs hover:shadow-md cursor-pointer active:scale-92 active:shadow-inner transition-all group ring-1 ring-amber-400/20"
+              title={lang === 'ar' ? 'انقر لعرض جميع تقييماتك' : 'Click to view all reviews'}
+            >
+              <span className="absolute top-1 right-1 sm:top-1.5 sm:right-1.5 w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+              <span className="text-sm sm:text-base font-black text-slate-900 dark:text-white font-mono flex items-center justify-center gap-0.5 leading-none group-hover:scale-105 transition-transform">
+                <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-400 shrink-0" />
+                {dynamicRating.toFixed(1)}
+              </span>
+              <span className="text-[8.5px] sm:text-[9.5px] text-amber-800 dark:text-amber-300 font-extrabold uppercase tracking-wide block mt-1">
+                {lang === 'ar' ? 'التقييمات ↗' : 'Reviews ↗'}
+              </span>
+            </button>
+
+            {/* 2. عدد المهام المنجزة */}
+            <div className="bg-slate-50 dark:bg-[#1A2640] border border-gray-150 dark:border-slate-800 p-2 sm:p-2.5 rounded-2xl flex flex-col items-center justify-center shadow-2xs">
+              <span className="text-sm sm:text-base font-black font-mono flex items-center justify-center gap-0.5 text-slate-900 dark:text-white leading-none">
+                <Briefcase className="w-3.5 h-3.5 text-sky-500 shrink-0" />
+                {dynamicCompleted}
+              </span>
+              <span className="text-[8.5px] sm:text-[9.5px] text-slate-500 dark:text-slate-300 font-extrabold uppercase tracking-wide block mt-1 truncate max-w-full">
+                {lang === 'ar' ? 'المنجزة' : dict.questsCompletedLabel}
+              </span>
+            </div>
+
+            {/* 3. عدد المهام المنشورة */}
+            <div className="bg-slate-50 dark:bg-[#1A2640] border border-gray-150 dark:border-slate-800 p-2 sm:p-2.5 rounded-2xl flex flex-col items-center justify-center shadow-2xs">
+              <span className="text-sm sm:text-base font-black font-mono flex items-center justify-center gap-0.5 text-slate-900 dark:text-white leading-none">
+                <FileText className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                {dynamicCreated}
+              </span>
+              <span className="text-[8.5px] sm:text-[9.5px] text-slate-500 dark:text-slate-300 font-extrabold uppercase tracking-wide block mt-1">
+                {lang === 'ar' ? 'المنشورة' : 'Posted'}
+              </span>
+            </div>
+
+            {/* 4. بطاقة معلومات الحساب والهوية */}
+            <button
+              id="profile-info-modal-btn"
+              type="button"
+              onClick={() => {
+                playSoftClick(userProfile.audioEffectsEnabled !== false);
+                setShowContactInfoModal(true);
+              }}
+              className="relative overflow-hidden bg-gradient-to-b from-sky-50 to-sky-100/50 hover:from-sky-100 hover:to-sky-200/50 dark:from-sky-950/30 dark:to-sky-900/20 dark:hover:from-sky-900/40 dark:hover:to-sky-900/30 border-2 border-sky-300/80 hover:border-sky-400 dark:border-sky-600/40 p-2 sm:p-2.5 rounded-2xl flex flex-col items-center justify-center shadow-xs hover:shadow-md cursor-pointer active:scale-92 active:shadow-inner transition-all group ring-1 ring-sky-400/20"
+              title={lang === 'ar' ? 'عرض معلومات الحساب والاتصال' : 'View Account & Contact Details'}
+            >
+              <span className="absolute top-1 right-1 sm:top-1.5 sm:right-1.5 w-1.5 h-1.5 rounded-full bg-[#4FC3F7] animate-pulse"></span>
+              <span className="text-sm sm:text-base font-black font-mono flex items-center justify-center gap-1 text-slate-900 dark:text-white leading-none group-hover:scale-105 transition-transform">
+                <IdCard className="w-3.5 h-3.5 text-[#4FC3F7] shrink-0" />
+                <span className="text-xs sm:text-sm font-black font-mono tracking-tight">ID</span>
+              </span>
+              <span className="text-[8.5px] sm:text-[9.5px] text-sky-800 dark:text-sky-300 font-extrabold uppercase tracking-wide block mt-1">
+                {userProfile.idVerificationStatus === 'verified' 
+                  ? (lang === 'ar' ? 'موثق 🛡️' : 'Verified 🛡️') 
+                  : (lang === 'ar' ? 'معلومات ↗' : 'Info ↗')}
+              </span>
+            </button>
+        </div>
+
+        {/* Short Bio field block - directly below 4 buttons without separation */}
+        <div className="bg-white dark:bg-slate-900 rounded-2xl p-3 sm:p-3.5 w-full border border-gray-150/60 dark:border-slate-800 shadow-2xs text-center group relative transition-all duration-250 shadow-2xs">
+            <div className="flex items-center justify-center gap-1 mb-0.5">
+              <span className="text-[9px] uppercase font-black text-gray-400 dark:text-slate-400 tracking-wider">
+                {lang === 'ar' ? 'السيرة الذاتية (Bio)' : 'Biography'}
+              </span>
+              <InfoButton
+                title={lang === 'ar' ? 'السيرة الذاتية' : 'Biography'}
+                explanation={lang === 'ar' ? 'اكتب نبذة مختصرة عن مهاراتك والخدمات التي تقدمها لتسهيل اختيارك من أصحاب الكويستات.' : 'Write a brief overview of your skills and services to help clients hire you.'}
+              />
+            </div>
+            {isEditingMainBio ? (
+              <div className="flex items-center gap-1.5 mt-1.5 justify-center">
+                <input 
+                  type="text" 
+                  value={tempBio}
+                  maxLength={100}
+                  onChange={(e) => setTempBio(e.target.value)}
+                  className="py-1 px-2 border border-[#4FC3F7]/50 rounded-lg text-[11px] font-bold text-center bg-white dark:bg-slate-900 text-slate-800 dark:text-white flex-1 focus:outline-none focus:border-[#4FC3F7]"
+                  placeholder={lang === 'ar' ? 'اكتب مهاراتك هنا...' : "I can repair or deliver quickly..."}
+                />
+                <button 
+                  onClick={handleSaveBio}
+                  className="p-1 px-2 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-[10px] font-black transition-transform active:scale-95 cursor-pointer flex items-center justify-center"
+                  title="Save Bio"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                </button>
+                <button 
+                  onClick={() => {
+                    setIsEditingMainBio(false);
+                    setTempBio(mainBio);
+                  }}
+                  className="p-1 px-2 bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 dark:hover:bg-slate-600 text-gray-600 dark:text-slate-200 rounded-lg text-[10px] font-black transition-transform active:scale-95 cursor-pointer flex items-center justify-center"
+                  title="Cancel"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center gap-1 mt-1">
+                <p className="text-[11px] font-black leading-relaxed text-[#1F2A44] dark:text-slate-200 break-words">
+                  {mainBio || (lang === 'ar' ? ' السيرة الذاتية (Bio) لم تكتب بعد' : ' No Skills Bio Added Yet')}
+                </p>
+                <button
+                  onClick={() => {
+                    setTempBio(mainBio);
+                    setIsEditingMainBio(true);
+                  }}
+                  className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-200/80 dark:hover:bg-slate-700/80 rounded-md transition-all shrink-0 cursor-pointer text-[#4FC3F7] hover:scale-105"
+                  title="Edit Bio"
+                >
+                  <Edit2 className="w-3 h-3 text-[#4FC3F7] inline" />
+                </button>
+              </div>
+            )}
+          </div>
+
+        {/* Dynamic Personal Portfolio Showcase */}
+ <div className="bg-white dark:bg-slate-900 rounded-2xl p-3 sm:p-3.5 space-y-2.5 border border-gray-150/60 dark:border-slate-800 shadow-2xs">
+ <div className="flex justify-between items-center flex-row-reverse text-right">
+ <div className="flex items-center gap-1.5">
+ <h4 className="font-extrabold text-[#1F2A44] dark:text-white text-xs">
+ {lang === 'ar' ? 'معرض الصور' : 'Gallery'}
  </h4>
- <p className="text-[10px] text-gray-300 font-semibold leading-relaxed">
- {lang === 'ar' ? 'لديك صلاحيات كاملة لمراجعة تفعيلات الهوية (KYC) وإثباتات العمل.' : 'Full supervisory authorization detected. Review KYC requests and operator verifications.'}
- </p>
- </div>
- <button
- type="button"
- onClick={() => onViewChange?.('admin')}
- className="px-4 py-2.5 bg-[#FFD34D] hover:bg-yellow-400 text-[#1F2A44] font-black text-xs rounded-xl shadow-md transition-all duration-200 active:scale-95 cursor-pointer shrink-0"
- >
- {lang === 'ar' ? 'لوحة الإدارة ' : 'Admin Board '}
- </button>
- </div>
- )}
-
- {/* Premium 3-Tab Segmented Controller */}
- <div className="bg-slate-50 p-1.5 rounded-2xl border border-gray-150 grid grid-cols-3 gap-1 mx-auto max-w-lg mb-6 text-right">
- <button
- type="button"
- onClick={() => setActiveProfileTab('verified')}
- className={`py-2 px-1 rounded-xl text-[10px] sm:text-xs font-black transition-all cursor-pointer flex flex-col sm:flex-row items-center justify-center gap-1 border-none ${
- activeProfileTab === 'verified'
- ? 'bg-[#1F2A44] text-white shadow-sm'
- : 'text-gray-400 hover:text-gray-600'
- }`}
- >
- <ShieldCheck className="w-3.5 h-3.5 text-sky-400" />
- <span>{lang === 'ar' ? 'إنجازات موثقة' : 'Verified Portfolio'}</span>
- </button>
- <button
- type="button"
- onClick={() => setActiveProfileTab('gallery')}
- className={`py-2 px-1 rounded-xl text-[10px] sm:text-xs font-black transition-all cursor-pointer flex flex-col sm:flex-row items-center justify-center gap-1 border-none ${
- activeProfileTab === 'gallery'
- ? 'bg-[#1F2A44] text-white shadow-sm'
- : 'text-gray-400 hover:text-gray-600'
- }`}
- >
- <Camera className="w-3.5 h-3.5 text-pink-400" />
- <span>{lang === 'ar' ? 'صور شخصية' : 'Gallery'}</span>
- </button>
- <button
- type="button"
- onClick={() => setActiveProfileTab('badges')}
- className={`py-2 px-1 rounded-xl text-[10px] sm:text-xs font-black transition-all cursor-pointer flex flex-col sm:flex-row items-center justify-center gap-1 border-none ${
- activeProfileTab === 'badges'
- ? 'bg-[#1F2A44] text-white shadow-sm'
- : 'text-gray-400 hover:text-gray-600'
- }`}
- >
- <Award className="w-3.5 h-3.5 text-amber-400" />
- <span>{lang === 'ar' ? 'الشارات' : 'Badges'}</span>
- </button>
- </div>
-
- {/* Tab Contents */}
- <div className="space-y-6">
- {activeProfileTab === 'verified' && (
- <div className="space-y-4 animate-slideUp">
- {/* Permanent Social Portfolio & Testimonial review cards in Hunter Profile */}
- <div className="space-y-6">
- {/* Reviews Toggle Tabs */}
- <div className="flex bg-slate-100 p-1 rounded-2xl gap-1 border border-gray-150">
- <button
- type="button"
- onClick={() => setReviewRoleTab('hunter')}
- className={`flex-1 py-2 rounded-xl text-[10px] sm:text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 border-none ${
- reviewRoleTab === 'hunter'
- ? 'bg-[#1F2A44] text-white shadow-sm'
- : 'text-gray-400 hover:text-gray-600'
- }`}
- >
- <UserCheck className="w-3.5 h-3.5 text-sky-400" />
- <span>{lang === 'ar' ? 'تقييمات العمل' : 'As Worker'}</span>
- <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${reviewRoleTab === 'hunter' ? 'bg-[#FFD34D] text-[#1F2A44]' : 'bg-gray-200 text-gray-500'}`}>
- {hunterReviews.filter(r => r.hunterId === userProfile.id).length}
- </span>
- </button>
- <button
- type="button"
- onClick={() => setReviewRoleTab('godfather')}
- className={`flex-1 py-2 rounded-xl text-[10px] sm:text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 border-none ${
- reviewRoleTab === 'godfather'
- ? 'bg-[#1F2A44] text-white shadow-sm'
- : 'text-gray-400 hover:text-gray-600'
- }`}
- >
- <Crown className="w-3.5 h-3.5 text-amber-400" />
- <span>{lang === 'ar' ? 'تقييمات التوظيف' : 'As Employer'}</span>
- <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${reviewRoleTab === 'godfather' ? 'bg-[#FFD34D] text-[#1F2A44]' : 'bg-gray-200 text-gray-500'}`}>
- {godfatherReviews.filter(r => r.godfatherId === userProfile.id).length}
- </span>
- </button>
- </div>
-
- {/* 1. Reviews received as a Runner */}
- {reviewRoleTab === 'hunter' && (
- <div className="space-y-3 animate-slideUp">
- <div className="flex items-center justify-between border-b border-gray-100 pb-2">
- <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5 flex-row-reverse">
- <span> {lang === 'ar' ? 'تقييمات تلقيتها كعامل' : 'Reviews Received as Worker'}</span>
- </h4>
- <span className="text-[9px] bg-sky-50 text-sky-600 font-extrabold px-2 py-0.5 rounded-full">
- {hunterReviews.filter(r => r.hunterId === userProfile.id).length} {lang === 'ar' ? 'شهادة' : 'Reviews'}
- </span>
- </div>
-
- {(() => {
- const filtered = hunterReviews.filter(r => r.hunterId === userProfile.id);
- if (filtered.length === 0) {
- return (
- <div className="text-xs text-center text-gray-400 py-6 bg-slate-50/50 border border-gray-100 rounded-2xl font-semibold">
- {lang === 'ar' ? 'لا توجد تقييمات عامل بعد. أنجز المهام لتلقي نقاط السمعة!' : 'No worker testimonials on your portfolio yet.'}
- </div>
- );
- }
- const visible = showAllRunnerReviews ? filtered : filtered.slice(0, 6);
- return (
- <div className="space-y-4">
- <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
- {visible.map((review) => (
- <div 
- key={review.reviewId} 
- className="bg-white hover:border-[#4FC3F7] border border-gray-150 rounded-2xl overflow-hidden shadow-xs relative flex flex-col justify-between group transition-all"
- >
- {review.completedTaskImage && (
- <div className="h-32 w-full overflow-hidden relative">
- <img 
- src={review.completedTaskImage} 
- alt="Completed Task" 
- className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+ <InfoButton
+   title={lang === 'ar' ? 'معرض الصور' : 'Gallery'}
+   explanation={lang === 'ar' ? 'صور حقيقية لإنجازاتك ومهاراتك الميدانية موثقة لإثبات كفاءتك لأصحاب الكويستات.' : 'Authentic snapshots of achievements selected directly from your gallery.'}
  />
- <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
- <div className="absolute bottom-2 left-2 bg-[#FFD34D] text-[#1F2A44] px-2 py-0.5 rounded-lg text-[10px] font-black flex items-center gap-0.5 shadow-sm">
- {Array.from({ length: review.rating }).map((_, i) => (
- <Star key={i} className="w-2.5 h-2.5 fill-[#1F2A44] text-[#1F2A44]" />
- ))}
- <span className="ml-1 font-mono font-bold">{review.rating}.0</span>
- </div>
- </div>
- )}
-
- <div className="p-4 space-y-3 flex-1 flex flex-col justify-between text-right">
- <p className="text-xs font-semibold text-slate-600 italic leading-relaxed">
- “{review.comment}”
- </p>
-
- <div className="flex items-center justify-between pt-2 border-t border-gray-100 mt-2">
- <button
- onClick={() => setReviewToDelete(review.reviewId)}
- className="p-1 px-1.5 bg-red-50 hover:bg-red-100 text-[#FF3B7C] rounded-lg transition-colors cursor-pointer border-none"
- title={lang === 'ar' ? 'حذف التقييم' : 'Delete'}
- >
- <Trash2 className="w-3.5 h-3.5" />
- </button>
-
- <div className="flex items-center gap-2">
- <div className="text-right">
- <span className="text-[10px] font-black text-[#1F2A44] block">
- {review.godfatherName}
- </span>
- <span className="text-[9px] text-sky-600 block font-bold">
- {formatReviewDate(review.createdAt, lang)}
- </span>
- </div>
- <img 
- src={review.godfatherAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=50'} 
- alt={review.godfatherName} 
- className="w-6 h-6 rounded-full object-cover ring-1 ring-gray-200"
- />
- </div>
- </div>
- </div>
- </div>
- ))}
- </div>
-
- {filtered.length > 6 && (
- <div className="flex justify-center pt-2">
- <button
- onClick={() => setShowAllRunnerReviews(!showAllRunnerReviews)}
- className="px-5 py-2 bg-slate-100 hover:bg-slate-200 text-[#1F2A44] font-black text-xs rounded-xl shadow-xs cursor-pointer select-none transition-all flex items-center gap-1 active:scale-95 border border-slate-200"
- >
- <span>{showAllRunnerReviews ? '⬆' : '⬇'}</span>
- <span>
- {showAllRunnerReviews 
- ? (lang === 'ar' ? 'عرض أقل' : 'Show Less')
- : (lang === 'ar' ? 'عرض المزيد' : 'Show More')}
- </span>
- </button>
- </div>
- )}
- </div>
- );
- })()}
- </div>
- )}
-
- {/* 2. Reviews received as a Godfather */}
- {reviewRoleTab === 'godfather' && (
- <div className="space-y-3 pt-2 animate-slideUp">
- <div className="flex items-center justify-between border-b border-gray-100 pb-2">
- <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5 flex-row-reverse">
- <span> {lang === 'ar' ? 'تقييمات تلقيتها كصاحب عمل ' : 'Reviews Received as client'}</span>
- </h4>
- <span className="text-[9px] bg-amber-50 text-amber-600 font-extrabold px-2 py-0.5 rounded-full">
- {godfatherReviews.filter(r => r.godfatherId === userProfile.id).length} {lang === 'ar' ? 'شهادة' : 'Reviews'}
- </span>
- </div>
-
- {(() => {
- const filtered = godfatherReviews.filter(r => r.godfatherId === userProfile.id);
- if (filtered.length === 0) {
- return (
- <div className="text-xs text-center text-gray-400 py-6 bg-slate-50/50 border border-gray-100 rounded-2xl font-semibold">
- {lang === 'ar' ? 'لا توجد تقييمات متبادلة للصاحب عمل حالياً.' : 'No client reciprocity reviews yet.'}
- </div>
- );
- }
- const visible = showAllGodfatherReviews ? filtered : filtered.slice(0, 6);
- return (
- <div className="space-y-4">
- <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
- {visible.map((review) => (
- <div 
- key={review.reviewId} 
- className="bg-white hover:border-amber-400 border border-gray-150 rounded-2xl overflow-hidden shadow-xs relative flex flex-col justify-between group transition-all"
- >
- {review.completedTaskImage && (
- <div className="h-32 w-full overflow-hidden relative">
- <img 
- src={review.completedTaskImage} 
- alt="Completed Task" 
- className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
- />
- <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
- <div className="absolute bottom-2 left-2 bg-amber-400 text-slate-900 px-2 py-0.5 rounded-lg text-[10px] font-black flex items-center gap-0.5 shadow-sm">
- {Array.from({ length: review.rating }).map((_, i) => (
- <Star key={i} className="w-2.5 h-2.5 fill-slate-900 text-slate-900" />
- ))}
- <span className="ml-1 font-mono font-bold">{review.rating}.0</span>
- </div>
- </div>
- )}
-
- <div className="p-4 space-y-3 flex-1 flex flex-col justify-between text-right">
- <p className="text-xs font-semibold text-slate-600 italic leading-relaxed">
- “{review.comment}”
- </p>
-
- <div className="flex items-center justify-between pt-2 border-t border-gray-100 mt-2">
- <span className="text-[8px] text-gray-400 font-bold uppercase tracking-widest">
- {lang === 'ar' ? 'تقييم متبادل بطلبك' : 'Reciprocal rating'}
- </span>
-
- <div className="flex items-center gap-2">
- <div className="text-right">
- <span className="text-[10px] font-black text-[#1F2A44] block">
- {review.hunterName}
- </span>
- <span className="text-[9px] text-sky-600 block font-bold">
- {formatReviewDate(review.createdAt, lang)}
- </span>
- </div>
- <img 
- src={review.hunterAvatar || 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=50'} 
- alt={review.hunterName} 
- className="w-6 h-6 rounded-full object-cover ring-1 ring-gray-200"
- />
- </div>
- </div>
- </div>
- </div>
- ))}
- </div>
-
- {filtered.length > 6 && (
- <div className="flex justify-center pt-2">
- <button
- onClick={() => setShowAllGodfatherReviews(!showAllGodfatherReviews)}
- className="px-5 py-2 bg-slate-100 hover:bg-slate-200 text-[#1F2A44] font-black text-xs rounded-xl shadow-xs cursor-pointer select-none transition-all flex items-center gap-1 active:scale-95 border border-slate-200"
- >
- <span>{showAllGodfatherReviews ? '⬆' : '⬇'}</span>
- <span>
- {showAllGodfatherReviews 
- ? (lang === 'ar' ? 'عرض أقل' : 'Show Less')
- : (lang === 'ar' ? 'عرض المزيد' : 'Show More')}
- </span>
- </button>
- </div>
- )}
- </div>
- );
- })()}
- </div>
- )}
- </div>
- </div>
- )}
-
- {activeProfileTab === 'gallery' && (
- <div className="space-y-4 animate-slideUp">
- {/* Dynamic Personal Portfolio Showcase */}
- <div className="bg-white border border-gray-150 rounded-3xl p-5 space-y-4 shadow-sm">
- <div className="flex justify-between items-center pb-2 border-b border-gray-100 flex-row-reverse text-right">
- <div className="space-y-0.5">
- <h4 className="font-extrabold text-[#1F2A44] text-xs uppercase tracking-wider">
- {lang === 'ar' ? 'معرض الصور الشخصية والأعمال ' : 'Visual Portfolio snaps'}
- </h4>
- <p className="text-[10px] text-gray-400 font-semibold">
- {lang === 'ar' ? 'صور حقيقية لإنجازاتك ومهاراتك الميدانية موثقة من المعرض' : 'Authentic snapshots of achievements selected directly from your native gallery'}
- </p>
  </div>
  <div className="flex items-center gap-1.5">
  <label
@@ -4796,9 +4310,9 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/verify-otp-refill`, {
  {lang === 'ar' ? 'معرض فارغ حالياً. اختر صور حقيقية لإبهار أصحاب المشاريع!' : 'Visual portfolio is empty. Upload snaps to secure higher-paying bounties!'}
  </div>
  ) : (
- <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+ <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 sm:gap-2">
  {portfolioPhotos.map((url, idx) => (
- <div key={idx} className="aspect-square rounded-2xl overflow-hidden border border-gray-150 relative group bg-gray-100 shadow-xs">
+ <div key={idx} className="aspect-square rounded-xl overflow-hidden relative group bg-gray-100 shadow-2xs">
  <img 
  src={url} 
  alt={`Portfolio sample ${idx}`} 
@@ -4826,38 +4340,6 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/verify-otp-refill`, {
  </div>
  )}
  </div>
- </div>
- )}
-
- {activeProfileTab === 'badges' && (
- <div className="space-y-4 animate-slideUp">
- {/* Display Level Badges */}
- <div className="space-y-3">
- <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider text-right">{lang === 'ar' ? 'الشارات التقديرية المكتسبة ' : 'Your unlocked medals'}</h4>
- {unlockedBadgesObj.length === 0 ? (
- <div className="text-xs text-center text-gray-400 py-6 bg-white border border-gray-150 rounded-2xl font-bold">
- No medals unlocked yet. Run local tasks to earn trophies!
- </div>
- ) : (
- <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
- {unlockedBadgesObj.map((badge, idx) => {
- return (
- <div key={idx} className="bg-white hover:bg-slate-50/50 p-3.5 rounded-2xl border border-gray-150 flex items-center gap-3 text-right flex-row-reverse">
- <div className="p-2.5 bg-[#FFD34D]/10 rounded-xl text-amber-600 shrink-0">
- <Trophy className="w-5 h-5 text-amber-500 animate-pulse" />
- </div>
- <div className="flex-1">
- <h5 className="text-xs font-black text-[#1F2A44]">{badge.title}</h5>
- <p className="text-[10px] text-gray-400 font-semibold leading-normal">{badge.description}</p>
- </div>
- </div>
- );
- })}
- </div>
- )}
- </div>
- </div>
- )}
  </div>
 
  {/* Explicit Camera/NID Access Disclosure Popup Dialog */}
@@ -4955,8 +4437,10 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/verify-otp-refill`, {
  <AnimatePresence>
  {lightboxUrl && (
  <div 
- className="fixed inset-0 bg-slate-950/95 z-[60] flex flex-col items-center justify-center p-4 cursor-zoom-out animate-fadeIn"
+ className="fixed inset-0 bg-slate-950/95 z-[9999] flex flex-col items-center justify-center p-4 cursor-zoom-out animate-fadeIn select-none"
+ style={{ touchAction: 'none' }}
  onClick={() => setLightboxUrl(null)}
+ onTouchMove={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}
  >
  <div className="absolute top-4 right-4 z-50">
  <button 
@@ -4971,6 +4455,7 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/verify-otp-refill`, {
  animate={{ scale: 1, opacity: 1 }}
  exit={{ scale: 0.9, opacity: 0 }}
  className="max-w-xl w-full text-center space-y-4"
+ style={{ touchAction: 'pan-y' }}
  onClick={(e) => e.stopPropagation()}
  >
  <div className="relative group/zoom rounded-2xl overflow-hidden border border-white/15 bg-black">
@@ -5238,7 +4723,446 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/verify-otp-refill`, {
  )}
  </AnimatePresence>
 
+  {/* Contact, Location & ID Details Modal */}
+ <AnimatePresence>
+ {showContactInfoModal && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 overscroll-contain"
+          onClick={() => setShowContactInfoModal(false)}
+          onTouchMove={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}
+        >
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0, y: 15 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.95, opacity: 0, y: 15 }}
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white dark:bg-[#151F32] rounded-3xl max-w-sm w-full p-5 shadow-2xl border border-gray-150 dark:border-slate-800 overflow-hidden text-right overscroll-contain"
+            style={{ direction: isRtl ? 'rtl' : 'ltr' }}
+ >
+ {/* Modal Header */}
+ <div className="flex items-center justify-between pb-3 border-b border-gray-150 dark:border-slate-800">
+ <div className="flex items-center gap-2.5">
+ <div className="p-2 bg-sky-50 dark:bg-sky-950/40 text-[#4FC3F7] rounded-xl">
+ <UserCheck className="w-5 h-5 text-[#4FC3F7]" />
+ </div>
+ <div>
+ <h3 className="font-extrabold text-sm text-[#1F2A44] dark:text-white">
+ {lang === 'ar' ? 'معلومات الحساب' : 'Account Details'}
+ </h3>
+ <p className="text-[10px] text-gray-400 font-semibold">
+ {lang === 'ar' ? 'معرّف الحساب (12 رمز)، الهاتف، والموقع' : '12-Symbol Account ID, Phone & Location'}
+ </p>
+ </div>
+ </div>
+ <button
+ type="button"
+ onClick={() => setShowContactInfoModal(false)}
+ className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+ >
+ <X className="w-4 h-4" />
+ </button>
+ </div>
+
+ {/* Modal Items */}
+ <div className="py-4 space-y-2.5">
+            {/* حالة توثيق الهوية والحساب (بطاقة موحدة واضحة) */}
+            <div className={`p-3 rounded-2xl border flex items-center justify-between ${
+              userProfile.idVerificationStatus === 'verified'
+                ? 'bg-sky-50 dark:bg-sky-950/40 border-sky-200 dark:border-sky-900/50'
+                : userProfile.idVerificationStatus === 'pending'
+                ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-900/50'
+                : 'bg-slate-50 dark:bg-slate-800/60 border-gray-200 dark:border-slate-700/80'
+            }`}>
+              <div className="flex items-center gap-2.5">
+                <div className={`p-2 rounded-xl shrink-0 ${
+                  userProfile.idVerificationStatus === 'verified'
+                    ? 'bg-[#4FC3F7]/15 text-[#4FC3F7]'
+                    : userProfile.idVerificationStatus === 'pending'
+                    ? 'bg-amber-500/15 text-amber-500'
+                    : 'bg-slate-200/80 dark:bg-slate-700 text-slate-500'
+                }`}>
+                  {userProfile.idVerificationStatus === 'verified' ? (
+                    <ShieldCheck className="w-4 h-4 text-[#4FC3F7]" />
+                  ) : userProfile.idVerificationStatus === 'pending' ? (
+                    <Clock className="w-4 h-4 text-amber-500" />
+                  ) : (
+                    <ShieldAlert className="w-4 h-4 text-slate-500" />
+                  )}
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] text-gray-400 font-bold block">
+                    {lang === 'ar' ? 'حالة توثيق الهوية والحساب' : 'Identity & Account Verification'}
+                  </span>
+                  <span className={`text-xs font-black ${
+                    userProfile.idVerificationStatus === 'verified'
+                      ? 'text-[#4FC3F7]'
+                      : userProfile.idVerificationStatus === 'pending'
+                      ? 'text-amber-500'
+                      : 'text-slate-600 dark:text-slate-300'
+                  }`}>
+                    {userProfile.idVerificationStatus === 'verified'
+                      ? (lang === 'ar' ? 'شريك معتمد وموثق 🛡️' : 'Certified & Verified Partner')
+                      : userProfile.idVerificationStatus === 'pending'
+                      ? (lang === 'ar' ? 'طلب التوثيق قيد المراجعة ⏳' : 'Verification Under Review')
+                      : (lang === 'ar' ? 'حساب غير موثق بعد' : 'Unverified Account')}
+                  </span>
+                </div>
+              </div>
+              {userProfile.idVerificationStatus === 'verified' ? (
+                <span className="px-2.5 py-1 rounded-full bg-[#4FC3F7]/15 text-[#4FC3F7] text-[10px] font-black border border-[#4FC3F7]/30">
+                  {lang === 'ar' ? 'موثق' : 'Verified'}
+                </span>
+              ) : userProfile.idVerificationStatus === 'pending' ? (
+                <span className="px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 text-[10px] font-black border border-amber-200 dark:border-amber-800">
+                  {lang === 'ar' ? 'قيد المراجعة' : 'Pending'}
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowContactInfoModal(false);
+                    setActiveSubmenu('verification');
+                  }}
+                  className="px-2.5 py-1 rounded-full bg-rose-50 hover:bg-rose-100 text-[#FF3B7C] text-[10px] font-black border border-rose-200 active:scale-95 transition-all cursor-pointer"
+                >
+                  {lang === 'ar' ? 'توثيق الآن' : 'Verify Now'}
+                </button>
+              )}
+            </div>
+ {/* 1. معرّف الحساب (ID) */}
+ <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-2xl border border-gray-150 dark:border-slate-700/80 flex items-center justify-between">
+ <div className="flex items-center gap-2.5">
+ <div className="p-2 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-500 rounded-xl shrink-0">
+ <FileText className="w-4 h-4 text-indigo-500" />
+ </div>
+ <div className="text-right">
+ <span className="text-[10px] text-gray-400 font-bold block">
+ {lang === 'ar' ? 'معرّف الحساب (ID)' : 'Account ID'}
+ </span>
+ <span className="font-mono text-xs font-black text-slate-800 dark:text-slate-100 select-all">
+ {userProfile.id}
+ </span>
+ </div>
+ </div>
+ <button
+ type="button"
+ onClick={() => handleCopyIdWithFeedback(userProfile.id)}
+ className="p-2 bg-white dark:bg-slate-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300 rounded-xl border border-gray-200 dark:border-slate-600 shadow-2xs active:scale-95 transition-all cursor-pointer flex items-center gap-1 text-[10px] font-bold"
+ title={lang === 'ar' ? 'نسخ المعرّف' : 'Copy ID'}
+ >
+ <Copy className="w-3.5 h-3.5" />
+ <span>{lang === 'ar' ? 'نسخ' : 'Copy'}</span>
+ </button>
+ </div>
+
+ {/* 2. رقم الهاتف (Phone) */}
+ <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-2xl border border-gray-150 dark:border-slate-700/80 flex items-center justify-between">
+ <div className="flex items-center gap-2.5">
+ <div className="p-2 bg-sky-50 dark:bg-sky-950/40 text-[#4FC3F7] rounded-xl shrink-0">
+ <Phone className="w-4 h-4 text-[#4FC3F7]" />
+ </div>
+ <div className="text-right">
+ <span className="text-[10px] text-gray-400 font-bold block">
+ {lang === 'ar' ? 'رقم الهاتف' : 'Phone Number'}
+ </span>
+ <span className="font-mono text-xs font-black text-slate-800 dark:text-slate-100 select-all">
+ {userProfile.phone || (lang === 'ar' ? 'غير محدد' : 'Not set')}
+ </span>
+ </div>
+ </div>
+ {userProfile.phone && userProfile.phone !== 'غير محدد' && (
+ <a
+ href={`tel:${userProfile.phone}`}
+ className="p-2 bg-white dark:bg-slate-700 hover:bg-sky-50 dark:hover:bg-sky-900/40 text-[#4FC3F7] rounded-xl border border-gray-200 dark:border-slate-600 shadow-2xs active:scale-95 transition-all cursor-pointer flex items-center gap-1 text-[10px] font-bold"
+ title={lang === 'ar' ? 'اتصال' : 'Call'}
+ >
+ <Phone className="w-3.5 h-3.5" />
+ <span>{lang === 'ar' ? 'اتصال' : 'Call'}</span>
+ </a>
+ )}
+ </div>
+
+ {/* 3. الموقع الجغرافي (Location) */}
+ <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-2xl border border-gray-150 dark:border-slate-700/80 flex items-center gap-2.5">
+ <div className="p-2 bg-pink-50 dark:bg-pink-950/40 text-[#FF3B7C] rounded-xl shrink-0">
+ <MapPin className="w-4 h-4 text-[#FF3B7C]" />
+ </div>
+ <div className="text-right flex-1 min-w-0">
+ <span className="text-[10px] text-gray-400 font-bold block">
+ {lang === 'ar' ? 'الموقع والولاية' : 'Location & City'}
+ </span>
+ <span className="text-xs font-black text-slate-800 dark:text-slate-100 block truncate">
+ {userProfile.city || (lang === 'ar' ? 'الجزائر' : 'Algeria')}
+ </span>
+ </div>
+ </div>
+
+ {/* 4. تاريخ الانضمام (Joined date) */}
+ <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-2xl border border-gray-150 dark:border-slate-700/80 flex items-center gap-2.5">
+ <div className="p-2 bg-amber-50 dark:bg-amber-950/40 text-amber-500 rounded-xl shrink-0">
+ <Clock className="w-4 h-4 text-amber-500" />
+ </div>
+ <div className="text-right flex-1">
+ <span className="text-[10px] text-gray-400 font-bold block">
+ {lang === 'ar' ? 'تاريخ الانضمام' : 'Member Since'}
+ </span>
+ <span className="text-xs font-black text-slate-800 dark:text-slate-100">
+ {formatJoinedDate(userProfile.createdAt, lang)}
+ </span>
+ </div>
+ </div>
+ </div>
+
+ {/* Modal Footer */}
+ <div className="pt-1">
+ <button
+ type="button"
+ onClick={() => setShowContactInfoModal(false)}
+ className="w-full py-2.5 bg-[#1F2A44] hover:bg-slate-800 text-white font-black text-xs rounded-xl transition-all cursor-pointer shadow-sm active:scale-98"
+ >
+ {lang === 'ar' ? 'إغلاق' : 'Close'}
+ </button>
+ </div>
+ </motion.div>
+ </div>
+ )}
+ </AnimatePresence>
+
+  {/* Reviews Modal triggered by clicking on the rating card */}
+  <AnimatePresence>
+    {showReviewsModal && (
+      <div 
+        className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overscroll-contain select-none"
+        style={{ touchAction: 'none' }}
+        onClick={() => setShowReviewsModal(false)}
+        onTouchMove={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}
+      >
+        <motion.div
+          initial={{ scale: 0.95, opacity: 0, y: 15 }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
+          exit={{ scale: 0.95, opacity: 0, y: 15 }}
+          onClick={(e) => e.stopPropagation()}
+          className="bg-white dark:bg-[#151F32] rounded-3xl max-w-xl w-full max-h-[85vh] flex flex-col shadow-2xl border border-gray-150 dark:border-slate-800 overflow-hidden text-right overscroll-contain"
+          style={{ direction: isRtl ? 'rtl' : 'ltr', touchAction: 'pan-y' }}
+        >
+          {/* Modal Header */}
+          <div className="p-4 sm:p-5 border-b border-gray-150 dark:border-slate-800 flex items-center justify-between shrink-0 bg-slate-50/80 dark:bg-slate-900/50">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-amber-500/10 rounded-2xl text-amber-500">
+                <Star className="w-6 h-6 fill-amber-400 text-amber-400" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xl font-black font-mono text-slate-800 dark:text-white">
+                    {dynamicRating.toFixed(1)}
+                  </span>
+                  <div className="flex items-center gap-0.5">
+                    {[1, 2, 3, 4, 5].map((s) => (
+                      <Star 
+                        key={s} 
+                        className={`w-3.5 h-3.5 ${s <= Math.round(dynamicRating) ? 'fill-amber-400 text-amber-400' : 'text-gray-300 dark:text-slate-600'}`} 
+                      />
+                    ))}
+                  </div>
+                </div>
+                <p className="text-[11px] text-gray-500 dark:text-slate-400 font-bold">
+                  {lang === 'ar' ? `بناءً على ${totalReviews} تقييم موثق` : `Based on ${totalReviews} verified reviews`}
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowReviewsModal(false)}
+              className="w-9 h-9 rounded-xl bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-500 dark:text-gray-300 flex items-center justify-center transition-all cursor-pointer select-none active:scale-90"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Role Tabs inside Modal: As Worker vs As Employer */}
+          <div className="p-3 border-b border-gray-100 dark:border-slate-800 shrink-0">
+            <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl gap-1 border border-gray-150 dark:border-slate-700">
+              <button
+                type="button"
+                onClick={() => setReviewRoleTab('hunter')}
+                className={`flex-1 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 border-none ${
+                  reviewRoleTab === 'hunter'
+                    ? 'bg-[#1F2A44] text-white shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700 dark:text-slate-400'
+                }`}
+              >
+                <UserCheck className="w-3.5 h-3.5 text-sky-400" />
+                <span>{lang === 'ar' ? 'تقييمات العمل' : 'As Worker'}</span>
+                <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
+                  reviewRoleTab === 'hunter' ? 'bg-[#FFD34D] text-[#1F2A44]' : 'bg-gray-200 dark:bg-slate-700 text-gray-600'
+                }`}>
+                  {myHunterReviews.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setReviewRoleTab('godfather')}
+                className={`flex-1 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 border-none ${
+                  reviewRoleTab === 'godfather'
+                    ? 'bg-[#1F2A44] text-white shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700 dark:text-slate-400'
+                }`}
+              >
+                <Crown className="w-3.5 h-3.5 text-amber-400" />
+                <span>{lang === 'ar' ? 'تقييمات التوظيف' : 'As Employer'}</span>
+                <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
+                  reviewRoleTab === 'godfather' ? 'bg-[#FFD34D] text-[#1F2A44]' : 'bg-gray-200 dark:bg-slate-700 text-gray-600'
+                }`}>
+                  {myGodfatherReviews.length}
+                </span>
+              </button>
+            </div>
+          </div>
+
+          {/* Scrollable Reviews List */}
+          <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 overscroll-contain touch-pan-y modal-scroll-area" data-allow-scroll="true" style={{ WebkitOverflowScrolling: 'touch' }}>
+            {reviewRoleTab === 'hunter' ? (
+              myHunterReviews.length === 0 ? (
+                <div className="text-xs text-center text-gray-400 py-12 bg-slate-50/50 dark:bg-slate-800/40 border border-gray-150 dark:border-slate-800 rounded-3xl font-semibold">
+                  {lang === 'ar' ? 'لا توجد تقييمات كعامل بعد. أنجز المهام لتلقي نقاط السمعة!' : 'No worker testimonials on your portfolio yet.'}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {myHunterReviews.map((review) => (
+                    <div 
+                      key={review.reviewId} 
+                      className="bg-white dark:bg-[#1C283F] border border-gray-150 dark:border-slate-700/80 rounded-2xl overflow-hidden shadow-xs relative flex flex-col justify-between group transition-all"
+                    >
+                      {review.completedTaskImage && (
+                        <div className="h-32 w-full overflow-hidden relative cursor-pointer" onClick={() => setLightboxUrl(review.completedTaskImage)}>
+                          <img 
+                            src={review.completedTaskImage} 
+                            alt="Completed Task" 
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
+                          <div className="absolute bottom-2 left-2 bg-[#FFD34D] text-[#1F2A44] px-2 py-0.5 rounded-lg text-[10px] font-black flex items-center gap-0.5 shadow-sm">
+                            {Array.from({ length: review.rating }).map((_, i) => (
+                              <Star key={i} className="w-2.5 h-2.5 fill-[#1F2A44] text-[#1F2A44]" />
+                            ))}
+                            <span className="ml-1 font-mono font-bold">{review.rating}.0</span>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="p-3.5 space-y-2.5 flex-1 flex flex-col justify-between text-right">
+                        <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 leading-relaxed italic">
+                          “{review.comment}”
+                        </p>
+
+                        <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-slate-700/80">
+                          <div className="flex items-center gap-2">
+                            <img 
+                              src={review.godfatherAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=50'} 
+                              alt={review.godfatherName} 
+                              className="w-6 h-6 rounded-full object-cover ring-1 ring-gray-200"
+                            />
+                            <div className="text-right">
+                              <span className="text-[10px] font-black text-[#1F2A44] dark:text-white block">
+                                {review.godfatherName}
+                              </span>
+                              <span className="text-[9px] text-sky-600 dark:text-sky-400 block font-bold">
+                                {formatReviewDate(review.createdAt, lang)}
+                              </span>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => setReviewToDelete(review.reviewId)}
+                            className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 transition-all cursor-pointer"
+                            title={lang === 'ar' ? 'حذف هذا التقييم' : 'Delete review'}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            ) : (
+              myGodfatherReviews.length === 0 ? (
+                <div className="text-xs text-center text-gray-400 py-12 bg-slate-50/50 dark:bg-slate-800/40 border border-gray-150 dark:border-slate-800 rounded-3xl font-semibold">
+                  {lang === 'ar' ? 'لا توجد تقييمات متبادلة كصاحب عمل حالياً.' : 'No employer reciprocity reviews yet.'}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {myGodfatherReviews.map((review) => (
+                    <div 
+                      key={review.reviewId} 
+                      className="bg-white dark:bg-[#1C283F] border border-gray-150 dark:border-slate-700/80 rounded-2xl overflow-hidden shadow-xs relative flex flex-col justify-between group transition-all"
+                    >
+                      {review.completedTaskImage && (
+                        <div className="h-32 w-full overflow-hidden relative cursor-pointer" onClick={() => setLightboxUrl(review.completedTaskImage)}>
+                          <img 
+                            src={review.completedTaskImage} 
+                            alt="Completed Task" 
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
+                          <div className="absolute bottom-2 left-2 bg-amber-400 text-slate-900 px-2 py-0.5 rounded-lg text-[10px] font-black flex items-center gap-0.5 shadow-sm">
+                            {Array.from({ length: review.rating }).map((_, i) => (
+                              <Star key={i} className="w-2.5 h-2.5 fill-slate-900 text-slate-900" />
+                            ))}
+                            <span className="ml-1 font-mono font-bold">{review.rating}.0</span>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="p-3.5 space-y-2.5 flex-1 flex flex-col justify-between text-right">
+                        <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 leading-relaxed italic">
+                          “{review.comment}”
+                        </p>
+
+                        <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-slate-700/80">
+                          <div className="flex items-center gap-2">
+                            <img 
+                              src={review.hunterAvatar || 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=50'} 
+                              alt={review.hunterName} 
+                              className="w-6 h-6 rounded-full object-cover ring-1 ring-gray-200"
+                            />
+                            <div className="text-right">
+                              <span className="text-[10px] font-black text-[#1F2A44] dark:text-white block">
+                                {review.hunterName}
+                              </span>
+                              <span className="text-[9px] text-sky-600 dark:text-sky-400 block font-bold">
+                                {formatReviewDate(review.createdAt, lang)}
+                              </span>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => setReviewToDelete(review.reviewId)}
+                            className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 transition-all cursor-pointer"
+                            title={lang === 'ar' ? 'حذف هذا التقييم' : 'Delete review'}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
+          </div>
+        </motion.div>
+      </div>
+    )}
+  </AnimatePresence>
+
  </div>
  </PullToRefresh>
  );
 }
+
+export default React.memo(ProfileView);

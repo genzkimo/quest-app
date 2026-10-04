@@ -18,7 +18,6 @@ import {
  FolderArchive,
  UserCheck,
  Handshake,
- MoreVertical,
  Trash2,
  Bell,
  BellOff
@@ -204,7 +203,7 @@ export function formatLastActive(
   return { text: "A long time ago", isOnline: false, dotColor: "bg-rose-500" };
 }
 
-export default function InboxScreen({ 
+function InboxScreen({ 
  userChats, 
  quests = [], 
  currentUserId, 
@@ -865,7 +864,7 @@ export default function InboxScreen({
 
  const activeQuestInfo = useMemo(() => {
  if (!selectedChat) return null;
- const qId = selectedChat.id.split('_')[0];
+ const qId = selectedChat.questId || (selectedChat.id ? selectedChat.id.split('_')[0] : null);
  return quests.find(q => q.id === qId) || null;
  }, [selectedChat, quests]);
 
@@ -873,21 +872,21 @@ export default function InboxScreen({
  return (
  <div 
  id="full_inbox_container"
- className={`w-full bg-slate-50 flex h-[100dvh] font-sans relative overflow-hidden  ${selectedChat ? 'pt-0' : 'pt-16'} pb-0`}
+ className="w-full bg-slate-50 dark:bg-[#0B1120] flex h-[100dvh] font-sans relative overflow-hidden pt-0 pb-0"
  style={{ direction: isRtl ? 'rtl' : 'ltr' }}
  >
  {/* SIDEBAR: Conversation List Panel */}
  <div 
  id="inbox_sidebar"
- className={`w-full md:w-[360px] lg:w-[400px] shrink-0 border-r border-slate-150 flex flex-col h-full bg-white ${
+ className={`w-full md:w-[360px] lg:w-[400px] shrink-0 border-r border-slate-150 dark:border-slate-800 flex flex-col h-full bg-white dark:bg-[#151F32] ${
  selectedChat ? 'hidden md:flex' : 'flex'
  }`}
  >
  {/* Sidebar Header */}
- <div className="p-4 bg-white border-b border-slate-100/40 text-slate-800 flex justify-between items-center shrink-0">
+ <div className="p-4 pb-2 bg-white dark:bg-[#151F32] text-slate-800 dark:text-slate-100 flex justify-between items-center shrink-0">
  <div className="flex items-center gap-2">
- <MessageSquare className="w-5 h-5 text-[#1F2A44]" />
- <h2 className="text-base font-black tracking-tight text-slate-850">{t.inboxTitle}</h2>
+ <MessageSquare className="w-5 h-5 text-[#1F2A44] dark:text-[#38BDF8]" />
+ <h2 className="text-base font-black tracking-tight text-slate-850 dark:text-white">{t.inboxTitle}</h2>
  </div>
  {groupedChats.some(isChatUnread) && (
  <span className="bg-blue-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full">
@@ -897,27 +896,27 @@ export default function InboxScreen({
  </div>
 
  {/* Search Box */}
- <div className="p-3 border-b border-slate-100/40 bg-slate-50/50 shrink-0">
+ <div className="p-3 pb-1 shrink-0">
  <div className="relative">
  <input
  type="text"
  placeholder={t.searchPlaceholder}
  value={searchTerm}
  onChange={(e) => setSearchTerm(e.target.value)}
- className="w-full pl-9 pr-4 py-2 text-xs bg-white border border-slate-200 rounded-2xl outline-none focus:border-[#1F2A44] text-slate-800 font-medium transition-all"
+ className="w-full pl-9 pr-4 py-2 text-xs bg-slate-100/80 dark:bg-slate-800/80 border border-transparent focus:border-[#38BDF8] rounded-2xl outline-none text-slate-800 dark:text-slate-100 font-medium transition-all"
  />
  <Search className={`w-4 h-4 text-slate-400 absolute top-2.5 ${isRtl ? 'left-3' : 'right-3'}`} />
  </div>
  </div>
 
  {/* Category Tabs / Filters */}
- <div className="p-2.5 flex items-center gap-1.5 overflow-x-auto shrink-0 border-b border-slate-100/40 scrollbar-none bg-slate-50/30">
+ <div className="px-3 pb-2.5 pt-1 flex items-center gap-1.5 overflow-x-auto shrink-0 scrollbar-none">
  <button
  onClick={() => setActiveFilter('all')}
  className={`px-3.5 py-1.5 rounded-full text-[10px] font-black transition-all whitespace-nowrap shrink-0 flex items-center gap-1 cursor-pointer ${
  activeFilter === 'all'
- ? 'bg-[#1F2A44] text-white shadow-xs'
- : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+ ? 'bg-[#1F2A44] dark:bg-slate-700 text-white shadow-xs'
+ : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-750'
  }`}
  >
  {t.all}
@@ -927,7 +926,7 @@ export default function InboxScreen({
  className={`px-3.5 py-1.5 rounded-full text-[10px] font-black transition-all whitespace-nowrap shrink-0 flex items-center gap-1 cursor-pointer ${
  activeFilter === 'unread'
  ? 'bg-red-500 text-white shadow-xs'
- : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+ : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-750'
  }`}
  >
  <span>{t.unread}</span>
@@ -1021,6 +1020,10 @@ export default function InboxScreen({
  onMouseDown={() => handleTouchStart(chat)}
  onMouseUp={handleTouchEnd}
  onMouseLeave={handleTouchEnd}
+  onContextMenu={(e) => {
+    e.preventDefault();
+    setContextMenuChat(chat);
+  }}
  onClick={(e) => {
  if (isLongPressActiveRef.current) {
  e.preventDefault();
@@ -1043,14 +1046,16 @@ export default function InboxScreen({
  )}
 
  <div 
- onClick={(e) => {
- e.stopPropagation();
- const details = getInboxItemDetails(chat);
- if (details.recipientId && onInspectUser) {
- onInspectUser(details.recipientId);
- }
- }}
- className="relative w-10 h-10 shrink-0 font-sans cursor-pointer"
+  onClick={(e) => {
+    if (isSelected) {
+      e.stopPropagation();
+      const details = getInboxItemDetails(chat);
+      if (details.recipientId && onInspectUser) {
+        onInspectUser(details.recipientId);
+      }
+    }
+  }}
+  className={`relative w-10 h-10 shrink-0 font-sans ${isSelected ? "cursor-pointer" : ""}`}
  >
  <div className="w-full h-full rounded-full overflow-hidden bg-slate-150 border border-slate-200 hover:opacity-85 transition-opacity">
  <img 
@@ -1079,14 +1084,16 @@ export default function InboxScreen({
      <div className="flex justify-between items-baseline mb-0.5 gap-1">
        <div className="flex items-center gap-1.5 min-w-0 flex-1">
          <h3 
-           onClick={(e) => {
-             e.stopPropagation();
-             const details = getInboxItemDetails(chat);
-             if (details.recipientId && onInspectUser) {
-               onInspectUser(details.recipientId);
-             }
-           }}
-           className="text-xs font-black text-slate-800 truncate cursor-pointer hover:text-blue-600 hover:underline"
+  onClick={(e) => {
+    if (isSelected) {
+      e.stopPropagation();
+      const details = getInboxItemDetails(chat);
+      if (details.recipientId && onInspectUser) {
+        onInspectUser(details.recipientId);
+      }
+    }
+  }}
+            className={`text-xs font-black text-slate-800 truncate ${isSelected ? "cursor-pointer hover:text-blue-600 hover:underline" : ""}`}
          >
            {recipientName}
          </h3>
@@ -1108,22 +1115,9 @@ export default function InboxScreen({
      </p>
    </div>
 
-   <div className="flex items-center gap-1 shrink-0">
-     {isUnread && (
-       <div className="w-2 h-2 rounded-full bg-blue-500 shrink-0"></div>
-     )}
-     <button
-       type="button"
-       onClick={(e) => {
-         e.stopPropagation();
-         setContextMenuChat(chat);
-       }}
-       className="p-1.5 rounded-full hover:bg-slate-200/80 text-slate-500 hover:text-slate-800 transition-all cursor-pointer shrink-0"
-       title={isRtl ? 'خيارات المحادثة' : 'Chat Options'}
-     >
-       <MoreVertical className="w-4 h-4" />
-     </button>
-   </div>
+    {isUnread && (
+      <div className="w-2 h-2 rounded-full bg-blue-500 shrink-0"></div>
+    )}
  </div>
  );
  })
@@ -1215,30 +1209,64 @@ export default function InboxScreen({
            </div>
          </div>
 
-         {/* Right Header Controls */}
- <div className="flex items-center gap-1 shrink-0">
- {/* View Details Event Button */}
- <button
- onClick={() => {
- if (onOpenChat) {
- onOpenChat(selectedChat.id);
- } else {
- window.dispatchEvent(new CustomEvent('open-chat', {
- detail: {
- chatId: selectedChat.id,
- questId: selectedChat.id.split('_')[0]
- }
- }));
- }
- onClose();
- }}
- className="bg-[#1F2A44] hover:bg-[#1E2E4E] text-white text-[10px] font-black px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 leading-none shadow-sm"
- >
- <ExternalLink className="w-3.5 h-3.5 shrink-0" />
- <span>{t.viewQuest}</span>
- </button>
- </div>
- </div>
+          {/* Right Header Controls - Prominent Quest View Button */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {(selectedChat?.questTitle || activeQuestInfo) && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (onOpenChat) {
+                    onOpenChat(selectedChat.id);
+                  }
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-rose-50 to-pink-50 hover:from-rose-100 hover:to-pink-100 text-[#FF3B7C] border border-[#FF3B7C]/30 text-xs font-black shadow-xs hover:shadow-sm active:scale-95 transition-all cursor-pointer"
+                title={lang === "ar" ? "عرض تفاصيل المهمة المرتبطة بالمحادثة" : "View Associated Quest Details"}
+              >
+                <Briefcase className="w-4 h-4 text-[#FF3B7C] shrink-0" />
+                <span className="inline font-black">{lang === "ar" ? "عرض المهمة" : "View Quest"}</span>
+                <ExternalLink className="w-3.5 h-3.5 text-[#FF3B7C] opacity-80 shrink-0" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Pinned Quest Context Bar at the top of the conversation */}
+        {activeQuestInfo && (
+          <div className="bg-white border-b border-slate-200/80 px-4 py-2.5 flex items-center justify-between gap-3 shadow-xs shrink-0 select-none">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#FFD34D]/25 to-[#FF3B7C]/20 border border-[#FF3B7C]/30 flex items-center justify-center shrink-0">
+                <Briefcase className="w-4 h-4 text-[#FF3B7C]" />
+              </div>
+              <div className="min-w-0 text-start">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-black text-[#FF3B7C] uppercase tracking-wider">
+                    {lang === 'ar' ? 'المهمة المرتبطة بالمحادثة:' : 'Associated Quest:'}
+                  </span>
+                  <span className="text-[10px] font-extrabold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-300/40">
+                    {activeQuestInfo.cashReward} د.ج
+                  </span>
+                </div>
+                <p className="text-xs font-black text-slate-800 truncate max-w-[200px] sm:max-w-md">
+                  {activeQuestInfo.title}
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (onOpenChat) {
+                  onOpenChat(selectedChat.id);
+                }
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#1F2A44] hover:bg-[#1F2A44]/90 text-white text-xs font-black shadow-xs hover:shadow-md transition-all active:scale-95 cursor-pointer shrink-0"
+              title={lang === 'ar' ? 'عرض بطاقة وتفاصيل المهمة كاملة' : 'View Full Quest Details'}
+            >
+              <span>{lang === 'ar' ? 'عرض تفاصيل المهمة' : 'Quest Details'}</span>
+              <ExternalLink className="w-3.5 h-3.5 text-[#FFD34D]" />
+            </button>
+          </div>
+        )}
 
 
 
@@ -1454,3 +1482,5 @@ export default function InboxScreen({
  </div>
  );
 }
+
+export default React.memo(InboxScreen);

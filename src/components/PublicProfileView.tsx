@@ -17,15 +17,23 @@ import {
   Quote,
   Info,
   Briefcase,
-  Frown
+  Frown,
+  Camera,
+  UserCheck,
+  Crown,
+  FileText,
+  IdCard,
+  Lock,
+  Copy
 } from 'lucide-react';
 import { Quest, UserProfile, Leader, HunterReview, GodfatherReview, UserModel } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { db } from '../utils/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { formatJoinedDate, formatReviewDate } from '../utils/dateFormatter';
-
-
+import { formatDisplayId12 } from '../utils/userIdFormatter';
+import InfoButton from './InfoButton';
+import { lockBodyScroll } from '../utils/scrollLock';
 
 interface PublicProfileViewProps {
  userId: string;
@@ -61,9 +69,12 @@ export default function PublicProfileView({
  // React State Hooks at the absolute beginning of the component
  const [dbUser, setDbUser] = useState<UserProfile | null>(null);
  const [activeTab, setActiveTab] = useState<'hunter' | 'godfather'>('hunter');
- const [activeProfileTab, setActiveProfileTab] = useState<'verified' | 'gallery' | 'badges'>('verified');
+ const [activeProfileTab, setActiveProfileTab] = useState<'gallery' | 'badges'>('gallery');
+ const [showReviewsModal, setShowReviewsModal] = useState(false);
+ const [modalReviewRoleTab, setModalReviewRoleTab] = useState<'hunter' | 'godfather'>('hunter');
  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [showContactInfoModal, setShowContactInfoModal] = useState(false);
  const [longPressTimer, setLongPressTimer] = useState<any>(null);
 
  // Reporting details modal state
@@ -184,7 +195,14 @@ export default function PublicProfileView({
  }
  }, [isHunter, isGodfather]);
 
- useEffect(() => {
+ // Lock body scroll and prevent background scroll leakage when modals are open
+  useEffect(() => {
+    if (showReviewsModal || showContactInfoModal || showReportModal || !!lightboxUrl) {
+      return lockBodyScroll();
+    }
+  }, [showReviewsModal, showContactInfoModal, showReportModal, lightboxUrl]);
+
+  useEffect(() => {
  const userRef = doc(db, 'users', userId);
  getDoc(userRef).then((snap) => {
  if (snap.exists()) {
@@ -289,715 +307,277 @@ export default function PublicProfileView({
  };
 
  return (
- <div className="space-y-6 pt-4 animate-slideUp">
- {/* 1. Header Navigation and Title with Unified Seamless Background */}
- <div className="flex items-center justify-between">
- <button 
- onClick={onClose}
- className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-slate-200 text-slate-700 rounded-full text-xs font-black transition-all cursor-pointer"
- >
- {isRtl ? '← العودة للخلف' : '← Back'}
- </button>
-
- <h3 className="text-sm font-black text-[#1F2A44] uppercase tracking-wider">
- {isRtl ? 'تفحص حساب عضو كويست' : 'Quest Member Inspection'}
- </h3>
-
- {/* The Scam Shield Reporting Trigger Icon */}
- {!isSelf && (
- <button
- onClick={() => setShowReportModal(true)}
- className="w-9 h-9 bg-red-50 hover:bg-red-100 text-[#FF3B7C] border border-red-100 rounded-full flex items-center justify-center transition-colors cursor-pointer"
- title={isRtl ? 'إرسال بلاغ إساءة أو تجميد الحساب' : 'Report Fraud, Non-Payment or Safety'}
- >
- <Flag className="w-4 h-4 text-[#FF3B7C]" />
- </button>
- )}
- {isSelf && <div className="w-9 h-9"></div>}
- </div>
-
- {/* 2. Unified Card Header (White, borderless, float design) */}
- <div className="bg-white rounded-3xl p-6 border border-gray-150 flex flex-col items-center text-center space-y-4 relative overflow-hidden">
- 
- {/* Scam shield state banner if user flags count is > 0 */}
- {flagsCount > 0 && (
- <div className="absolute top-0 left-0 right-0 py-1 px-4 text-center bg-red-50 border-b border-red-100 text-[10px] font-black text-[#FF3B7C] flex items-center justify-center gap-1">
- <AlertTriangle className="w-3.5 h-3.5" />
- <span>
- {isRtl 
- ? `تنبيه درع الأمان: هذا العميل يملك ${flagsCount} بلاغات مجتمعية نشطة (${3 - flagsCount} بلاغ متبقي للحظر!).` 
- : `Security Shield Notice: This user has ${flagsCount} active community flags.`}
- </span>
- </div>
- )}
-
- {isSuspended && (
- <div className="absolute inset-0 bg-[#FFFFFF]/95 backdrop-blur-sm flex flex-col items-center justify-center p-6 z-10">
- <ReportIcon className="w-14 h-14 text-[#FF3B7C]" />
- <h4 className="text-md font-black text-[#1F2A44] mt-2 capitalize">
- {isRtl ? 'تم تجميد حساب هذا المستخدم حيوياً' : 'Operator Frozen Suspended'}
- </h4>
- <p className="text-xs text-gray-400 max-w-sm mt-1 font-semibold leading-relaxed">
- {isRtl
- ? 'الحساب تجمّد تلقائياً لتجاوزه ٣ بلاغات بخصوص التخلف عن الدفع بالمنصة الوطنية أو انتحال الشخصية.'
- : 'This account has been completely suspended from participating in the local Algerian economy loop due to repeated policy breaches.'}
- </p>
- <button 
- onClick={onClose} 
- className="mt-4 px-6 py-2.5 bg-[#1F2A44] text-white text-xs font-extrabold rounded-xl"
- >
- {isRtl ? 'العودة للخلف' : 'Back to safety'}
- </button>
- </div>
- )}
-
- {/* User Avatar */}
- <div className="relative pt-2">
- <img 
- src={targetUser.avatar} 
- alt={targetUser.name}
- referrerPolicy="no-referrer"
- className="w-24 h-24 rounded-full border-4 border-slate-100 object-cover shadow-sm bg-gray-50"
- />
- {targetUser.idVerificationStatus === 'verified' && (
- <span className="absolute bottom-0 right-0 p-1.5 bg-[#4FC3F7] rounded-full border-2 border-white shadow-md">
- <ShieldCheck className="w-4 h-4 text-[#1F2A44]" />
- </span>
- )}
- </div>
-
- {/* User Identity Info */}
- <div className="space-y-1">
- <h2 className="text-lg font-black text-[#1F2A44] tracking-tight">{targetUser.name}</h2>
- 
- {/* Copiable Account ID Badge with user hold interaction */}
- <div className="relative inline-block select-none">
- <div 
- id="public-user-id-badge"
- className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-50 hover:bg-slate-100 active:scale-95 text-slate-500 rounded-xl text-[10px] font-mono font-bold cursor-pointer transition-all border border-gray-150 select-all shadow-xs"
- title={isRtl ? 'اضغط أو اضغط ضغطاً مطولاً لنسخ معرف الحساب' : 'Click or hold down to copy Account ID'}
- onClick={() => handleCopyIdWithFeedback(targetUser.id)}
- onMouseDown={() => handleStartPress(targetUser.id)}
- onMouseUp={handleCancelPress}
- onMouseLeave={handleCancelPress}
- onTouchStart={() => handleStartPress(targetUser.id)}
- onTouchEnd={handleCancelPress}
- onContextMenu={(e) => {
- e.preventDefault();
- handleCopyIdWithFeedback(targetUser.id);
- }}
- >
- <span className="font-sans font-black text-gray-400">ID:</span>
- <span className="text-slate-700 bg-slate-100 px-1 py-0.5 rounded font-black">{targetUser.id}</span>
- </div>
-
- {/* Float confirmation tooltip upon copy confirmation */}
- <AnimatePresence>
- {copiedId === targetUser.id && (
- <motion.div 
- initial={{ opacity: 0, y: 10, scale: 0.8 }}
- animate={{ opacity: 1, y: -25, scale: 1 }}
- exit={{ opacity: 0, y: -10, scale: 0.8 }}
- className="absolute left-1/2 -translate-x-1/2 -top-2 bg-[#1F2A44] text-[#FFD34D] text-[9px] font-black px-2 py-1 rounded-lg shadow-md whitespace-nowrap z-50 pointer-events-none"
- >
- {isRtl ? ' تم النسخ بنجاح!' : ' Copied Successfully!'}
- </motion.div>
- )}
- </AnimatePresence>
- </div>
- 
- <div className="flex flex-wrap items-center justify-center gap-2">
- <span className="text-[10px] bg-slate-50 border border-gray-150 text-slate-500 font-extrabold px-2.5 py-1 rounded-full flex items-center gap-1.5">
- <MapPin className="w-3 h-3 text-[#4FC3F7]" />
- {targetUser.city}
- </span>
-
- {/* Verification Tag */}
- {targetUser.idVerificationStatus === 'verified' ? (
- <span className="text-[10px] bg-[#4FC3F7]/10 text-[#4FC3F7] border border-[#4FC3F7]/25 font-black px-2.5 py-1 rounded-full uppercase tracking-wider">
- {isRtl ? 'هوية وطنية موثقة ' : 'ID Verified '}
- </span>
- ) : (
- <span className="text-[10px] bg-red-50 text-[#FF3B7C] border border-red-150 font-black px-2.5 py-1 rounded-full uppercase tracking-wider">
- {isRtl ? 'هوية غير موثقة ' : 'Unverified '}
- </span>
- )}
-
- {/* Joined Date Tag */}
- <span className="text-[10px] bg-sky-50 text-sky-700 border border-sky-200/80 font-black px-2.5 py-1 rounded-full flex items-center gap-1 shadow-2xs">
- <Clock className="w-3 h-3 text-sky-600" />
- {formatJoinedDate(dbUser?.createdAt || (isSelf ? currentUser?.createdAt : undefined), lang)}
- </span>
- </div>
- </div>
-
- {/* Mobile Contact panel - safety and trust check */}
- <div className="w-full bg-slate-50 p-3 rounded-2xl border border-gray-100 flex items-center justify-between text-xs font-bold text-[#1F2A44]">
- <div className="flex items-center gap-2">
- <Phone className="w-4 h-4 text-sky-500" />
- <span className="text-gray-400 font-bold">{isRtl ? 'رقم الهاتف للاتصال:' : 'Mobile Telephone:'}</span>
- </div>
- {isSelf || hasActiveBooking ? (
- <span className="font-mono font-black tracking-wide text-sky-600 bg-sky-50 border border-sky-100 px-3 py-1 rounded-lg">
- {targetUser.phone}
- </span>
- ) : (
- <span className="text-gray-400 italic text-[11px] bg-gray-100 px-3 py-1 rounded-lg select-none" title="Unlocked only upon active contract bookings">
- {isRtl ? 'يظهر عند حجز كويست ' : 'Apperars when booking'}
- </span>
- )}
- </div>
-
- {/* Level and Tier Metrix Badge */}
- <div className="w-full grid grid-cols-2 gap-2 pt-1">
- <div className="bg-slate-50 p-3 rounded-2xl border border-gray-100 flex flex-col items-center">
- <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{isRtl ? 'الرتبة والمكافآت' : 'TIER'}</span>
- <div className="flex items-center gap-1.5 mt-1">
- <Trophy className="w-4.5 h-4.5 text-amber-500 fill-amber-500/15" />
- <span className="text-xs font-black text-slate-700">{targetUser.tier} League</span>
- </div>
- </div>
-
- <div className="bg-slate-50 p-3 rounded-2xl border border-gray-150 flex flex-col items-center">
- <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{isRtl ? 'مستوى الخبرة' : 'EXPERIENCE'}</span>
- <div className="flex items-center gap-1 mt-1">
- <Flame className="w-4.5 h-4.5 text-[#FF3B7C]" />
- <span className="text-xs font-mono font-black text-slate-700">LVL {targetUser.level} ({targetUser.points} XP)</span>
- </div>
- </div>
- </div>
- </div>
-
- {/* 3. Role selector toggle button tabs if both properties are active */}
- {isHunter && isGodfather && (
- <div className="grid grid-cols-2 p-1 bg-slate-50 rounded-2xl border border-gray-155 max-w-sm mx-auto mb-4">
- <button
- onClick={() => setActiveTab('hunter')}
- className={`py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
- activeTab === 'hunter' 
- ? 'bg-[#1F2A44] text-white shadow-sm' 
- : 'text-slate-400 hover:text-slate-700'
- }`}
- >
- {isRtl ? 'شخصية عامل' : 'Worker Core'}
- </button>
- <button
- onClick={() => setActiveTab('godfather')}
- className={`py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
- activeTab === 'godfather' 
- ? 'bg-[#1F2A44] text-white shadow-sm' 
- : 'text-slate-400 hover:text-slate-700'
- }`}
- >
- {isRtl ? 'شخصية صاحب عمل' : 'Client Core'}
- </button>
- </div>
- )}
-
- {/* Dynamic Member Bio Widget */}
- <div className="bg-slate-50 border border-gray-150 rounded-2xl p-4 max-w-lg mx-auto mb-5 text-right relative overflow-hidden flex items-start gap-3.5 shadow-sm">
- <div className="bg-[#1F2A44]/10 p-2 rounded-xl text-[#1F2A44] flex-shrink-0 self-start">
- <Quote className="w-4 h-4 transform scale-x-[-1]" />
- </div>
- <div className="flex-1 min-w-0 pr-1">
- <span className="text-[10px] font-extrabold text-[#1F2A44] opacity-85 block mb-1 text-right uppercase tracking-wider">
- {isRtl ? 'السيرة الذاتية للعضو' : 'Member Biography'}
- </span>
- <p 
- id="member-profile-bio-text"
- className="text-[12px] font-bold text-slate-700 leading-relaxed text-right line-clamp-3 overflow-hidden ml-auto max-w-full break-words"
- title={bio || (isRtl ? 'لا يوجد سيرة ذاتية مكتوبة بعد' : 'No biography written yet')}
- >
- {bio ? bio : (isRtl ? 'لا يوجد سيرة ذاتية مكتوبة بعد' : 'No biography written yet')}
- </p>
- </div>
- </div>
-
- 
-  {/* Current Employment & Employment History Section */}
-  <div className="max-w-lg mx-auto mb-5 space-y-3 text-right">
-    {/* Current Employment Card */}
-    {(() => {
-      const currentJob = quests?.find(q =>
-        q.questType === "long_term" &&
-        (q.employeeId === targetUser.id || q.helperId === targetUser.id || q.creatorId === targetUser.id) &&
-        (q.status === "active_employment" || q.status === "active" || q.status === "ending" || q.status === "disputed") &&
-        !q.archived
-      );
-
-      return (
-        <div className="bg-white border border-sky-150 rounded-2xl p-4 shadow-xs space-y-2">
-          <div className="flex items-center justify-between border-b border-gray-100 pb-2">
-            <span className="text-[10px] font-black uppercase text-sky-800 bg-sky-50 px-2.5 py-0.5 rounded-full flex items-center gap-1">
-              <Briefcase className="w-3 h-3 text-sky-600" />
-              {isRtl ? "العمل الحالي" : "Current Employment"}
+ <div className="space-y-4 pb-32 font-sans text-[#1F2A44] dark:text-white min-h-screen bg-[#F8FAFC] dark:bg-[#0B1120]" style={{ direction: isRtl ? 'rtl' : 'ltr' }}>
+      {/* 1. Dynamic Public Profile Header with adaptive banner filling screen edge-to-edge */}
+        {/* Scam shield warning banner if flagsCount > 0 */}
+        {flagsCount > 0 && (
+          <div className="w-full py-1.5 px-4 text-center bg-red-600 text-white text-[11px] font-black flex items-center justify-center gap-1 z-30">
+            <AlertTriangle className="w-3.5 h-3.5" />
+            <span>
+              {isRtl 
+                ? `تنبيه درع الأمان: هذا العضو يملك ${flagsCount} بلاغات نشطة (${3 - flagsCount} بلاغ متبقي للحظر).` 
+                : `Security Shield Notice: This user has ${flagsCount} active community flags.`}
             </span>
-            {currentJob ? (
-              <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                {currentJob.status === "ending"
-                  ? (isRtl ? "قيد طلب الإنهاء" : "Termination Pending")
-                  : currentJob.status === "disputed"
-                  ? (isRtl ? "نزاع قائم" : "Disputed")
-                  : (isRtl ? "عقد نشط (ACTIVE)" : "Active Employment")}
+          </div>
+        )}
+
+        {isSuspended && (
+          <div className="absolute inset-0 bg-white/95 dark:bg-[#0B1120]/95 backdrop-blur-sm flex flex-col items-center justify-center p-6 z-30">
+            <ReportIcon className="w-14 h-14 text-[#FF3B7C]" />
+            <h4 className="text-md font-black text-[#1F2A44] dark:text-white mt-2 capitalize">
+              {isRtl ? 'تم تجميد حساب هذا المستخدم حيوياً' : 'Operator Frozen Suspended'}
+            </h4>
+            <p className="text-xs text-gray-400 max-w-sm mt-1 font-semibold leading-relaxed text-center">
+              {isRtl
+                ? 'الحساب تجمّد تلقائياً لتجاوزه ٣ بلاغات بخصوص التخلف عن الدفع بالمنصة الوطنية أو انتحال الشخصية.'
+                : 'This account has been completely suspended from participating due to repeated policy breaches.'}
+            </p>
+            <button 
+              onClick={onClose} 
+              className="mt-4 px-6 py-2.5 bg-[#1F2A44] text-white text-xs font-extrabold rounded-xl"
+            >
+              {isRtl ? 'العودة للخلف' : 'Back to safety'}
+            </button>
+          </div>
+        )}
+
+        {/* Full-width Edge-to-Edge Banner */}
+        <div className="w-full h-32 sm:h-40 bg-gradient-to-r from-[#1F2A44] via-[#1A2640] to-[#1E2E4E] relative flex items-start justify-between p-4">
+          {/* Back button on banner */}
+          <button 
+            type="button"
+            onClick={onClose}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-white/10 hover:bg-white/20 text-white backdrop-blur-md rounded-full text-xs font-black transition-all cursor-pointer border border-white/20 shadow-xs active:scale-95 z-20"
+          >
+            {isRtl ? '← العودة للخلف' : '← Back'}
+          </button>
+
+          {/* Title on banner */}
+          <span className="text-xs font-black text-white/80 uppercase tracking-wider hidden sm:inline-block pt-1.5">
+            {isRtl ? 'تفحص حساب عضو كويست' : 'Quest Member Inspection'}
+          </span>
+
+          {/* Scam Shield Reporting Trigger Icon on banner */}
+          {!isSelf ? (
+            <button
+              type="button"
+              onClick={() => setShowReportModal(true)}
+              className="w-9 h-9 bg-white/10 hover:bg-red-500/80 text-white border border-white/20 rounded-full flex items-center justify-center transition-colors cursor-pointer backdrop-blur-md active:scale-95 z-20"
+              title={isRtl ? 'إرسال بلاغ إساءة أو تجميد الحساب' : 'Report Fraud, Non-Payment or Safety'}
+            >
+              <Flag className="w-4 h-4 text-white" />
+            </button>
+          ) : (
+            <div className="w-9 h-9" />
+          )}
+        </div>
+
+      {/* Main Single Flow Container: Avatar, Name, 4 Buttons, Bio, Jobs, Gallery - ZERO separation */}
+      <div className="max-w-2xl mx-auto px-3.5 sm:px-6 space-y-3 pb-32">
+        {/* Avatar & Name */}
+        <div className="relative -mt-16 sm:-mt-20 flex flex-col items-center text-center">
+          {/* Avatar with Red or Blue Badge depending on verification status */}
+          <div className="relative mb-2">
+            <img 
+              src={targetUser.avatar} 
+              alt={targetUser.name}
+              referrerPolicy="no-referrer"
+              className="w-22 h-22 sm:w-26 sm:h-26 rounded-full border-4 border-white object-cover shadow-md bg-white"
+            />
+            {targetUser.idVerificationStatus === 'verified' ? (
+              <span 
+                className="absolute bottom-0 right-0 p-1 bg-[#4FC3F7] rounded-full border-2 border-white shadow-md flex items-center justify-center"
+                title={isRtl ? 'هوية موثقة' : 'Verified ID'}
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-white" />
               </span>
             ) : (
-              <span className="text-[10px] font-extrabold text-sky-700 bg-sky-50 px-2.5 py-0.5 rounded-full border border-sky-200">
-                {isRtl ? "متاح للعمل (AVAILABLE)" : "Available for Work"}
+              <span 
+                className="absolute bottom-0 right-0 p-1 bg-rose-500 rounded-full border-2 border-white shadow-md flex items-center justify-center"
+                title={isRtl ? 'هوية غير موثقة' : 'Unverified ID'}
+              >
+                <ShieldAlert className="w-3.5 h-3.5 text-white" />
               </span>
             )}
           </div>
 
-          {currentJob ? (
-            <div className="text-xs space-y-1 pt-1">
-              <h5 className="font-extrabold text-[#1F2A44]">{currentJob.title}</h5>
-              <div className="flex items-center justify-between text-[11px] text-gray-500 font-bold">
-                <span>{currentJob.creatorName ? `${isRtl ? "صاحب العمل: " : "Employer: "}${currentJob.creatorName}` : ""}</span>
-                <span className="text-emerald-600 font-extrabold">{currentJob.cashReward} د.ج</span>
-              </div>
-            </div>
-          ) : (
-            <p className="text-[11px] text-gray-400 font-semibold py-1">
-              {isRtl ? "لا يوجد عمل حالي قائم لدى هذا العضو. المترشح متاح للتوظيف." : "No active employment currently recorded for this member."}
-            </p>
-          )}
-        </div>
-      );
-    })()}
-
-    {/* Employment History List */}
-    {(() => {
-      const pastJobs = quests?.filter(q =>
-        q.questType === "long_term" &&
-        (q.employeeId === targetUser.id || q.helperId === targetUser.id || q.creatorId === targetUser.id) &&
-        (q.archived || q.status === "completed" || q.status === "terminated" || q.status === "expired")
-      ) || [];
-
-      if (pastJobs.length === 0) return null;
-
-      return (
-        <div className="bg-white border border-gray-150 rounded-2xl p-4 shadow-xs space-y-2.5">
-          <h4 className="text-[11px] font-black text-[#1F2A44] uppercase tracking-wider flex items-center gap-1.5 border-b border-gray-100 pb-2">
-            <Clock className="w-3.5 h-3.5 text-slate-500" />
-            <span>{isRtl ? "سجل الأعمال والخبرات الوظيفية السابقة" : "Employment History"}</span>
-          </h4>
-
-          <div className="space-y-2">
-            {pastJobs.map(job => (
-              <div key={job.id} className="bg-slate-50/70 border border-slate-200/60 rounded-xl p-3 text-xs space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="font-extrabold text-[#1F2A44]">{job.title}</span>
-                  <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-md bg-slate-200/80 text-slate-700">
-                    {job.status === "expired"
-                      ? (isRtl ? "منتهي الصلاحية" : "Expired")
-                      : (isRtl ? "منتهي ومؤرشف" : "Ended & Archived")}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-[10px] text-gray-500 font-bold">
-                  <span>{job.creatorName ? `${isRtl ? "صاحب العمل: " : "Employer: "}${job.creatorName}` : ""}</span>
-                  <span>{job.cashReward} د.ج</span>
-                </div>
-                {job.terminatedAt && (
-                  <div className="text-[9.5px] text-gray-400 font-semibold pt-0.5">
-                    {isRtl ? "تاريخ الانتهاء: " : "Ended: "}{new Date(job.terminatedAt).toLocaleDateString(isRtl ? "ar-DZ" : "en-US")}
-                  </div>
-                )}
-              </div>
-            ))}
+          {/* User Identity Info */}
+          <div className="text-center space-y-1 w-full max-w-sm">
+            <h2 className="text-xl font-black text-[#1F2A44] dark:text-white tracking-tight">{targetUser.name}</h2>
           </div>
         </div>
-      );
-    })()}
-  </div>
 
-  {/* Premium 3-Tab Segmented Controller */}
- <div className="bg-slate-50 p-1.5 rounded-2xl border border-gray-150 grid grid-cols-3 gap-1 mx-auto max-w-lg mb-6 text-right">
- <button
- type="button"
- onClick={() => setActiveProfileTab('verified')}
- className={`py-2 px-1 rounded-xl text-[10px] sm:text-xs font-black transition-all cursor-pointer flex flex-col sm:flex-row items-center justify-center gap-1 border-none ${
- activeProfileTab === 'verified'
- ? 'bg-[#1F2A44] text-white shadow-sm'
- : 'text-gray-400 hover:text-gray-600'
- }`}
- >
- <span></span>
- <span>{isRtl ? 'إنجازات موثقة' : 'Verified Portfolio'}</span>
- </button>
- <button
- type="button"
- onClick={() => setActiveProfileTab('gallery')}
- className={`py-2 px-1 rounded-xl text-[10px] sm:text-xs font-black transition-all cursor-pointer flex flex-col sm:flex-row items-center justify-center gap-1 border-none ${
- activeProfileTab === 'gallery'
- ? 'bg-[#1F2A44] text-white shadow-sm'
- : 'text-gray-400 hover:text-gray-600'
- }`}
- >
- <span></span>
- <span>{isRtl ? 'صور شخصية' : 'Gallery'}</span>
- </button>
- <button
- type="button"
- onClick={() => setActiveProfileTab('badges')}
- className={`py-2 px-1 rounded-xl text-[10px] sm:text-xs font-black transition-all cursor-pointer flex flex-col sm:flex-row items-center justify-center gap-1 border-none ${
- activeProfileTab === 'badges'
- ? 'bg-[#1F2A44] text-white shadow-sm'
- : 'text-gray-400 hover:text-gray-600'
- }`}
- >
- <span></span>
- <span>{isRtl ? 'الشارات' : 'Badges'}</span>
- </button>
- </div>
+        {/* Symmetrical 4-Card Stats Grid */}
+          <div className="w-full grid grid-cols-4 gap-1.5 sm:gap-2.5 text-center mt-4">
+            {/* 1. التقييمات */}
+            <button
+              id="public-rating-badge-btn"
+              type="button"
+              onClick={() => {
+                setModalReviewRoleTab(activeTab);
+                setShowReviewsModal(true);
+              }}
+              className="bg-slate-50 hover:bg-slate-100/80 dark:bg-[#1A2640] dark:hover:bg-[#1E2E4E] border border-gray-150 dark:border-slate-800 p-2 sm:p-2.5 rounded-2xl flex flex-col items-center justify-center shadow-2xs cursor-pointer active:scale-95 transition-all group"
+              title={isRtl ? 'انقر لعرض جميع التقييمات' : 'Click to view all reviews'}
+            >
+              <span className="text-sm sm:text-base font-black text-slate-900 dark:text-white font-mono flex items-center justify-center gap-0.5 leading-none group-hover:scale-105 transition-transform">
+                <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-400 shrink-0" />
+                {(activeTab === 'hunter' ? dynamicWorkerRating : godfatherAverageRating).toFixed(1)}
+              </span>
+              <span className="text-[8.5px] sm:text-[9.5px] text-slate-500 dark:text-slate-300 font-extrabold uppercase tracking-wide block mt-1">
+                {isRtl ? 'التقييمات' : 'Reviews'}
+              </span>
+            </button>
 
- {/* 4. Display specific tab profiles content */}
- <div className="space-y-6">
- {activeProfileTab === 'verified' && (
- <div className="space-y-6 animate-slideUp">
- {/* Hunter profile blocks */}
- {activeTab === 'hunter' && (
- <div className="space-y-4">
- 
- {/* Contracts completed metrics cards */}
- <div className="grid grid-cols-3 gap-2 text-center">
- <div className="bg-white border border-gray-150 p-3.5 rounded-2xl shadow-xs">
- <span className="text-[20px] font-mono font-black text-[#1F2A44] block">
- {dynamicQuestsCompleted}
- </span>
- <span className="text-[8.5px] font-black text-slate-400 uppercase block tracking-wider mt-0.5">
- {isRtl ? 'كويستات مكتملة' : 'Runs Finished'}
- </span>
- </div>
+            {/* 2. عدد المهام المنجزة */}
+            <div className="bg-slate-50 dark:bg-[#1A2640] border border-gray-150 dark:border-slate-800 p-2 sm:p-2.5 rounded-2xl flex flex-col items-center justify-center shadow-2xs">
+              <span className="text-sm sm:text-base font-black font-mono flex items-center justify-center gap-0.5 text-slate-900 dark:text-white leading-none">
+                <Briefcase className="w-3.5 h-3.5 text-sky-500 shrink-0" />
+                {dynamicQuestsCompleted}
+              </span>
+              <span className="text-[8.5px] sm:text-[9.5px] text-slate-500 dark:text-slate-300 font-extrabold uppercase tracking-wide block mt-1 truncate max-w-full">
+                {isRtl ? 'المنجزة' : 'Finished'}
+              </span>
+            </div>
 
- <div className="bg-white border border-gray-150 p-3.5 rounded-2xl shadow-xs">
- <span className="text-[20px] font-mono font-black text-[#4FC3F7] block">
- {dynamicSuccessRate}%
- </span>
- <span className="text-[8.5px] font-black text-slate-400 uppercase block tracking-wider mt-0.5">
- {isRtl ? 'معدل النجاح' : 'Success Rate'}
- </span>
- </div>
+            {/* 3. عدد المهام المنشورة */}
+            <div className="bg-slate-50 dark:bg-[#1A2640] border border-gray-150 dark:border-slate-800 p-2 sm:p-2.5 rounded-2xl flex flex-col items-center justify-center shadow-2xs">
+              <span className="text-sm sm:text-base font-black font-mono flex items-center justify-center gap-0.5 text-slate-900 dark:text-white leading-none">
+                <FileText className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                {dynamicQuestsCreated}
+              </span>
+              <span className="text-[8.5px] sm:text-[9.5px] text-slate-500 dark:text-slate-300 font-extrabold uppercase tracking-wide block mt-1">
+                {isRtl ? 'المنشورة' : 'Posted'}
+              </span>
+            </div>
 
- <div className="bg-white border border-gray-150 p-3.5 rounded-2xl shadow-xs">
- <div className="flex items-center justify-center gap-0.5 text-[#FFD34D] pt-1">
- <Star className="w-3.5 h-3.5 fill-[#FFD34D] text-[#FFD34D]" />
- <span className="text-sm font-mono font-black text-slate-700 leading-none">
- {dynamicWorkerRating.toFixed(1)}
- </span>
- </div>
- <span className="text-[8.5px] font-black text-slate-400 uppercase block tracking-wider mt-2.5">
- {isRtl ? 'تقييم الثقة' : 'Trust Rep'}
- </span>
- </div>
- </div>
+            {/* 4. بطاقة معلومات الحساب والهوية */}
+            <button
+              id="public-info-modal-btn"
+              type="button"
+              onClick={() => setShowContactInfoModal(true)}
+              className="bg-slate-50 hover:bg-slate-100/80 dark:bg-[#1A2640] dark:hover:bg-[#1E2E4E] border border-gray-150 dark:border-slate-800 p-2 sm:p-2.5 rounded-2xl flex flex-col items-center justify-center shadow-2xs cursor-pointer active:scale-95 transition-all group"
+              title={isRtl ? 'عرض تفاصيل الحساب والمعلومات' : 'View account info'}
+            >
+              <span className="text-sm sm:text-base font-black font-mono flex items-center justify-center gap-1 text-slate-900 dark:text-white leading-none group-hover:scale-105 transition-transform">
+                <IdCard className="w-3.5 h-3.5 text-[#4FC3F7] shrink-0" />
+                <span className="text-xs sm:text-sm font-black font-mono tracking-tight">ID</span>
+              </span>
+              <span className="text-[8.5px] sm:text-[9.5px] text-slate-500 dark:text-slate-300 font-extrabold uppercase tracking-wide block mt-1">
+                {targetUser.idVerificationStatus === 'verified' ? (isRtl ? 'معتمد وموثق' : 'Verified') : (isRtl ? 'معلومات' : 'Info')}
+              </span>
+            </button>
+        </div>
 
- {/* Permanent review cards portfolio feed list of client evaluations */}
- <div className="space-y-3">
- <h4 className="text-[10px] font-black text-[#1F2A44] uppercase tracking-wider pl-1 font-sans">
- {isRtl ? 'بورتفوليو وإنجازات موثقة بالمنصة' : 'Verified Social Portfolio Feed'}
- </h4>
+        {/* Dynamic Member Bio Widget - directly below the 4 buttons */}
+        <div className="bg-white dark:bg-slate-900 border border-gray-150/60 dark:border-slate-800 rounded-2xl p-3 sm:p-3.5 w-full text-right relative overflow-hidden flex items-start gap-3 shadow-2xs">
+          <div className="bg-[#1F2A44]/10 dark:bg-white/10 p-2 rounded-xl text-[#1F2A44] dark:text-white shrink-0 self-start">
+            <Quote className="w-4 h-4 transform scale-x-[-1]" />
+          </div>
+          <div className="flex-1 min-w-0 pr-1">
+            <div className="flex items-center gap-1.5 mb-1 justify-start">
+              <span className="text-[10px] font-extrabold text-[#1F2A44] dark:text-white opacity-85 uppercase tracking-wider">
+                {isRtl ? 'السيرة الذاتية (Bio)' : 'Biography'}
+              </span>
+              <InfoButton 
+                title={isRtl ? 'السيرة الذاتية' : 'Biography'} 
+                explanation={isRtl ? 'نبذة مختصرة كتبها العضو عن مهاراته وخبراته ومجالات عمله.' : 'A brief description written by the member about their skills and expertise.'} 
+              />
+            </div>
+            <p 
+              id="member-profile-bio-text"
+              className="text-[12px] font-bold text-slate-700 dark:text-slate-300 leading-relaxed text-right line-clamp-3 overflow-hidden ml-auto max-w-full break-words"
+              title={bio || (isRtl ? 'لا يوجد سيرة ذاتية مكتوبة بعد' : 'No biography written yet')}
+            >
+              {bio ? bio : (isRtl ? 'لا يوجد سيرة ذاتية مكتوبة بعد' : 'No biography written yet')}
+            </p>
+          </div>
+        </div>
 
- {(() => {
- if (reviewsReceived.length === 0) {
- return (
- <div className="text-xs text-center text-gray-400 py-10 bg-white border border-dashed border-gray-200 rounded-3xl font-semibold">
- {isRtl 
- ? 'لم يتلقى هذا العامل مراجعات بورتفوليو بعد. شهادات العمل يتم إضافتها بمجرد مطابقة إثباتات الدفع!' 
- : 'No verified employer feedback on this worker’s portfolio yet.'}
- </div>
- );
- }
- const visible = showAllRunnerReviews ? reviewsReceived : reviewsReceived.slice(0, 6);
- return (
- <div className="space-y-4 text-center">
- <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
- {visible.map((review) => (
- <div 
- key={review.reviewId}
- className="bg-white border border-gray-150 rounded-2xl overflow-hidden shadow-xs relative flex flex-col justify-between"
- >
- {review.completedTaskImage && (
- <div className="h-28 w-full overflow-hidden relative bg-slate-50">
- <img 
- src={review.completedTaskImage} 
- alt="bounty proof illustration"
- className="w-full h-full object-cover"
- />
- <div className="absolute inset-0 bg-gradient-to-t from-black/55 to-transparent"></div>
- 
- {/* Stars Rating banner */}
- <div className="absolute bottom-2.5 left-2.5 bg-[#FFD34D] text-[#1F2A44] px-2 py-0.5 rounded-lg text-[9px] font-black flex items-center gap-0.5">
- {Array.from({ length: review.rating }).map((_, i) => (
- <Star key={i} className="w-2.5 h-2.5 fill-[#1F2A44] text-[#1F2A44]" />
- ))}
- <span className="ml-1 font-mono font-bold">{review.rating}.0</span>
- </div>
- </div>
- )}
+  {/* Available Jobs Posted by Employer (if active) */}
+  {bountiesCreated.length > 0 && (
+    <div className="space-y-3 max-w-lg mx-auto mb-6">
+      <h4 className="text-[10px] font-black text-[#1F2A44] uppercase tracking-wider pl-1 font-sans">
+        {isRtl ? 'عروض كويستات عمل معلنة حالياً للتقديم' : 'Current Available Jobs Posted'}
+      </h4>
+      <div className="grid grid-cols-1 gap-2.5">
+        {bountiesCreated.map((quest) => (
+          <div 
+            key={quest.id}
+            className="bg-white hover:border-[#4FC3F7] border border-gray-150 p-3.5 rounded-2xl flex items-center justify-between shadow-xs transition-all"
+          >
+            <div className="space-y-1 pr-3 text-right flex-1">
+              <span className="text-[8px] font-black px-2 py-0.5 rounded bg-gray-100 text-[#1F2A44] uppercase tracking-wider">
+                {quest.category}
+              </span>
+              <h4 className="font-extrabold text-[#1F2A44] text-xs leading-snug">{quest.title}</h4>
+              <div className="text-[10px] text-gray-400 flex items-center gap-1">
+                <MapPin className="w-3 h-3 text-[#4FC3F7]" />
+                <span>{quest.location}</span>
+              </div>
+            </div>
+            <div className="text-left select-none shrink-0">
+              <span className="text-[#FF3B7C] font-black block text-xs font-mono">{quest.cashReward} DA</span>
+              <span className="text-[8px] text-gray-400 block font-bold">{quest.pointsReward} XP + </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )}
 
- <div className="p-4 space-y-3 flex-1 flex flex-col justify-between text-right">
- <p className="text-xs font-bold text-gray-600 italic">
- “{review.comment}”
- </p>
-
- <div className="flex items-center justify-between pt-2 border-t border-gray-100 text-[10px] text-gray-400">
- <div className="flex items-center gap-1.5 flex-row-reverse">
- <span className="font-extrabold text-[#1F2A44]">{review.godfatherName}</span>
- <span className="text-gray-300">|</span>
- <span className="text-sky-600 font-bold"> {formatReviewDate(review.createdAt, lang)}</span>
- </div>
- <span className="text-[8px] bg-slate-55 text-slate-500 font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wider font-mono">
- VERIFIED COPT 
- </span>
- </div>
- </div>
- </div>
- ))}
- </div>
-
- {reviewsReceived.length > 6 && (
- <div className="flex justify-center pt-2">
- <button
- onClick={() => setShowAllRunnerReviews(!showAllRunnerReviews)}
- className="px-5 py-2 bg-slate-100 hover:bg-slate-250 text-[#1F2A44] font-black text-xs rounded-xl shadow-xs cursor-pointer select-none transition-all flex items-center gap-1 active:scale-95 border border-slate-200"
- >
- <span>{showAllRunnerReviews ? '⬆' : '⬇'}</span>
- <span>
- {showAllRunnerReviews 
- ? (isRtl ? 'عرض أقل' : 'Show Less')
- : (isRtl ? 'عرض المزيد' : 'Show More')}
- </span>
- </button>
- </div>
- )}
- </div>
- );
- })()}
- </div>
-
- </div>
- )}
-
- {/* Godfather profile blocks */}
- {activeTab === 'godfather' && (
- <div className="space-y-4">
- 
- {/* Operational Godfather stats dashboard */}
- <div className="grid grid-cols-3 gap-2 text-center">
- <div className="bg-white border border-gray-150 p-3.5 rounded-2xl shadow-xs">
- <span className="text-[20px] font-mono font-black text-[#1F2A44] block">
- {dynamicQuestsCreated}
- </span>
- <span className="text-[8.5px] font-black text-slate-400 uppercase block tracking-wider mt-0.5">
- {isRtl ? 'إجمالي الطلبات' : 'Bounties Hosted'}
- </span>
- </div>
-
- <div className="bg-white border border-gray-150 p-3.5 rounded-2xl shadow-xs">
- <div className="flex items-center justify-center gap-0.5 text-[#FFD34D] pt-1">
- <Star className="w-3.5 h-3.5 fill-[#FFD34D] text-[#FFD34D]" />
- <span className="text-sm font-mono font-black text-slate-700 leading-none">
- {godfatherAverageRating.toFixed(1)}
- </span>
- </div>
- <span className="text-[8.5px] font-black text-slate-400 uppercase block tracking-wider mt-2.5">
- {isRtl ? 'تقييم المعاملة' : 'Treatment Rating'}
- </span>
- </div>
-
- <div className="bg-white border border-gray-150 p-3.5 rounded-2xl shadow-xs">
- <span className="text-[20px] font-mono font-black text-[#FF3B7C] block">
- {dynamicPayoutRate}%
- </span>
- <span className="text-[8.5px] font-black text-slate-400 uppercase block tracking-wider mt-0.5">
- {isRtl ? 'سرعة الدفع النقدى' : 'Payout Rate'}
- </span>
- </div>
- </div>
-
- {/* List currently active/open contracts hosted by this client */}
- <div className="space-y-3">
- <h4 className="text-[10px] font-black text-[#1F2A44] uppercase tracking-wider pl-1 font-sans">
- {isRtl ? 'عروض كويستات عمل معلنة حالياً للتقديم' : 'Current Available Jobs Posted'}
- </h4>
-
- {bountiesCreated.length === 0 ? (
- <div className="py-8 px-4 text-center space-y-3">
- <div className="mx-auto flex justify-center">
- <svg className="w-20 h-20" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
- <circle cx="60" cy="60" r="50" className="fill-slate-100/80" />
- <circle cx="60" cy="60" r="38" className="fill-emerald-50/70" />
- <rect x="38" y="34" width="44" height="52" rx="8" fill="#FFFFFF" stroke="#10B981" strokeWidth="3" />
- <circle cx="52" cy="52" r="2.5" fill="#475569" />
- <circle cx="68" cy="52" r="2.5" fill="#475569" />
- <path d="M53 64C56 60 64 60 67 64" stroke="#475569" strokeWidth="2.5" strokeLinecap="round" />
- </svg>
- </div>
- <p className="font-extrabold text-xs text-slate-700">
- {isRtl ? 'لا توجد كويستات حالياً' : 'No active quests currently'}
- </p>
- </div>
- ) : (
- <div className="grid grid-cols-1 gap-2.5">
- {bountiesCreated.map((quest) => (
- <div 
- key={quest.id}
- className="bg-white hover:border-[#4FC3F7] border border-gray-150 p-4 rounded-2xl flex items-center justify-between shadow-xs transition-all"
- >
- <div className="space-y-1 pr-4 text-right flex-1">
- <span className="text-[8px] font-black px-2 py-0.5 rounded bg-gray-100 text-[#1F2A44] uppercase tracking-wider">
- {quest.category}
- </span>
- <h4 className="font-extrabold text-[#1F2A44] text-xs leading-snug">{quest.title}</h4>
- <div className="text-[10px] text-gray-400 flex items-center gap-1">
- <MapPin className="w-3 h-3 text-[#4FC3F7]" />
- <span>{quest.location}</span>
- </div>
- </div>
-
- <div className="text-left select-none shrink-0">
- <span className="text-[#FF3B7C] font-black block text-xs font-mono">{quest.cashReward} DA</span>
- <span className="text-[8px] text-gray-400 block font-bold">{quest.pointsReward} XP + </span>
- </div>
- </div>
- ))}
- </div>
- )}
- </div>
-
- {/* List reciprocal reviews received by this Godfather from Runners */}
- <div className="space-y-3 pt-4">
- <h4 className="text-[10px] font-black text-[#1F2A44] uppercase tracking-wider pl-1 font-sans">
- {isRtl ? 'تقييمات متبادلة تلقاها من العمال المنفذين' : 'Reviews From Reciprocal Worker'}
- </h4>
-
- {(() => {
- if (godfatherReviewsReceived.length === 0) {
- return (
- <div className="text-xs text-center text-gray-400 py-10 bg-white border border-dashed border-gray-200 rounded-3xl font-semibold">
- {isRtl 
- ? 'لم يتلقى صاحب العمل هذا مراجعات بعد. تظهر الشهادات فور إنهاء الكويستات بنجاح متبادل!' 
- : 'No reciprocal worker ratings recorded on this workspace profile yet.'}
- </div>
- );
- }
- const visible = showAllGodfatherReviews ? godfatherReviewsReceived : godfatherReviewsReceived.slice(0, 6);
- return (
- <div className="space-y-4 text-center">
- <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
- {visible.map((review) => (
- <div 
- key={review.reviewId}
- className="bg-white border border-gray-150 rounded-2xl overflow-hidden shadow-xs relative flex flex-col justify-between"
- >
- {review.completedTaskImage && (
- <div className="h-28 w-full overflow-hidden relative bg-slate-50">
- <img 
- src={review.completedTaskImage} 
- alt="completed proof layout"
- className="w-full h-full object-cover"
- />
- <div className="absolute inset-0 bg-gradient-to-t from-black/55 to-transparent"></div>
- 
- {/* Stars Rating banner */}
- <div className="absolute bottom-2.5 left-2.5 bg-amber-400 text-slate-900 px-2 py-0.5 rounded-lg text-[9px] font-black flex items-center gap-0.5">
- {Array.from({ length: review.rating }).map((_, i) => (
- <Star key={i} className="w-2.5 h-2.5 fill-slate-900 text-slate-900" />
- ))}
- <span className="ml-1 font-mono font-bold">{review.rating}.0</span>
- </div>
- </div>
- )}
-
- <div className="p-4 space-y-3 flex-1 flex flex-col justify-between text-right">
- <p className="text-xs font-bold text-gray-600 italic">
- “{review.comment}”
- </p>
-
- <div className="flex items-center justify-between pt-2 border-t border-gray-100 text-[10px] text-gray-400">
- <div className="flex items-center gap-1.5 flex-row-reverse">
- <span className="font-extrabold text-[#1F2A44]">{review.hunterName}</span>
- <span className="text-gray-300">|</span>
- <span className="text-sky-600 font-bold"> {formatReviewDate(review.createdAt, lang)}</span>
- </div>
- <span className="text-[8px] bg-amber-50 text-amber-600 font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wider font-mono">
- RECIPROCAL TRUST 
- </span>
- </div>
- </div>
- </div>
- ))}
- </div>
-
- {godfatherReviewsReceived.length > 6 && (
- <div className="flex justify-center pt-2">
- <button
- onClick={() => setShowAllGodfatherReviews(!showAllGodfatherReviews)}
- className="px-5 py-2 bg-slate-100 hover:bg-slate-250 text-[#1F2A44] font-black text-xs rounded-xl shadow-xs cursor-pointer select-none transition-all flex items-center gap-1 active:scale-95 border border-slate-200"
- >
- <span>{showAllGodfatherReviews ? '⬆' : '⬇'}</span>
- <span>
- {showAllGodfatherReviews 
- ? (isRtl ? 'عرض أقل' : 'Show Less')
- : (isRtl ? 'عرض المزيد' : 'Show More')}
- </span>
- </button>
- </div>
- )}
- </div>
- );
- })()}
- </div>
-
- </div>
- )}
- </div>
- )}
-
+  {/* Tab Contents */}
+  <div className="space-y-6">
  {/* Gallery tab content */}
  {activeProfileTab === 'gallery' && (
- <div className="space-y-4 animate-slideUp">
- <div className="bg-white border border-gray-150 rounded-3xl p-5 space-y-4 shadow-sm text-right">
- <div className="pb-2 border-b border-gray-100">
- <h4 className="font-extrabold text-[#1F2A44] text-xs uppercase tracking-wider">
- {isRtl ? 'معرض الصور الموثقة للملف ' : 'User Verification snapbooks'}
+ <div className="space-y-2 animate-slideUp">
+ <div className="bg-white dark:bg-slate-900 rounded-2xl p-3 sm:p-3.5 space-y-2.5 border border-gray-150/60 dark:border-slate-800 shadow-2xs text-right">
+ <div className="flex items-center justify-between">
+ <div className="flex items-center gap-1.5">
+ <h4 className="font-extrabold text-[#1F2A44] dark:text-white text-xs">
+ {isRtl ? 'معرض الصور' : 'Gallery'}
  </h4>
- <p className="text-[10px] text-gray-400 font-semibold mt-0.5">
- {isRtl ? 'لقطات مأخوذة ميدانياً من إنجازات هذا العضو لإثبات المصداقية.' : 'Interactive authentic field photos of previous endeavors.'}
- </p>
+ <InfoButton
+   title={isRtl ? 'معرض الصور' : 'Gallery'}
+   explanation={isRtl ? 'لقطات مأخوذة ميدانياً من إنجازات هذا العضو لإثبات المصداقية والكفاءة.' : "Field photos demonstrating this member's verified achievements and skills."}
+ />
+ </div>
  </div>
 
  {(() => {
  const photos: { url: string; caption: string }[] = [];
  const addedUrls = new Set<string>();
 
+ // 1. User's explicitly uploaded portfolio photos (personal gallery)
+ const userPortfolio = (targetUser as any)?.portfolioPhotos || (isSelf ? (() => {
+   try {
+     const saved = localStorage.getItem('runner_portfolio_photos');
+     return saved ? JSON.parse(saved) : [];
+   } catch { return []; }
+ })() : []);
+
+ if (Array.isArray(userPortfolio)) {
+   userPortfolio.forEach((url: string, pIdx: number) => {
+     if (url && typeof url === 'string' && !url.includes('unsplash.com') && !addedUrls.has(url)) {
+       addedUrls.add(url);
+       photos.push({ url, caption: isRtl ? `عمل ميداني #${pIdx + 1}` : `Portfolio item #${pIdx + 1}` });
+     }
+   });
+ }
+
+ // 2. ONLY verified proof photos of successfully completed quests (NOT general quest attachments or items)
  assignedToUser.forEach((q) => {
- if (q.proofImageUrl && !q.proofImageUrl.includes('unsplash.com') && !addedUrls.has(q.proofImageUrl)) {
- addedUrls.add(q.proofImageUrl);
- photos.push({ url: q.proofImageUrl, caption: q.title });
- }
- if (q.imageUrls && Array.isArray(q.imageUrls)) {
- q.imageUrls.forEach((u) => {
- if (u && !u.includes('unsplash.com') && !addedUrls.has(u)) {
- addedUrls.add(u);
- photos.push({ url: u, caption: q.title });
- }
- });
- }
+   if (q.status === 'completed' && q.proofImageUrl && !q.proofImageUrl.includes('unsplash.com') && !addedUrls.has(q.proofImageUrl)) {
+     addedUrls.add(q.proofImageUrl);
+     photos.push({ url: q.proofImageUrl, caption: q.title });
+   }
  });
 
  userCreatedQuests.forEach((q) => {
- if (q.proofImageUrl && !q.proofImageUrl.includes('unsplash.com') && !addedUrls.has(q.proofImageUrl)) {
- addedUrls.add(q.proofImageUrl);
- photos.push({ url: q.proofImageUrl, caption: q.title });
- }
- if (q.imageUrls && Array.isArray(q.imageUrls)) {
- q.imageUrls.forEach((u) => {
- if (u && !u.includes('unsplash.com') && !addedUrls.has(u)) {
- addedUrls.add(u);
- photos.push({ url: u, caption: q.title });
- }
- });
- }
+   if (q.status === 'completed' && q.proofImageUrl && !q.proofImageUrl.includes('unsplash.com') && !addedUrls.has(q.proofImageUrl)) {
+     addedUrls.add(q.proofImageUrl);
+     photos.push({ url: q.proofImageUrl, caption: q.title });
+   }
  });
 
  if (photos.length === 0) {
@@ -1009,9 +589,9 @@ export default function PublicProfileView({
  }
 
  return (
- <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+ <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 sm:gap-2">
  {photos.map((pic, idx) => (
- <div key={idx} className="aspect-square rounded-2xl overflow-hidden border border-gray-150 relative group bg-gray-100 shadow-xs cursor-zoom-in" onClick={() => setLightboxUrl(pic.url)}>
+ <div key={idx} className="aspect-square rounded-xl overflow-hidden shadow-2xs relative group bg-gray-100 shadow-xs cursor-zoom-in" onClick={() => setLightboxUrl(pic.url)}>
  <img 
  src={pic.url} 
  alt={pic.caption} 
@@ -1029,38 +609,18 @@ export default function PublicProfileView({
  </div>
  )}
 
- {/* Badges tab content */}
- {activeProfileTab === 'badges' && (
- <div className="space-y-4 animate-slideUp text-right">
- <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider">{isRtl ? 'الشارات التقديرية المكتسبة ' : 'Unlocked peer-to-peer medals'}</h4>
- <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
- {[
- { title: isRtl ? 'درع الأمان الفضي ' : 'Silver Safety Badge', description: isRtl ? 'تم التحقق من الوثائق والهوية الوطنية بنسبة 100%' : 'NID & documents authenticated by central supervisors' },
- ...(targetUser.level > 1 ? [{ title: isRtl ? 'سرعة الإنجاز الخارقة ' : 'Flash Operator Speedster', description: isRtl ? 'أكمل مهام متعددة في أقل من ٢٤ ساعة وبتقييم ممتاز' : 'Completed multiple runs in record time limit' }] : []),
- ...(activeTab === 'godfather' ? [{ title: isRtl ? 'موثق الرواتب والسخاء ' : 'Generous Paymaster medal', description: isRtl ? 'يملك سجل حافل بدفع المستحقات للرانرز بشكل فوري وبدون تأخير' : 'Maintains a pristine record of zero payment delays' }] : []),
- { title: isRtl ? 'نجم التقييم الذهبي ' : 'Gold Trust Star', description: isRtl ? 'حافظ على تقييم عام أعلى من 4.5 نجمة لفترات طويلة' : 'Maintained reputation above 4.5 stars continuously' }
- ].map((badge, idx) => (
- <div key={idx} className="bg-white hover:bg-slate-50/50 p-3.5 rounded-2xl border border-gray-150 flex items-center gap-3 flex-row-reverse">
- <div className="p-2.5 bg-[#FFD34D]/10 rounded-xl text-amber-600 shrink-0">
- <Trophy className="w-5 h-5 text-amber-500" />
- </div>
- <div className="flex-1">
- <h5 className="text-xs font-black text-[#1F2A44]">{badge.title}</h5>
- <p className="text-[10px] text-gray-400 font-semibold leading-normal">{badge.description}</p>
- </div>
- </div>
- ))}
- </div>
- </div>
- )}
- </div>
+  </div>
+
+      </div>
 
  {/* Public Lightbox Modal */}
  <AnimatePresence>
  {lightboxUrl && (
  <div 
- className="fixed inset-0 bg-slate-950/95 z-55 flex flex-col items-center justify-center p-4 cursor-zoom-out animate-fadeIn"
+ className="fixed inset-0 bg-slate-950/95 z-[9999] flex flex-col items-center justify-center p-4 cursor-zoom-out animate-fadeIn select-none"
+ style={{ touchAction: 'none' }}
  onClick={() => setLightboxUrl(null)}
+ onTouchMove={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}
  >
  <div className="absolute top-4 right-4 z-50">
  <button 
@@ -1153,6 +713,418 @@ export default function PublicProfileView({
  </div>
  )}
  </AnimatePresence>
+
+  {/* Contact, Location & 12-symbol ID Details Modal for Public Profile */}
+    <AnimatePresence>
+      {showContactInfoModal && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 overscroll-contain"
+          onClick={() => setShowContactInfoModal(false)}
+          onTouchMove={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}
+        >
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0, y: 15 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.95, opacity: 0, y: 15 }}
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-3xl max-w-sm w-full p-5 shadow-2xl border border-gray-150 overflow-hidden text-right overscroll-contain"
+            style={{ direction: isRtl ? 'rtl' : 'ltr' }}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-gray-150">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-sky-50 text-[#4FC3F7] rounded-xl">
+                  <IdCard className="w-5 h-5 text-[#4FC3F7]" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-[#1F2A44]">
+                    {isRtl ? 'معلومات الحساب' : 'Account Details'}
+                  </h3>
+                  <p className="text-[10px] text-gray-400 font-semibold">
+                    {isRtl ? 'معرّف الحساب (12 رمز)، الهاتف، والموقع' : '12-Symbol Account ID, Phone & Location'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowContactInfoModal(false)}
+                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-xl transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Items */}
+            <div className="py-4 space-y-2.5">
+            {/* حالة توثيق الهوية والحساب (بطاقة موحدة واضحة) */}
+            <div className={`p-3 rounded-2xl border flex items-center justify-between ${
+              targetUser.idVerificationStatus === 'verified'
+                ? 'bg-sky-50 dark:bg-sky-950/40 border-sky-200 dark:border-sky-900/50'
+                : targetUser.idVerificationStatus === 'pending'
+                ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-900/50'
+                : 'bg-slate-50 dark:bg-slate-800/60 border-gray-200 dark:border-slate-700/80'
+            }`}>
+              <div className="flex items-center gap-2.5">
+                <div className={`p-2 rounded-xl shrink-0 ${
+                  targetUser.idVerificationStatus === 'verified'
+                    ? 'bg-[#4FC3F7]/15 text-[#4FC3F7]'
+                    : targetUser.idVerificationStatus === 'pending'
+                    ? 'bg-amber-500/15 text-amber-500'
+                    : 'bg-slate-200/80 dark:bg-slate-700 text-slate-500'
+                }`}>
+                  {targetUser.idVerificationStatus === 'verified' ? (
+                    <ShieldCheck className="w-4 h-4 text-[#4FC3F7]" />
+                  ) : targetUser.idVerificationStatus === 'pending' ? (
+                    <Clock className="w-4 h-4 text-amber-500" />
+                  ) : (
+                    <ShieldAlert className="w-4 h-4 text-slate-500" />
+                  )}
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] text-gray-400 font-bold block">
+                    {isRtl ? 'حالة توثيق الهوية والحساب' : 'Identity & Account Verification'}
+                  </span>
+                  <span className={`text-xs font-black ${
+                    targetUser.idVerificationStatus === 'verified'
+                      ? 'text-[#4FC3F7]'
+                      : targetUser.idVerificationStatus === 'pending'
+                      ? 'text-amber-500'
+                      : 'text-slate-600 dark:text-slate-300'
+                  }`}>
+                    {targetUser.idVerificationStatus === 'verified'
+                      ? (isRtl ? 'شريك معتمد وموثق 🛡️' : 'Certified & Verified Partner')
+                      : targetUser.idVerificationStatus === 'pending'
+                      ? (isRtl ? 'طلب التوثيق قيد المراجعة ⏳' : 'Verification Under Review')
+                      : (isRtl ? 'حساب غير موثق بعد' : 'Unverified Account')}
+                  </span>
+                </div>
+              </div>
+              <span className={`px-2.5 py-1 rounded-full text-[10px] font-black border ${
+                targetUser.idVerificationStatus === 'verified'
+                  ? 'bg-[#4FC3F7]/15 text-[#4FC3F7] border-[#4FC3F7]/30'
+                  : targetUser.idVerificationStatus === 'pending'
+                  ? 'bg-amber-50 text-amber-600 border-amber-200'
+                  : 'bg-slate-100 dark:bg-slate-700 text-slate-500 border-slate-200 dark:border-slate-600'
+              }`}>
+                {targetUser.idVerificationStatus === 'verified'
+                  ? (isRtl ? 'موثق' : 'Verified')
+                  : targetUser.idVerificationStatus === 'pending'
+                  ? (isRtl ? 'قيد المراجعة' : 'Pending')
+                  : (isRtl ? 'غير موثق' : 'Unverified')}
+              </span>
+            </div>
+              {/* 1. معرّف الحساب (ID) - Exactly 12 symbols */}
+              <div className="bg-slate-50 p-3 rounded-2xl border border-gray-150 flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-indigo-50 text-indigo-500 rounded-xl shrink-0">
+                    <FileText className="w-4 h-4 text-indigo-500" />
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] text-gray-400 font-bold block">
+                      {isRtl ? 'معرّف الحساب (ID)' : 'Account ID'}
+                    </span>
+                    <span className="font-mono text-xs font-black text-slate-800 select-all">
+                      {formatDisplayId12(targetUser)}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleCopyIdWithFeedback(formatDisplayId12(targetUser))}
+                  className="p-2 bg-white hover:bg-indigo-50 text-indigo-600 rounded-xl border border-gray-200 shadow-2xs active:scale-95 transition-all cursor-pointer flex items-center gap-1 text-[10px] font-bold"
+                  title={isRtl ? 'نسخ المعرّف' : 'Copy ID'}
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>{isRtl ? 'نسخ' : 'Copy'}</span>
+                </button>
+              </div>
+
+              {/* 2. رقم الهاتف (Phone) */}
+              <div className="bg-slate-50 p-3 rounded-2xl border border-gray-150 flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-sky-50 text-[#4FC3F7] rounded-xl shrink-0">
+                    <Phone className="w-4 h-4 text-[#4FC3F7]" />
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] text-gray-400 font-bold block">
+                      {isRtl ? 'رقم الهاتف للاتصال' : 'Mobile Phone'}
+                    </span>
+                    {isSelf || hasActiveBooking ? (
+                      <span className="font-mono text-xs font-black text-sky-600 select-all">
+                        {targetUser.phone || (isRtl ? 'غير محدد' : 'Not set')}
+                      </span>
+                    ) : (
+                      <span className="text-[11px] text-gray-400 italic flex items-center gap-1">
+                        <Lock className="w-3 h-3 text-gray-400" />
+                        {isRtl ? 'يظهر عند حجز مهمة رسمية' : 'Visible upon booking'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {(isSelf || hasActiveBooking) && targetUser.phone && targetUser.phone !== 'غير محدد' && (
+                  <a
+                    href={`tel:${targetUser.phone}`}
+                    className="p-2 bg-white hover:bg-sky-50 text-[#4FC3F7] rounded-xl border border-gray-200 shadow-2xs active:scale-95 transition-all cursor-pointer flex items-center gap-1 text-[10px] font-bold"
+                    title={isRtl ? 'اتصال' : 'Call'}
+                  >
+                    <Phone className="w-3.5 h-3.5" />
+                    <span>{isRtl ? 'اتصال' : 'Call'}</span>
+                  </a>
+                )}
+              </div>
+
+              {/* 3. الموقع الجغرافي (Location) */}
+              <div className="bg-slate-50 p-3 rounded-2xl border border-gray-150 flex items-center gap-2.5">
+                <div className="p-2 bg-pink-50 text-[#FF3B7C] rounded-xl shrink-0">
+                  <MapPin className="w-4 h-4 text-[#FF3B7C]" />
+                </div>
+                <div className="text-right flex-1 min-w-0">
+                  <span className="text-[10px] text-gray-400 font-bold block">
+                    {isRtl ? 'الموقع والولاية' : 'Location & City'}
+                  </span>
+                  <span className="text-xs font-black text-slate-800 block truncate">
+                    {targetUser.city || (isRtl ? 'الجزائر' : 'Algeria')}
+                  </span>
+                </div>
+              </div>
+
+              {/* 4. تاريخ الانضمام (Joined date) */}
+              <div className="bg-slate-50 p-3 rounded-2xl border border-gray-150 flex items-center gap-2.5">
+                <div className="p-2 bg-amber-50 text-amber-500 rounded-xl shrink-0">
+                  <Clock className="w-4 h-4 text-amber-500" />
+                </div>
+                <div className="text-right flex-1">
+                  <span className="text-[10px] text-gray-400 font-bold block">
+                    {isRtl ? 'تاريخ الانضمام إلى المنصة' : 'Member Since'}
+                  </span>
+                  <span className="text-xs font-black text-slate-800">
+                    {formatJoinedDate(dbUser?.createdAt || (isSelf ? currentUser?.createdAt : undefined), lang)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={() => setShowContactInfoModal(false)}
+                className="w-full py-2.5 bg-[#1F2A44] hover:bg-slate-800 text-white font-black text-xs rounded-xl transition-all cursor-pointer shadow-sm active:scale-98"
+              >
+                {isRtl ? 'إغلاق' : 'Close'}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+
+    {/* Dedicated Reviews Modal Dialog (Triggered by clicking the Rating button) */}
+  <AnimatePresence>
+    {showReviewsModal && (
+      <div 
+        className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overscroll-contain select-none"
+        style={{ touchAction: 'none' }}
+        onClick={() => setShowReviewsModal(false)}
+        onTouchMove={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}
+      >
+        <motion.div
+          initial={{ scale: 0.95, opacity: 0, y: 15 }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
+          exit={{ scale: 0.95, opacity: 0, y: 15 }}
+          onClick={(e) => e.stopPropagation()}
+          className="bg-white dark:bg-[#151F32] rounded-3xl max-w-lg w-full max-h-[85vh] flex flex-col shadow-2xl border border-gray-150 dark:border-slate-800 overflow-hidden text-right overscroll-contain"
+          style={{ direction: isRtl ? 'rtl' : 'ltr', touchAction: 'pan-y' }}
+        >
+          {/* Modal Header with User Score & Stars */}
+          <div className="p-4 sm:p-5 border-b border-gray-150 flex items-center justify-between shrink-0 bg-slate-50/80">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-amber-500/10 rounded-2xl text-amber-500">
+                <Star className="w-6 h-6 fill-amber-400 text-amber-400" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xl font-black font-mono text-slate-800">
+                    {(modalReviewRoleTab === 'hunter' ? dynamicWorkerRating : godfatherAverageRating).toFixed(1)}
+                  </span>
+                  <div className="flex items-center gap-0.5">
+                    {[1, 2, 3, 4, 5].map((s) => (
+                      <Star 
+                        key={s} 
+                        className={`w-3.5 h-3.5 ${
+                          s <= Math.round(modalReviewRoleTab === 'hunter' ? dynamicWorkerRating : godfatherAverageRating)
+                            ? 'fill-amber-400 text-amber-400' 
+                            : 'text-gray-300'
+                        }`} 
+                      />
+                    ))}
+                  </div>
+                </div>
+                <p className="text-[11px] text-gray-500 font-bold">
+                  {modalReviewRoleTab === 'hunter'
+                    ? (isRtl ? `بناءً على ${reviewsReceived.length} تقييم كمنفذ مهام` : `Based on ${reviewsReceived.length} runner reviews`)
+                    : (isRtl ? `بناءً على ${godfatherReviewsReceived.length} تقييم كصاحب عمل` : `Based on ${godfatherReviewsReceived.length} employer reviews`)
+                  }
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowReviewsModal(false)}
+              className="w-9 h-9 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-500 flex items-center justify-center transition-all cursor-pointer select-none active:scale-90"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Role Tabs inside Modal if user has reviews in both roles */}
+          {(reviewsReceived.length > 0 || godfatherReviewsReceived.length > 0) && (
+            <div className="p-3 border-b border-gray-100 shrink-0">
+              <div className="flex bg-slate-100 p-1 rounded-2xl gap-1 border border-gray-150">
+                <button
+                  type="button"
+                  onClick={() => setModalReviewRoleTab('hunter')}
+                  className={`flex-1 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 border-none ${
+                    modalReviewRoleTab === 'hunter'
+                      ? 'bg-[#1F2A44] text-white shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  <UserCheck className="w-3.5 h-3.5 text-sky-400" />
+                  <span>{isRtl ? 'تقييمات العمل' : 'As Worker'}</span>
+                  <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
+                    modalReviewRoleTab === 'hunter' ? 'bg-[#FFD34D] text-[#1F2A44]' : 'bg-gray-200 text-gray-600'
+                  }`}>
+                    {reviewsReceived.length}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setModalReviewRoleTab('godfather')}
+                  className={`flex-1 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 border-none ${
+                    modalReviewRoleTab === 'godfather'
+                      ? 'bg-[#1F2A44] text-white shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  <Crown className="w-3.5 h-3.5 text-amber-400" />
+                  <span>{isRtl ? 'تقييمات التوظيف' : 'As Employer'}</span>
+                  <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
+                    modalReviewRoleTab === 'godfather' ? 'bg-[#FFD34D] text-[#1F2A44]' : 'bg-gray-200 text-gray-600'
+                  }`}>
+                    {godfatherReviewsReceived.length}
+                  </span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Scrollable Reviews List */}
+          <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3 overscroll-contain touch-pan-y" style={{ WebkitOverflowScrolling: 'touch' }}>
+            {modalReviewRoleTab === 'hunter' ? (
+              reviewsReceived.length === 0 ? (
+                <div className="text-xs text-center text-gray-400 py-12 bg-slate-50/60 border border-dashed border-gray-200 rounded-3xl font-semibold">
+                  {isRtl 
+                    ? 'لم يتلقى هذا العامل مراجعات بعد. شهادات العمل تضاف فور مطابقة الدفع!' 
+                    : 'No worker reviews on this portfolio yet.'}
+                </div>
+              ) : (
+                reviewsReceived.map((review) => (
+                  <div 
+                    key={review.reviewId}
+                    className="bg-white border border-gray-150 rounded-2xl overflow-hidden shadow-xs relative flex flex-col justify-between"
+                  >
+                    {review.completedTaskImage && (
+                      <div className="h-28 w-full overflow-hidden relative bg-slate-50 cursor-pointer" onClick={() => setLightboxUrl(review.completedTaskImage)}>
+                        <img 
+                          src={review.completedTaskImage} 
+                          alt="bounty proof"
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/55 to-transparent"></div>
+                        <div className="absolute bottom-2.5 left-2.5 bg-[#FFD34D] text-[#1F2A44] px-2 py-0.5 rounded-lg text-[9px] font-black flex items-center gap-0.5">
+                          {Array.from({ length: review.rating }).map((_, i) => (
+                            <Star key={i} className="w-2.5 h-2.5 fill-[#1F2A44] text-[#1F2A44]" />
+                          ))}
+                          <span className="ml-1 font-mono font-bold">{review.rating}.0</span>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="p-3.5 space-y-2 flex-1 flex flex-col justify-between text-right">
+                      <p className="text-xs font-bold text-gray-600 italic">
+                        “{review.comment}”
+                      </p>
+                      <div className="flex items-center justify-between pt-2 border-t border-gray-100 text-[10px] text-gray-400">
+                        <div className="flex items-center gap-1.5 flex-row-reverse">
+                          <span className="font-extrabold text-[#1F2A44]">{review.godfatherName}</span>
+                          <span className="text-gray-300">|</span>
+                          <span className="text-sky-600 font-bold">{formatReviewDate(review.createdAt, lang)}</span>
+                        </div>
+                        <span className="text-[8px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-600 uppercase tracking-wider font-mono">
+                          {isRtl ? 'صاحب العمل' : 'Employer'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )
+            ) : (
+              godfatherReviewsReceived.length === 0 ? (
+                <div className="text-xs text-center text-gray-400 py-12 bg-slate-50/60 border border-dashed border-gray-200 rounded-3xl font-semibold">
+                  {isRtl 
+                    ? 'لم يتلقى صاحب العمل هذا مراجعات بعد.' 
+                    : 'No reciprocal reviews recorded yet.'}
+                </div>
+              ) : (
+                godfatherReviewsReceived.map((review) => (
+                  <div 
+                    key={review.reviewId}
+                    className="bg-white border border-gray-150 rounded-2xl overflow-hidden shadow-xs relative flex flex-col justify-between"
+                  >
+                    {review.completedTaskImage && (
+                      <div className="h-28 w-full overflow-hidden relative bg-slate-50 cursor-pointer" onClick={() => setLightboxUrl(review.completedTaskImage)}>
+                        <img 
+                          src={review.completedTaskImage} 
+                          alt="completed proof"
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/55 to-transparent"></div>
+                        <div className="absolute bottom-2.5 left-2.5 bg-amber-400 text-slate-900 px-2 py-0.5 rounded-lg text-[9px] font-black flex items-center gap-0.5">
+                          {Array.from({ length: review.rating }).map((_, i) => (
+                            <Star key={i} className="w-2.5 h-2.5 fill-slate-900 text-slate-900" />
+                          ))}
+                          <span className="ml-1 font-mono font-bold">{review.rating}.0</span>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="p-3.5 space-y-2 flex-1 flex flex-col justify-between text-right">
+                      <p className="text-xs font-bold text-gray-600 italic">
+                        “{review.comment}”
+                      </p>
+                      <div className="flex items-center justify-between pt-2 border-t border-gray-100 text-[10px] text-gray-400">
+                        <div className="flex items-center gap-1.5 flex-row-reverse">
+                          <span className="font-extrabold text-[#1F2A44]">{review.hunterName}</span>
+                          <span className="text-gray-300">|</span>
+                          <span className="text-sky-600 font-bold">{formatReviewDate(review.createdAt, lang)}</span>
+                        </div>
+                        <span className="text-[8px] bg-amber-50 text-amber-600 font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wider font-mono">
+                          {isRtl ? 'المنفذ' : 'Runner'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )
+            )}
+          </div>
+        </motion.div>
+      </div>
+    )}
+  </AnimatePresence>
 
  </div>
  );

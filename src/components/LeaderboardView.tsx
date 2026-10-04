@@ -35,6 +35,7 @@ interface LeaderboardViewProps {
  onClaimChallengePoints: (challengeId: string, reward: number) => void;
  onSimulateActivity: () => void;
  onUpdateProfile?: (newProfile: UserProfile) => void;
+ initialTab?: 'leaders' | 'challenges' | 'badges';
 }
 
 const BADGE_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -101,7 +102,7 @@ const isBadgeUnlocked = (badgeId: string, profile: UserProfile): boolean => {
  return false;
 };
 
-export default function LeaderboardView({ 
+function LeaderboardView({ 
  leaders, 
  challenges, 
  badges, 
@@ -110,13 +111,15 @@ export default function LeaderboardView({
  onUnlockBadge,
  onClaimChallengePoints,
  onSimulateActivity,
- onUpdateProfile
+ onUpdateProfile,
+ initialTab = 'leaders'
 }: LeaderboardViewProps) {
- const [activeTab, setActiveTab ] = useState<'leaders' | 'challenges' | 'badges'>('leaders');
+ const [activeTab, setActiveTab ] = useState<'leaders' | 'challenges' | 'badges'>(initialTab);
  const [currentCadenceFilter, setCurrentCadenceFilter] = useState<'all' | 'daily' | 'weekly'>('all');
  const [claimedBonusList, setClaimedBonusList] = useState<string[]>([]);
  const [toastMessage, setToastMessage] = useState<string | null>(null);
  const [selectedBadge, setSelectedBadge] = useState<Badge | null>(null);
+ const unlockedBadges = badges.filter((b) => isBadgeUnlocked(b.id, userProfile));
 
  const dict = translations[lang];
  const isRtl = lang === 'ar';
@@ -343,11 +346,12 @@ export default function LeaderboardView({
  </button>
  <button
  onClick={() => setActiveTab('badges')}
- className={`flex-1 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+ className={`flex-1 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
  activeTab === 'badges' ? 'bg-[#1F2A44] text-[#FFD34D] shadow' : 'text-gray-500 hover:text-gray-800'
  }`}
  >
- {lang === 'ar' ? 'متجر الشارات' : 'Badges'}
+ <Award className="w-3.5 h-3.5 text-amber-400" />
+ <span>{lang === 'ar' ? 'الشارات والجوائز' : 'Badges & Awards'}</span>
  </button>
  </div>
 
@@ -558,7 +562,7 @@ export default function LeaderboardView({
  </div>
 
  <div className="space-y-3">
- <AnimatePresence mode="popLayout animate-fadeIn">
+ <AnimatePresence mode="popLayout">
  {challenges
  .filter((ch) => {
  const cadenceValue = (ch as any).cadence || 'weekly';
@@ -649,8 +653,67 @@ export default function LeaderboardView({
  {/* Tab Content: Badges */}
  {activeTab === 'badges' && (
  <div className="space-y-4">
- <div className="bg-white p-5 rounded-3xl border border-gray-150 space-y-1.5 shadow-sm">
- <h3 className="font-extrabold text-sm uppercase text-[#1F2A44]">{lang === 'ar' ? 'معرض شارات الرتب للجزائر (٥٠ شارة)' : 'Honor Rank Badges Store (50 Badges)'}</h3>
+ {/* Unlocked Badges & Awards Showcase */}
+ <div className="bg-gradient-to-r from-amber-500/10 via-amber-400/5 to-transparent border border-amber-300/80 rounded-3xl p-5 space-y-3 shadow-xs text-right">
+ <div className="flex items-center justify-between flex-row-reverse">
+ <div className="flex items-center gap-2.5 flex-row-reverse text-right">
+ <div className="p-2.5 bg-[#FFD34D] text-[#1F2A44] rounded-2xl shadow-xs shrink-0">
+ <Trophy className="w-5 h-5 fill-[#1F2A44]" />
+ </div>
+ <div>
+ <h3 className="font-extrabold text-sm text-[#1F2A44]">
+ {lang === 'ar' ? 'الشارات والجوائز التقديرية المكتسبة' : 'Your Unlocked Badges & Medals'}
+ </h3>
+ <p className="text-[11px] text-gray-500 font-semibold">
+ {lang === 'ar' 
+ ? `أحرزت ${unlockedBadges.length} من إجمالي 50 شارة وجائزة شرفية` 
+ : `You have earned ${unlockedBadges.length} out of 50 honor badges`}
+ </p>
+ </div>
+ </div>
+ <span className="text-xs font-mono font-black text-amber-700 bg-amber-100 px-3 py-1 rounded-full">
+ {unlockedBadges.length} / {badges.length}
+ </span>
+ </div>
+
+ {unlockedBadges.length === 0 ? (
+ <div className="text-xs text-center text-gray-400 py-5 bg-white/70 border border-amber-100 rounded-2xl font-bold">
+ {lang === 'ar' ? 'لم تكتسب أي شارة بعد. أنجز المهام والميدانيات لفتح الأوسمة والجوائز!' : 'No badges unlocked yet. Complete quests to earn medals!'}
+ </div>
+ ) : (
+ <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+ {unlockedBadges.map((badge) => {
+ const Icon = BADGE_ICONS[badge.iconName] || Award;
+ const displayTitle = badge.name || (typeof badge.title === 'string' ? badge.title : ((badge.title as any)[lang] || (badge.title as any)['ar'] || (badge.title as any)['en']));
+ const displayDescription = typeof badge.description === 'string' ? badge.description : ((badge.description as any)[lang] || (badge.description as any)['ar'] || (badge.description as any)['en']);
+
+ return (
+ <div 
+ key={badge.id}
+ onClick={() => setSelectedBadge(badge)}
+ className="bg-white hover:bg-amber-50/40 p-3 rounded-2xl border border-amber-200/80 flex items-center gap-3 text-right flex-row-reverse cursor-pointer transition-all active:scale-95 shadow-2xs group"
+ >
+ <div className="p-2 bg-amber-400/20 text-amber-600 rounded-xl shrink-0 group-hover:scale-105 transition-transform">
+ <Icon className="w-5 h-5 text-amber-500" />
+ </div>
+ <div className="flex-1 min-w-0">
+ <div className="flex items-center gap-1.5 justify-end">
+ <span className="text-[8px] px-1.5 py-0.5 rounded font-black uppercase bg-amber-100 text-amber-800">
+ {badge.tier}
+ </span>
+ <h5 className="text-xs font-black text-[#1F2A44] truncate">{displayTitle}</h5>
+ </div>
+ <p className="text-[10px] text-gray-400 font-semibold truncate leading-normal">{displayDescription}</p>
+ </div>
+ </div>
+ );
+ })}
+ </div>
+ )}
+ </div>
+
+ <div className="bg-white p-5 rounded-3xl border border-gray-150 space-y-1.5 shadow-sm text-right">
+ <h3 className="font-extrabold text-sm uppercase text-[#1F2A44]">{lang === 'ar' ? 'كتالوج شارات الرتب للجزائر (٥٠ شارة)' : 'Honor Rank Badges Catalog (50 Badges)'}</h3>
  <p className="text-xs text-gray-500 font-medium leading-relaxed">
  {lang === 'ar' ? 'انقر على الشارات لمعاينة تفاصيل المتطلبات الرياضية وإلغاء القفل. تظهر الشارات المقفلة باللون الرمادي مع رمز قفل بوضوح.' : 'Tap any badge to display its precise mathematical unlock requirements and purchase status. Locked badges are grayed out with a lock icon.'}
  </p>
@@ -893,3 +956,5 @@ export default function LeaderboardView({
  </div>
  );
 }
+
+export default React.memo(LeaderboardView);

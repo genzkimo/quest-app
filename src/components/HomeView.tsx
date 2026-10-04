@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { isQuestExpired } from '../utils/questExpiry';
 import { 
  Wrench, 
  Truck, 
@@ -50,6 +51,7 @@ import { db } from '../utils/firebase';
 import { doc, updateDoc, arrayUnion, setDoc, collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
 import PullToRefresh from './PullToRefresh';
+import InfoButton from './InfoButton';
 import { translations } from '../data/translations';
 import { playCoinSound, playConfirmSound, triggerHaptic, playLockAndLoadCoins } from '../utils/audio';
 
@@ -111,7 +113,7 @@ const formatTime = (isoString: string, lang: string) => {
  }
 };
 
-export default function HomeView({ 
+function HomeView({ 
  quests, 
  userProfile, 
  lang, 
@@ -131,7 +133,9 @@ export default function HomeView({
  const dict = translations[lang] || translations.ar;
  const isRtl = lang === 'ar';
 
- const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(null);
+ const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(() => {
+ return Geolocator.getCachedLocation();
+ });
  const [gpsDenied, setGpsDenied] = useState<boolean>(false);
  const [isGpsRequesting, setIsGpsRequesting] = useState<boolean>(false);
  const [visibleCount, setVisibleCount] = useState<number>(30);
@@ -204,23 +208,13 @@ export default function HomeView({
  return Math.round(diffTime / (1000 * 60 * 60 * 24));
  };
 
- const [secondsUntilMidnight, setSecondsUntilMidnight] = useState(() => {
- const now = new Date();
- const midnight = new Date();
- midnight.setHours(24, 0, 0, 0);
- return Math.max(0, Math.floor((midnight.getTime() - now.getTime()) / 1000));
- });
-
- useEffect(() => {
- const timer = setInterval(() => {
- const now = new Date();
- const midnight = new Date();
- midnight.setHours(24, 0, 0, 0);
- setSecondsUntilMidnight(Math.max(0, Math.floor((midnight.getTime() - now.getTime()) / 1000)));
- }, 1000);
- return () => clearInterval(timer);
- }, []);
-
+	// Removed 1-second interval that caused constant re-renders on the home page
+	const getSecondsUntilMidnight = () => {
+		const now = new Date();
+		const midnight = new Date();
+		midnight.setHours(24, 0, 0, 0);
+		return Math.max(0, Math.floor((midnight.getTime() - now.getTime()) / 1000));
+	};
  useEffect(() => {
  if (userProfile?.id) {
  const hasBookedOrCreated = quests.some(
@@ -537,7 +531,7 @@ export default function HomeView({
  const filteredQuests = useMemo(() => {
  const qSearch = searchQuery.toLowerCase();
  return quests
- .filter(q => (q.status === 'open' || q.status === 'applications') && !q.archived)
+ .filter(q => (q.status === 'open' || q.status === 'applications') && !q.archived && !isQuestExpired(q))
  .filter(q => {
  const matchText = q.title.toLowerCase().includes(qSearch) || 
  q.description.toLowerCase().includes(qSearch) ||
@@ -560,8 +554,10 @@ export default function HomeView({
  }, [filteredQuests, userLoc]);
 
  const { inRangeQuests, outOfRangeQuests } = useMemo(() => {
- // If userLoc is null, distanceKm will be -1, we want all quests to be visible
- const inRange = questsWithDistance.filter(q => q.distanceKm === -1 || q.distanceKm <= 50);
+ if (!userLoc) {
+ return { inRangeQuests: [], outOfRangeQuests: [] };
+ }
+ const inRange = questsWithDistance.filter(q => q.distanceKm !== -1 && q.distanceKm <= 50);
  const outOfRange = questsWithDistance.filter(q => q.distanceKm !== -1 && q.distanceKm > 50);
 
  // Sort in-range quests: nearest distance first when distance is calculated
@@ -608,7 +604,10 @@ export default function HomeView({
  };
  }, [inRangeQuests.length]);
 
- const activeQuestCount = userProfile?.hasActiveQuest === false ? 0 : quests.filter(q => q.creatorId === userProfile?.id && q.status !== 'completed' && q.status !== 'cancelled' && q.status !== 'cancelled_by_timeout' && q.status !== 'stale_cleared').length;
+ const activeQuestCount = useMemo(() => {
+   if (userProfile?.hasActiveQuest === false) return 0;
+   return quests.filter(q => q.creatorId === userProfile?.id && q.status !== 'completed' && q.status !== 'cancelled' && q.status !== 'cancelled_by_timeout' && q.status !== 'stale_cleared' && !q.archived && !isQuestExpired(q)).length;
+ }, [quests, userProfile?.hasActiveQuest, userProfile?.id]);
 
  const handleRefresh = async () => {
  try {
@@ -617,7 +616,10 @@ export default function HomeView({
  const questsSnapshot = await getDocs(questsQuery);
  const fetchedQuests: Quest[] = [];
  questsSnapshot.forEach((doc) => {
- fetchedQuests.push({ id: doc.id, ...doc.data() } as any);
+   const qData = { id: doc.id, ...doc.data() } as Quest;
+   if (!isQuestExpired(qData)) {
+     fetchedQuests.push(qData);
+   }
  });
 
  // Update parent global states
@@ -625,7 +627,6 @@ export default function HomeView({
  setQuests(fetchedQuests);
  }
  
- showToast(lang === 'ar' ? ' تم تحديث قائمة الكويستات بنجاح!' : ' Feed updated successfully!');
  } catch (error) {
  console.error("Failed to refresh feed:", error);
  showToast(lang === 'ar' ? ' فشل تحديث البيانات، يرجى التحقق من اتصال الشبكة.' : ' Failed to update feed. Please check network.');
@@ -639,82 +640,115 @@ export default function HomeView({
  audioEffectsEnabled={userProfile?.audioEffectsEnabled !== false}
  hapticFeedbackEnabled={userProfile?.hapticFeedbackEnabled !== false}
  >
- <div className="space-y-6 pb-32 font-sans text-[#1F2A44]" style={{ direction: isRtl ? 'rtl' : 'ltr' }}>
+ <div className="space-y-6 pb-32 font-sans text-[#1F2A44] dark:text-slate-100 px-3 sm:px-6 w-full" style={{ direction: isRtl ? 'rtl' : 'ltr' }}>
 
  {/* VERTICAL PREMIUM SOCIAL FEED PLAYGROUND */}
  <div id="social-media-feed-track" className="space-y-6">
  
  {/* SOCIAL MEDIA FEED TRACK */}
 
- <div className="flex items-center justify-between px-1 flex-wrap gap-2">
- <h2 className="text-sm font-black text-[#1F2A44] flex items-center gap-1.5">
+ <div className="flex items-center justify-between px-2 py-1 flex-wrap gap-3">
+ <h2 className="text-sm font-black text-[#1F2A44] dark:text-white flex items-center gap-1.5">
  <span className="w-2.5 h-2.5 rounded-full bg-[#FF3B7C] animate-ping"></span>
  <span>{lang === 'ar' ? 'كويستات وفرص العمل' : 'Live Quest & Jobs Stream'}</span>
- <span className="text-[11px] text-gray-400 font-bold">({filteredQuests.length})</span>
+ <span className="text-[11px] text-gray-400 dark:text-slate-400 font-bold">({filteredQuests.length})</span>
  </h2>
 
  {/* Opportunity Type Filter Toggle Bar */}
- <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none">
+ <div className="w-full grid grid-cols-3 gap-1.5 pt-1">
  <button
  type="button"
  onClick={() => setSelectedQuestTypeFilter('all')}
- className={`px-3 py-1.5 rounded-xl text-[11px] font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+ className={`w-full py-2 px-1 sm:px-2 rounded-xl text-[11px] sm:text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1 sm:gap-1.5 ${
  selectedQuestTypeFilter === 'all'
- ? 'bg-[#1F2A44] text-[#FFD34D] shadow-sm'
- : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+ ? 'bg-[#1F2A44] text-[#FFD34D] dark:bg-[#1A2640] dark:text-[#FFD34D] dark:border dark:border-[#FFD34D]/40 shadow-sm'
+ : 'bg-white dark:bg-[#151F32] text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#1C273E] border border-slate-200 dark:border-slate-800'
  }`}
  >
- <LayoutGrid className="w-3.5 h-3.5" />
- <span>{lang === 'ar' ? 'الكل' : 'All'}</span>
+ <LayoutGrid className="w-3.5 h-3.5 shrink-0" />
+ <span className="truncate">{lang === 'ar' ? 'الكل' : 'All'}</span>
  </button>
 
  <button
  type="button"
  onClick={() => setSelectedQuestTypeFilter('quick')}
- className={`px-3 py-1.5 rounded-xl text-[11px] font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+ className={`w-full py-2 px-1 sm:px-2 rounded-xl text-[11px] sm:text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1 sm:gap-1.5 ${
  selectedQuestTypeFilter === 'quick'
  ? 'bg-[#FF3B7C] text-white shadow-sm'
- : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+ : 'bg-white dark:bg-[#151F32] text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#1C273E] border border-slate-200 dark:border-slate-800'
  }`}
  >
- <Zap className="w-3.5 h-3.5 text-[#FF3B7C]" />
- <span>{lang === 'ar' ? 'مهام سريعة' : 'Quick Tasks'}</span>
+ <Zap className="w-3.5 h-3.5 shrink-0 text-[#FF3B7C]" />
+ <span className="truncate">{lang === 'ar' ? 'مهام سريعة' : 'Quick Tasks'}</span>
  </button>
 
  <button
  type="button"
  onClick={() => setSelectedQuestTypeFilter('long_term')}
- className={`px-3 py-1.5 rounded-xl text-[11px] font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+ className={`w-full py-2 px-1 sm:px-2 rounded-xl text-[11px] sm:text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1 sm:gap-1.5 ${
  selectedQuestTypeFilter === 'long_term'
  ? 'bg-sky-600 text-white shadow-sm'
- : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+ : 'bg-white dark:bg-[#151F32] text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#1C273E] border border-slate-200 dark:border-slate-800'
  }`}
  >
- <Briefcase className="w-3.5 h-3.5 text-sky-500" />
- <span>{lang === 'ar' ? 'عقود عمل' : 'Job Contracts'}</span>
+ <Briefcase className="w-3.5 h-3.5 shrink-0 text-sky-500" />
+ <span className="truncate">{lang === 'ar' ? 'عقود عمل' : 'Job Contracts'}</span>
  </button>
  </div>
  </div>
 
  {filteredQuests.length === 0 ? (
- <div className="py-10 px-4 text-center space-y-3">
+ <div className="py-14 px-6 text-center space-y-4 animate-fadeIn">
  <div className="mx-auto flex justify-center">
- <svg className="w-24 h-24" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
- <circle cx="60" cy="60" r="50" className="fill-slate-100/80" />
- <circle cx="60" cy="60" r="38" className="fill-rose-50/70" />
- <path d="M60 28C46.7 28 36 38.7 36 52C36 68 60 92 60 92C60 92 84 68 84 52C84 38.7 73.3 28 60 28Z" fill="#FFF0F5" stroke="#FF3B7C" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
- <circle cx="52" cy="48" r="2.5" fill="#64748B" />
- <circle cx="68" cy="48" r="2.5" fill="#64748B" />
- <path d="M53 58C56 55 64 55 67 58" stroke="#64748B" strokeWidth="2.5" strokeLinecap="round" />
- <circle cx="60" cy="60" r="56" stroke="#CBD5E1" strokeWidth="1.5" strokeDasharray="3 4" />
- </svg>
+   <svg className="w-24 h-24" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+     <circle cx="60" cy="60" r="50" className="fill-slate-100/90 dark:fill-slate-800/60" />
+     <circle cx="60" cy="60" r="38" className="fill-rose-50/70 dark:fill-rose-950/40" />
+     
+     {/* Signature Quest Map Pin - Always light face even in dark mode */}
+     <path 
+       d="M60 28C46.8 28 36 38.8 36 52C36 68 60 90 60 90C60 90 84 68 84 52C84 38.8 73.2 28 60 28Z" 
+       fill="#FFFFFF" 
+       stroke="#FF3B7C" 
+       strokeWidth="3" 
+       strokeLinecap="round" 
+       strokeLinejoin="round" 
+     />
+     
+     {/* Frowning Face (وجه عابس) - Eyes & Frowning Mouth */}
+     <circle cx="53" cy="49" r="2.5" fill="#334155" />
+     <circle cx="67" cy="49" r="2.5" fill="#334155" />
+     <path d="M54 60C57 56 63 56 66 60" stroke="#334155" strokeWidth="2.5" strokeLinecap="round" />
+     
+     {/* Signature Decorative Sparkles & Elements matching other screens */}
+     <circle cx="92" cy="42" r="3" fill="#FFD34D" />
+     <circle cx="28" cy="74" r="2" fill="#FFD34D" />
+     <path d="M26 40L32 46M32 40L26 46" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" />
+     <path d="M88 70L94 76M94 70L88 76" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" />
+   </svg>
  </div>
- <p className="font-extrabold text-sm text-slate-700">
- {lang === 'ar' ? 'لا توجد كويستات حالياً' : 'No quests available currently'}
- </p>
+
+ <div className="space-y-1">
+   <p className="font-black text-sm text-slate-800 dark:text-slate-100">
+     {lang === 'ar' ? 'لا توجد كويستات حالياً' : 'No quests available currently'}
+   </p>
+   <p className="text-xs text-slate-400 dark:text-slate-400 font-semibold max-w-xs mx-auto leading-relaxed">
+     {lang === 'ar' ? 'كن أول من ينشر كويست أو قم بتغيير الفلاتر لاستكشاف مهام أخرى.' : 'Be the first to post a quest or change filters to explore other tasks.'}
+   </p>
+ </div>
+
+ {onTriggerCreateQuest && (
+   <button
+     type="button"
+     onClick={onTriggerCreateQuest}
+     className="inline-flex items-center gap-2 bg-[#FF3B7C] hover:bg-[#E0245E] text-white text-xs font-black py-2.5 px-5 rounded-2xl shadow-md shadow-[#FF3B7C]/25 transition-all active:scale-95 cursor-pointer mt-1"
+   >
+     <Plus className="w-4 h-4 text-white stroke-[3px]" />
+     <span>{lang === 'ar' ? 'نشر كويست جديد' : 'Post a New Quest'}</span>
+   </button>
+ )}
  </div>
  ) : (
- <div className="space-y-6 max-w-2xl mx-auto">
+ <div className="space-y-7 w-full">
  {(() => {
  const renderQuestCard = (quest: typeof quests[0] & { distanceKm?: number }, forcedOutsideRadius?: boolean) => {
  const tokenAmount = calculateBookingFee(quest.cashReward, quest.questType);
@@ -755,8 +789,8 @@ export default function HomeView({
  <div
  key={quest.id}
  style={{ contentVisibility: 'auto', containIntrinsicSize: '0 400px' }}
- className={`bg-white border rounded-3xl overflow-hidden transition-all flex flex-col justify-between relative cursor-pointer ${
- isOutsideRadius ? 'border-dashed border-gray-300 bg-gray-50/45 opacity-85' : 'border-slate-900 hover:border-[#FF3B7C]'
+ className={`bg-white dark:bg-[#151F32] border rounded-3xl overflow-hidden transition-all flex flex-col justify-between relative cursor-pointer shadow-sm dark:shadow-md ${
+ isOutsideRadius ? 'border-dashed border-gray-300 dark:border-slate-700 bg-gray-50/45 dark:bg-slate-900/40 opacity-85' : 'border-slate-200/80 dark:border-slate-800/80 hover:border-[#FF3B7C] dark:hover:border-[#FF3B7C]/70'
  }`}
  onClick={() => {
  if (onViewQuestDetail) {
@@ -799,7 +833,7 @@ export default function HomeView({
  </div>
  )}
 
- <div className="p-5 space-y-4">
+ <div className="p-6 sm:p-7 space-y-5">
  
  {/* SOCIAL POST HEADER: Creator avatar, name, Sky Blue checkmark badge and localized timestamp */}
  <div className="flex items-center justify-between">
@@ -821,7 +855,7 @@ export default function HomeView({
  />
  </div>
  {/* Sky Blue verification badge overlay on bottom right */}
- <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-1 shadow-sm border border-gray-100 flex items-center justify-center">
+ <div className="absolute -bottom-1 -right-1 bg-white dark:bg-[#151F32] rounded-full p-1 shadow-sm border border-gray-100 dark:border-slate-700 flex items-center justify-center">
  <Check className="w-2.5 h-2.5 text-[#4FC3F7] stroke-[4.5px]" />
  </div>
  </div>
@@ -829,7 +863,7 @@ export default function HomeView({
  <div>
  <div className="flex items-center gap-1.5 text-start">
  <span 
- className="text-xs font-black text-[#1F2A44] hover:underline cursor-pointer"
+ className="text-xs font-black text-[#1F2A44] dark:text-white hover:underline cursor-pointer"
  onClick={(e) => {
  e.stopPropagation();
  onViewPublicProfile(quest.creatorId);
@@ -964,7 +998,7 @@ export default function HomeView({
  </div>
 
  {/* DYNAMIC VISUAL TRANSACTION CALLOUT BOX - Dark Navy with precise typography */}
- <div className="bg-[#1F2A44] rounded-2xl p-4 border border-[#FFD34D]/20 relative overflow-hidden shadow-inner flex flex-col justify-between gap-3 text-start">
+ <div className="bg-[#1F2A44] rounded-3xl p-5 sm:p-6 border border-[#FFD34D]/20 relative overflow-hidden shadow-xl flex flex-col justify-between gap-4 text-start">
  
  {/* Technical abstract background art lines */}
  <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-[#FFD34D]/5 to-transparent rounded-full blur-xl pointer-events-none"></div>
@@ -1000,7 +1034,7 @@ export default function HomeView({
  ) : isOutsideRadius ? (
  <button
  disabled
- className="w-full bg-slate-400/40 border border-slate-300 text-slate-400 py-3.5 rounded-2xl font-bold text-[10px] sm:text-xs flex items-center justify-center p-2.5 gap-2 cursor-not-allowed opacity-75"
+ className="w-full bg-slate-400/40 border border-slate-300 text-slate-400 py-3.5 px-7 rounded-2xl font-bold text-[10px] sm:text-xs flex items-center justify-center p-2.5 gap-2 cursor-not-allowed opacity-75"
  >
  <MapPin className="w-4.5 h-4.5 text-slate-400" />
  <span className="text-center">{lang === 'ar' ? 'هذه المهمة خارج نطاقك الجغرافي المتاح للحجز ' : 'This quest is outside your available geographical booking limit '}</span>
@@ -1008,7 +1042,7 @@ export default function HomeView({
  ) : (
  <button
  onClick={(e) => handleBookTaskClick(quest, e)}
- className="w-full bg-[#FF3B7C] hover:bg-[#FF3B7C]/95 text-white font-black text-xs py-3.5 rounded-2xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-[#FF3B7C]/25 active:scale-95 cursor-pointer whitespace-nowrap"
+ className="w-full bg-[#FF3B7C] hover:bg-[#FF3B7C]/95 text-white font-black text-xs py-3.5 px-7 rounded-2xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-[#FF3B7C]/25 active:scale-95 cursor-pointer whitespace-nowrap"
  >
  <Award className="w-4.5 h-4.5" />
  <span>{lang === 'ar' ? 'احجز المهمة الآن ' : 'Book Quest Now '}</span>
@@ -1019,14 +1053,14 @@ export default function HomeView({
  </div>
 
  {/* SOCIAL FEED CARDS ACTIONS PANEL: Hearts, Comments expanders, shares, Scam flags toggle */}
- <div className="bg-gray-50 border-t border-gray-100 flex items-center justify-between px-4 py-2 text-xs font-black">
- <div className="flex items-center gap-4 text-gray-500">
+ <div className="bg-slate-50/80 dark:bg-[#111A2E]/90 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between px-6 py-3.5 text-xs font-black">
+ <div className="flex items-center gap-4 text-gray-500 dark:text-slate-400">
  
  {/* Simulated interactive Like option */}
  <button
  onClick={(e) => handleLikeToggle(quest.id, e)}
  className={`flex items-center gap-1.5 px-1 py-1 rounded-lg transition-colors cursor-pointer select-none group ${
- isLiked ? 'text-[#FF3B7C]' : 'hover:text-[#1F2A44]'
+ isLiked ? 'text-[#FF3B7C]' : 'hover:text-[#1F2A44] dark:hover:text-white'
  }`}
  >
  <Heart className={`w-4 h-4 transition-all group-active:scale-150 ${isLiked ? 'fill-[#FF3B7C] text-[#FF3B7C]' : ''}`} />
@@ -1036,8 +1070,8 @@ export default function HomeView({
  {/* Expandable comments toggle */}
  <button
  onClick={(e) => handleToggleComments(quest.id, e)}
- className={`flex items-center gap-1.5 px-1 py-1 rounded-lg hover:text-[#1F2A44] cursor-pointer transition-colors ${
- hasExpandedComments ? 'text-[#1F2A44]' : ''
+ className={`flex items-center gap-1.5 px-1 py-1 rounded-lg hover:text-[#1F2A44] dark:hover:text-white cursor-pointer transition-colors ${
+ hasExpandedComments ? 'text-[#1F2A44] dark:text-white' : ''
  }`}
  >
  <MessageCircle className="w-4 h-4" />
@@ -1159,19 +1193,23 @@ export default function HomeView({
  return (
  <div className="space-y-6">
  {/* Tier 1 (In-Range Quests) */}
- {gpsDenied ? (
+ {gpsDenied || !userLoc ? (
  <div className="bg-amber-500/10 border border-amber-500/30 p-8 rounded-3xl text-center space-y-4 shadow-xs animate-in fade-in duration-200">
  <div className="w-12 h-12 bg-amber-500/20 text-amber-900 rounded-full flex items-center justify-center mx-auto animate-pulse">
  <MapPin className="w-6 h-6 animate-bounce text-amber-900" />
  </div>
  <div className="space-y-1.5 max-w-md mx-auto">
  <h4 className="font-extrabold text-xs text-amber-950">
- {lang === 'ar' ? 'تحديد الموقع (GPS) غير مفعّل ' : 'GPS Location Disabled '}
+ {isGpsRequesting 
+ ? (lang === 'ar' ? 'جاري الاتصال بالأقمار الصناعية وتحديد موقعك...' : 'Acquiring GPS position...')
+ : (lang === 'ar' ? 'تحديد الموقع (GPS) غير مفعّل ' : 'GPS Location Disabled ')}
  </h4>
  <p className="text-[11px] font-bold text-amber-900/90 leading-relaxed">
- {lang === 'ar'
+ {isGpsRequesting
+ ? (lang === 'ar' ? 'يرجى الانتظار لحظات لمعايرة إشارة الـ GPS الدقيقة.' : 'Please wait while calibrating high-accuracy GPS signal.')
+ : (lang === 'ar'
  ? 'يرجى تفعيل خدمة تحديد الموقع (GPS) لتحديد موقعك واستعراض المهام القريبة منك.'
- : 'Please enable GPS location services to discover nearby tasks around you.'}
+ : 'Please enable GPS location services to discover nearby tasks around you.')}
  </p>
  <p className="text-[10px] font-medium text-amber-800/80">
  {lang === 'ar'
@@ -1191,20 +1229,23 @@ export default function HomeView({
  </button>
  </div>
  ) : inRangeQuests.length === 0 ? (
- <div className="py-10 px-4 text-center space-y-3">
+ <div className="py-16 px-6 text-center space-y-4">
  <div className="mx-auto flex justify-center">
  <svg className="w-24 h-24" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
- <circle cx="60" cy="60" r="50" className="fill-slate-100/80" />
- <circle cx="60" cy="60" r="38" className="fill-rose-50/70" />
- <path d="M60 28C46.7 28 36 38.7 36 52C36 68 60 92 60 92C60 92 84 68 84 52C84 38.7 73.3 28 60 28Z" fill="#FFF0F5" stroke="#FF3B7C" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
- <circle cx="52" cy="48" r="2.5" fill="#64748B" />
- <circle cx="68" cy="48" r="2.5" fill="#64748B" />
- <path d="M53 58C56 55 64 55 67 58" stroke="#64748B" strokeWidth="2.5" strokeLinecap="round" />
- <circle cx="60" cy="60" r="56" stroke="#CBD5E1" strokeWidth="1.5" strokeDasharray="3 4" />
+   <circle cx="60" cy="60" r="50" className="fill-slate-100/90 dark:fill-slate-800/60" />
+   <circle cx="60" cy="60" r="38" className="fill-rose-50/70 dark:fill-rose-950/40" />
+   <path d="M60 28C46.8 28 36 38.8 36 52C36 68 60 90 60 90C60 90 84 68 84 52C84 38.8 73.2 28 60 28Z" fill="#FFFFFF" stroke="#FF3B7C" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+   <circle cx="53" cy="49" r="2.5" fill="#334155" />
+   <circle cx="67" cy="49" r="2.5" fill="#334155" />
+   <path d="M54 60C57 56 63 56 66 60" stroke="#334155" strokeWidth="2.5" strokeLinecap="round" />
+   <circle cx="92" cy="42" r="3" fill="#FFD34D" />
+   <circle cx="28" cy="74" r="2" fill="#FFD34D" />
+   <path d="M26 40L32 46M32 40L26 46" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" />
+   <path d="M88 70L94 76M94 70L88 76" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" />
  </svg>
  </div>
- <p className="font-extrabold text-sm text-slate-700">
- {lang === 'ar' ? 'لا توجد كويستات حالياً' : 'No quests available currently'}
+ <p className="font-extrabold text-sm text-slate-800 dark:text-slate-100">
+   {lang === 'ar' ? 'لا توجد كويستات قريبة حالياً' : 'No nearby quests currently'}
  </p>
  </div>
  ) : (
@@ -1501,14 +1542,14 @@ export default function HomeView({
  {selectedQuest.applicants?.some(a => a.userId === userProfile.id) ? (
  <button
  disabled
- className="w-full bg-white/10 text-gray-300 py-3.5 rounded-2xl font-bold text-xs flex items-center justify-center p-2.5 gap-2"
+ className="w-full bg-white/10 text-gray-300 py-3.5 px-7 rounded-2xl font-bold text-xs flex items-center justify-center p-2.5 gap-2"
  >
  <span className="text-center">{lang === 'ar' ? 'تم تقديم طلبك بنجاح.. في انتظار اختيار صاحب العمل ' : 'Application pending.. Awaiting creator selection '}</span>
  </button>
  ) : (selectedQuest && calculateDistanceKm(selectedQuest.lat, selectedQuest.lng) > 50) ? (
  <button
  disabled
- className="w-full bg-white/10 border border-white/5 text-gray-400 py-3.5 rounded-2xl font-bold text-xs flex items-center justify-center p-2.5 gap-2 cursor-not-allowed opacity-75"
+ className="w-full bg-white/10 border border-white/5 text-gray-400 py-3.5 px-7 rounded-2xl font-bold text-xs flex items-center justify-center p-2.5 gap-2 cursor-not-allowed opacity-75"
  >
  <MapPin className="w-4.5 h-4.5 text-gray-400" />
  <span className="text-center text-[10px] sm:text-xs">
@@ -1518,7 +1559,7 @@ export default function HomeView({
  ) : (
  <button
  onClick={(e) => handleBookTaskClick(selectedQuest, e)}
- className="w-full bg-[#FF3B7C] hover:bg-[#FF3B7C]/95 text-white py-3.5 rounded-2xl font-black text-xs shadow-lg shadow-[#FF3B7C]/25 transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95 text-center"
+ className="w-full bg-[#FF3B7C] hover:bg-[#FF3B7C]/95 text-white py-3.5 px-7 rounded-2xl font-black text-xs shadow-lg shadow-[#FF3B7C]/25 transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95 text-center"
  >
  <Award className="w-4.5 h-4.5" />
  <span>
@@ -1627,3 +1668,5 @@ export default function HomeView({
  </PullToRefresh>
  );
 }
+
+export default React.memo(HomeView);

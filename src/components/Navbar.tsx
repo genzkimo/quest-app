@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
  Compass, 
@@ -49,7 +49,7 @@ interface NavbarProps {
  isHeaderHidden?: boolean;
 }
 
-export default function Navbar({ 
+function Navbar({ 
  currentView, 
  onViewChange, 
  unclaimedChallengesCount, 
@@ -203,22 +203,22 @@ export default function Navbar({
  const dict = translations[lang];
  const isVerified = userProfile?.idVerificationStatus === 'verified';
 
- const matchingQuestsCount = (quests || []).filter(q => 
- (q.status === 'open' || q.status === 'applications') && 
- (Number(q.cashReward) >= 3000 || Number(q.pointsReward) >= 100) && 
- (!userProfile?.city || q.location.toLowerCase().includes(userProfile.city.toLowerCase()))
- ).length;
+ const matchingQuestsCount = useMemo(() => (quests || []).filter(q => 
+   (q.status === 'open' || q.status === 'applications') && 
+   (Number(q.cashReward) >= 3000 || Number(q.pointsReward) >= 100) && 
+   (!userProfile?.city || q.location.toLowerCase().includes(userProfile.city.toLowerCase()))
+ ).length, [quests, userProfile?.city]);
 
- const questNotificationsCount = (notifications || []).filter(n => 
- !n.read && 
- (n.type === 'applicant' || n.type === 'arrival' || n.type === 'approved' || n.type === 'completed' || n.text.includes('عقد') || n.text.includes('كويست') || n.text.includes('Quest') || n.text.includes('Contract') || n.text.includes('مهمة') || n.text.includes('موافق'))
- ).length;
+ const questNotificationsCount = useMemo(() => (notifications || []).filter(n => 
+   !n.read && 
+   (n.type === 'applicant' || n.type === 'arrival' || n.type === 'approved' || n.type === 'completed' || n.text.includes('عقد') || n.text.includes('كويست') || n.text.includes('Quest') || n.text.includes('Contract') || n.text.includes('مهمة') || n.text.includes('موافق'))
+ ).length, [notifications]);
  const totalMyQuestsUpdates = unreadTasksCount + questNotificationsCount;
 
- const profileNotificationsCount = (notifications || []).filter(n => 
- !n.read && 
- (n.type === 'approved' || n.text.includes('شحن') || n.text.includes('الرصيد') || n.text.includes('refill') || n.text.includes('credited'))
- ).length;
+ const profileNotificationsCount = useMemo(() => (notifications || []).filter(n => 
+   !n.read && 
+   (n.type === 'approved' || n.text.includes('شحن') || n.text.includes('الرصيد') || n.text.includes('refill') || n.text.includes('credited'))
+ ).length, [notifications]);
  const totalProfileUpdates = unclaimedChallengesCount + profileNotificationsCount;
 
  const NAV_ITEMS: { 
@@ -265,27 +265,17 @@ export default function Navbar({
 
  return (
  <>
- {/* Top Main Brand Header Bar Container - Animated sliding together with Connection and Broadcast bars */}
+ {/* Top Main Brand Header Bar Container (Unmounted instantly when isHeaderHidden without sliding animation) */}
+ {!isHeaderHidden && (
  <div 
  style={{ direction: isRtl ? 'rtl' : 'ltr' }}
  className={`fixed top-0 left-0 right-0 z-40 transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
- isVisible && !isHeaderHidden && !isTyping ? 'translate-y-0' : '-translate-y-full'
+ isVisible && !isTyping ? 'translate-y-0' : '-translate-y-full'
  }`}
  >
  <header 
- className="relative min-h-[3.5rem] pt-[env(safe-area-inset-top,0px)] pb-2 flex items-center justify-between px-4 md:px-8 select-none"
+ className="relative min-h-[3.75rem] pt-[max(0.75rem,env(safe-area-inset-top,0px))] pb-3.5 flex items-center justify-between px-4 md:px-8 select-none border-none shadow-none bg-gradient-to-b from-white via-white/85 to-transparent dark:from-[#0B1120] dark:via-[#0B1120]/85 dark:to-transparent backdrop-blur-md"
  >
-   {/* Sleek Compact Cloud Gradient Background Layer */}
-   <div 
-     className="absolute -inset-x-0 top-0 bottom-0 pointer-events-none -z-10"
-     style={{
-       background: "linear-gradient(to bottom, rgba(255, 255, 255, 0.98) 0%, rgba(255, 255, 255, 0.85) 60%, rgba(255, 255, 255, 0) 100%)",
-       backdropFilter: "blur(20px)",
-       WebkitBackdropFilter: "blur(20px)",
-       maskImage: "linear-gradient(to bottom, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0.8) 75%, rgba(0, 0, 0, 0) 100%)",
-       WebkitMaskImage: "linear-gradient(to bottom, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0.8) 75%, rgba(0, 0, 0, 0) 100%)"
-     }}
-   />
  {/* Brand Name Logo on the left */}
  <div className="flex items-center gap-2">
  <div className="flex items-center gap-2 cursor-pointer transition-transform duration-150 active:scale-95" onClick={() => { playSoftClick(audioEnabled); onViewChange('home'); }}>
@@ -304,10 +294,10 @@ export default function Navbar({
  playSoftClick(audioEnabled);
  setShowTokenMenu(!showTokenMenu);
  }}
- className="flex items-center gap-1.5 bg-slate-50 hover:bg-slate-100 px-3 py-1.5 rounded-xl cursor-pointer transition-all duration-200 border border-slate-100"
+ className="flex items-center gap-1.5 bg-slate-100/90 hover:bg-slate-200/80 dark:bg-[#1A2640] dark:hover:bg-[#203050] px-3 py-1.5 rounded-xl cursor-pointer transition-all duration-200 border border-slate-200/70 dark:border-slate-700/70 shadow-2xs"
  >
  <Zap className="w-4.5 h-4.5 text-[#FFD34D] fill-[#FFD34D]/25" />
- <span className="text-sm font-black font-mono text-[#1F2A44] flex items-center gap-0.5">
+ <span className="text-sm font-black font-mono text-[#1F2A44] dark:text-white flex items-center gap-0.5">
  {tokenBalance}
  </span>
  </div>
@@ -320,9 +310,9 @@ export default function Navbar({
  />
  <div 
  style={{ direction: isRtl ? 'rtl' : 'ltr' }}
- className={`absolute top-11 ${isRtl ? 'left-0' : 'right-0'} w-72 bg-white border border-gray-150 rounded-2xl shadow-xl z-50 p-2.5 animate-in fade-in slide-in-from-top-2 duration-150`}
+ className={`absolute top-11 ${isRtl ? 'left-0' : 'right-0'} w-72 bg-white dark:bg-[#151F32] border border-gray-150 dark:border-slate-700 rounded-2xl shadow-xl z-50 p-2.5 animate-in fade-in slide-in-from-top-2 duration-150 text-slate-800 dark:text-white`}
  >
- <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider px-2 pb-1.5 mb-1.5 border-b border-gray-100 text-right">
+ <p className="text-[10px] font-black text-gray-400 dark:text-slate-400 uppercase tracking-wider px-2 pb-1.5 mb-1.5 border-b border-gray-100 dark:border-slate-800 text-right">
  {lang === 'ar' ? 'خيارات الرصيد والتوثيق ' : lang === 'fr' ? 'Options de solde et de vérification ' : 'Token & Verification Options '}
  </p>
  <div className="space-y-1">
@@ -335,14 +325,14 @@ export default function Navbar({
  onNavigateToProfileSubmenu('verification');
  }
  }}
- className="w-full flex items-start gap-2.5 p-2 rounded-xl text-right hover:bg-sky-50/50 transition-colors cursor-pointer group"
+ className="w-full flex items-start gap-2.5 p-2 rounded-xl text-right hover:bg-sky-50/50 dark:hover:bg-sky-950/30 transition-colors cursor-pointer group"
  >
- <ShieldCheck className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
+ <ShieldCheck className="w-4 h-4 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
  <div className="flex-1 text-right">
- <span className="text-xs font-black text-sky-800 block group-hover:text-sky-700">
+ <span className="text-xs font-black text-sky-800 dark:text-sky-300 block group-hover:text-sky-700 dark:group-hover:text-sky-200">
  {lang === 'ar' ? 'توثيق الهوية (+700 د.ج)' : lang === 'fr' ? 'Vérifier NID (+700 DA)' : 'Verify NID (+700 DA)'}
  </span>
- <span className="text-[10px] text-sky-500 block leading-tight">
+ <span className="text-[10px] text-sky-500 dark:text-sky-400 block leading-tight">
  {lang === 'ar' ? 'ارفع بطاقة التعريف الوطنية للحصول على 700 د.ج رصيد مجاناً' : lang === 'fr' ? 'Soumettez votre carte pour 700 DA solde gratuit' : 'Submit your identity card to get 700 DA free usage balance'}
  </span>
  </div>
@@ -357,14 +347,14 @@ export default function Navbar({
  onNavigateToProfileSubmenu('wallet');
  }
  }}
- className="w-full flex items-start gap-2.5 p-2 rounded-xl text-right hover:bg-[#4FC3F7]/10 transition-colors cursor-pointer group"
+ className="w-full flex items-start gap-2.5 p-2 rounded-xl text-right hover:bg-[#4FC3F7]/10 dark:hover:bg-[#4FC3F7]/15 transition-colors cursor-pointer group"
  >
- <Wallet className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
+ <Wallet className="w-4 h-4 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
  <div className="flex-1 text-right">
- <span className="text-xs font-black text-slate-800 block group-hover:text-[#039BE5]">
+ <span className="text-xs font-black text-slate-800 dark:text-slate-100 block group-hover:text-[#039BE5]">
  {lang === 'ar' ? 'إضافة رصيد Quest' : lang === 'fr' ? 'Ajouter du solde Quest' : 'Add Quest Balance'}
  </span>
- <span className="text-[10px] text-gray-500 block leading-tight">
+ <span className="text-[10px] text-gray-500 dark:text-slate-400 block leading-tight">
  {lang === 'ar' ? 'شحن رصيدك عبر بريدي موب أو بطاقة الدفع' : lang === 'fr' ? 'Recharger via Baridimob ou carte' : 'Top up your balance via Baridimob or card'}
  </span>
  </div>
@@ -378,12 +368,12 @@ export default function Navbar({
  {/* Elegant float notification bell */}
  <button 
  onClick={onBellClick}
- className="w-9 h-9 rounded-xl bg-transparent flex items-center justify-center relative text-[#1F2A44] hover:bg-black/5 cursor-pointer transition-all active:scale-95"
+ className="w-9 h-9 rounded-xl bg-slate-100/90 hover:bg-slate-200/80 dark:bg-[#1A2640] dark:hover:bg-[#203050] border border-slate-200/70 dark:border-slate-700/70 flex items-center justify-center relative text-[#1F2A44] dark:text-slate-100 cursor-pointer transition-all active:scale-95 shadow-2xs"
  title={lang === 'ar' ? 'الإشعارات' : 'Notifications'}
  >
- <Bell className="w-5 h-5 text-[#1F2A44]" />
+ <Bell className="w-5 h-5 text-[#1F2A44] dark:text-slate-200" />
  {unreadNotificationsCount > 0 && (
- <span className="absolute top-0.5 right-0.5 bg-[#FF3B7C] text-white text-[8px] font-black rounded-full flex items-center justify-center border border-white animate-pulse transition-all shadow-md w-4 h-4">
+ <span className="absolute -top-1 -right-1 bg-[#FF3B7C] text-white text-[8px] font-black rounded-full flex items-center justify-center border-2 border-white dark:border-[#0B1120] animate-pulse transition-all shadow-md w-4 h-4">
  {unreadNotificationsCount}
  </span>
  )}
@@ -447,29 +437,18 @@ export default function Navbar({
  </div>
  )}
  </div>
+ )}
 
- {/* Bottom bar with Cloud Gradient Background Layer - buttons stay 100% solid */}
+ {/* Bottom bar as sleek modern mobile dock */}
  <nav 
  style={{ 
  direction: isRtl ? 'rtl' : 'ltr'
  }}
- className={`fixed bottom-0 left-0 right-0 z-40 px-2 lg:px-24 pb-[env(safe-area-inset-bottom,0px)] transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+ className={`fixed bottom-0 left-0 right-0 z-40 px-3 lg:px-24 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] pt-3 transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] border-none shadow-none bg-gradient-to-t from-white via-white/92 to-transparent dark:from-[#0B1120] dark:via-[#0B1120]/92 dark:to-transparent backdrop-blur-md ${
  isVisible && !isTyping ? 'translate-y-0' : 'translate-y-full'
  }`}
  >
- {/* Cloud Gradient Background Layer - Masked so blur & color dissolve into complete transparency at top edge */}
- <div 
- className="absolute -inset-x-0 bottom-0 h-28 pointer-events-none -z-10"
- style={{
- background: 'linear-gradient(to top, rgba(255, 255, 255, 0.98) 0%, rgba(255, 255, 255, 0.75) 50%, rgba(255, 255, 255, 0) 100%)',
- backdropFilter: 'blur(20px)',
- WebkitBackdropFilter: 'blur(20px)',
- maskImage: 'linear-gradient(to top, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0.7) 60%, rgba(0, 0, 0, 0) 100%)',
- WebkitMaskImage: 'linear-gradient(to top, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0.7) 60%, rgba(0, 0, 0, 0) 100%)'
- }}
- />
-
- <div className="max-w-xl mx-auto flex justify-between h-18 items-center py-2 relative z-10">
+ <div className="max-w-xl mx-auto flex justify-between h-16 items-center py-1 relative z-10">
  {NAV_ITEMS.slice(0, 2).map((item) => {
  const Icon = item.icon;
  const isActive = currentView === item.id;
@@ -489,7 +468,7 @@ export default function Navbar({
  >
  {/* Active Sky Blue marker at the top of active tab */}
  {isActive && (
- <span className="absolute -top-1 w-8 h-1 bg-[#4FC3F7] rounded-full shadow-[0_2px_8px_rgba(79,195,247,0.4)]"></span>
+ <span className="absolute -top-1 w-8 h-1 bg-[#38BDF8] rounded-full shadow-[0_2px_8px_rgba(56,189,248,0.4)]"></span>
  )}
 
  {/* Micro-Stack wrapper that scales perfectly avoiding key collision */}
@@ -497,15 +476,15 @@ export default function Navbar({
  {/* Tab Icon - Highlighted in Sky Blue */}
  <Icon className={`w-5.5 h-5.5 transition-all ${
  isActive 
- ? 'text-[#4FC3F7] drop-shadow-[0_2px_6px_rgba(79,195,247,0.3)]' 
- : 'text-gray-450 group-hover:text-gray-650'
+ ? 'text-[#38BDF8] drop-shadow-[0_2px_8px_rgba(56,189,248,0.35)]' 
+ : 'text-slate-400 group-hover:text-slate-600 dark:text-slate-400 dark:group-hover:text-slate-200'
  }`} />
 
  {/* Red Notification Badge */}
  {item.hasBadge ? (
  <span 
  id={`nav-badge-${item.id}`}
- className={`absolute bg-[#FF3B7C] text-white font-black rounded-full flex items-center justify-center border border-white animate-pulse transition-all shadow-md ${
+ className={`absolute bg-[#FF3B7C] text-white font-black rounded-full flex items-center justify-center border border-white dark:border-[#0D1527] animate-pulse transition-all shadow-md ${
  item.badgeValue 
  ? 'text-[7px] w-4 h-4 -top-1.5 -right-1.5' 
  : 'w-2 h-2 -top-0.5 -right-0.5'
@@ -528,7 +507,7 @@ export default function Navbar({
  onTriggerCreateQuest();
  }
  }}
- className="w-12 h-12 rounded-full bg-[#FF3B7C] hover:bg-[#E0245E] text-white flex items-center justify-center shadow-lg shadow-[#FF3B7C]/25 cursor-pointer active:scale-90 transition-all shrink-0 -mt-6 border-4 border-white relative z-50 group"
+ className="w-12 h-12 rounded-full bg-[#FF3B7C] hover:bg-[#E0245E] text-white flex items-center justify-center shadow-lg shadow-[#FF3B7C]/30 cursor-pointer active:scale-90 transition-all shrink-0 -mt-6 border-4 border-white dark:border-[#0B1120] relative z-50 group"
  title={lang === 'ar' ? 'نشر كويست جديد' : lang === 'fr' ? 'Publier un Quest' : 'Post New Quest'}
  >
  <Plus className="w-6 h-6 text-white stroke-[3.5px] transition-transform duration-200 group-hover:scale-110" />
@@ -553,7 +532,7 @@ export default function Navbar({
  >
  {/* Active Sky Blue marker at the top of active tab */}
  {isActive && (
- <span className="absolute -top-1 w-8 h-1 bg-[#4FC3F7] rounded-full shadow-[0_2px_8px_rgba(79,195,247,0.4)]"></span>
+ <span className="absolute -top-1 w-8 h-1 bg-[#38BDF8] rounded-full shadow-[0_2px_8px_rgba(56,189,248,0.4)]"></span>
  )}
 
  {/* Micro-Stack wrapper that scales perfectly avoiding key collision */}
@@ -561,15 +540,15 @@ export default function Navbar({
  {/* Tab Icon - Highlighted in Sky Blue */}
  <Icon className={`w-5.5 h-5.5 transition-all ${
  isActive 
- ? 'text-[#4FC3F7] drop-shadow-[0_2px_6px_rgba(79,195,247,0.3)]' 
- : 'text-gray-450 group-hover:text-gray-650'
+ ? 'text-[#38BDF8] drop-shadow-[0_2px_8px_rgba(56,189,248,0.35)]' 
+ : 'text-slate-400 group-hover:text-slate-600 dark:text-slate-400 dark:group-hover:text-slate-200'
  }`} />
 
  {/* Red Notification Badge */}
  {item.hasBadge ? (
  <span 
  id={`nav-badge-${item.id}`}
- className={`absolute bg-[#FF3B7C] text-white font-black rounded-full flex items-center justify-center border border-white animate-pulse transition-all shadow-md ${
+ className={`absolute bg-[#FF3B7C] text-white font-black rounded-full flex items-center justify-center border border-white dark:border-[#0D1527] animate-pulse transition-all shadow-md ${
  item.badgeValue 
  ? 'text-[7px] w-4 h-4 -top-1.5 -right-1.5' 
  : 'w-2 h-2 -top-0.5 -right-0.5'
@@ -589,3 +568,5 @@ export default function Navbar({
  );
 }
 export type { ViewState };
+
+export default React.memo(Navbar);

@@ -6,6 +6,7 @@ import { formatArabicDate } from '../utils/dateFormatter';
 import { cleanLocationName } from '../utils/locationFormatter';
 import { calculateBookingFee } from '../utils/fee';
 import { Geolocator } from '../utils/geolocator';
+import { lockBodyScroll } from '../utils/scrollLock';
 
 interface UnifiedQuestCardProps {
  quest: Quest;
@@ -32,7 +33,7 @@ interface UnifiedQuestCardProps {
  showToast?: (msg: string) => void;
 }
 
-export default function UnifiedQuestCard({
+function UnifiedQuestCard({
  quest,
  userProfile,
  userLoc,
@@ -57,6 +58,12 @@ export default function UnifiedQuestCard({
  const [isEditingDescription, setIsEditingDescription] = useState(false);
  const [isSubmittingDesc, setIsSubmittingDesc] = useState(false);
  const [tempDescription, setTempDescription] = useState('');
+
+  useEffect(() => {
+    if (lightboxImage || isEditingDescription || showEndWorkModal) {
+      return lockBodyScroll();
+    }
+  }, [lightboxImage, isEditingDescription, showEndWorkModal]);
 
  const [localUserLoc, setLocalUserLoc] = useState<{ lat: number; lng: number } | null>(() => {
  return userLoc || Geolocator.getCachedLocation();
@@ -95,13 +102,13 @@ export default function UnifiedQuestCard({
  if (targetLat === undefined || isNaN(targetLat)) {
  if ((quest as any)?.gpsCoords?.lat) targetLat = parseFloat((quest as any).gpsCoords.lat);
  else if (quest?.locationCoords?.lat) targetLat = quest.locationCoords.lat;
- else targetLat = 36.7538;
+ else return -1;
  }
 
  if (targetLng === undefined || isNaN(targetLng)) {
  if ((quest as any)?.gpsCoords?.lng) targetLng = parseFloat((quest as any).gpsCoords.lng);
  else if (quest?.locationCoords?.lng) targetLng = quest.locationCoords.lng;
- else targetLng = 3.0588;
+ else return -1;
  }
 
  const R = 6371; // Earth radius in km
@@ -320,16 +327,16 @@ export default function UnifiedQuestCard({
  };
 
  const cardContent = (
- <div className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl relative flex flex-col font-sans text-start border border-slate-100">
+ <div className="bg-white dark:bg-[#151F32] rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl relative flex flex-col font-sans text-start border border-slate-100 dark:border-slate-800">
  
  {/* Upper Header Layout */}
- <div className="p-6 pb-5 relative flex flex-col items-start bg-white border-b border-slate-100 w-full">
+ <div className="p-6 sm:p-8 pb-6 relative flex flex-col items-start bg-white dark:bg-[#151F32] border-b border-slate-100 dark:border-slate-800 w-full space-y-4">
  
  {/* Close Button rendering (active for modal layouts) */}
  {onClose && (
  <button
  onClick={onClose}
- className="absolute top-5 ltr:right-5 rtl:left-5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-full p-2 w-9 h-9 flex items-center justify-center transition-all duration-200 active:scale-90 z-20 cursor-pointer text-base focus:outline-none"
+ className="absolute top-5 ltr:right-5 rtl:left-5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-full p-2 w-9 h-9 flex items-center justify-center transition-all duration-200 active:scale-90 z-20 cursor-pointer text-base focus:outline-none"
  title={lang === 'ar' ? 'إغلاق نافذة التفاصيل' : 'Close Details'}
  >
  <X className="w-5 h-5 shrink-0" />
@@ -368,6 +375,19 @@ export default function UnifiedQuestCard({
  <h3 className="text-2xl sm:text-3xl font-black text-sky-500 dark:text-sky-400 leading-snug tracking-tight text-start ltr:pr-12 rtl:pl-12 w-full">
  {quest.title}
  </h3>
+ 
+ {/* Location & Distance Row */}
+ {quest.location && (
+ <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 w-full flex-wrap">
+ <MapPin className="w-3.5 h-3.5 text-[#FF3B7C] shrink-0" />
+ <span className="truncate max-w-[280px]">{cleanLocationName(quest.location)}</span>
+ {distance !== -1 && (
+ <span className="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[10px] font-extrabold px-2 py-0.5 rounded-md font-mono shrink-0">
+ {distance} {lang === 'ar' ? 'كم' : 'km'}
+ </span>
+ )}
+ </div>
+ )}
 
  {/* Cohesive Subtitle Metadata */}
  <div className="flex items-center gap-2 flex-wrap text-slate-500 text-[11px] mt-2 w-full font-medium">
@@ -421,7 +441,7 @@ export default function UnifiedQuestCard({
 
  if (quest.questType === 'long_term') {
  return (
- <div className="grid grid-cols-3 gap-2 w-full border border-sky-100 py-3 mt-4 bg-sky-50/50 rounded-2xl px-2.5">
+ <div className="grid grid-cols-3 gap-2 w-full border border-sky-100 py-3.5 px-4 mt-5 bg-sky-50/50 rounded-2xl">
  <div className="text-center flex flex-col justify-center items-center">
  <span className="text-[9px] uppercase font-bold text-slate-400 block mb-0.5">{lang === 'ar' ? 'الدوام' : 'Schedule'}</span>
  <span className="text-xs font-black text-slate-800">
@@ -445,20 +465,20 @@ export default function UnifiedQuestCard({
  }
 
  return (
- <div className="grid grid-cols-3 gap-2 w-full border border-slate-100 py-3 mt-4 bg-slate-50/50 rounded-2xl px-2.5">
+ <div className="grid grid-cols-3 gap-2 w-full border border-slate-100 dark:border-slate-800 py-3.5 px-3 sm:px-4 mt-4 bg-slate-50/70 dark:bg-slate-800/40 rounded-2xl">
  <div className="text-center flex flex-col justify-center items-center">
- <span className="text-[9px] uppercase font-bold text-slate-400 block mb-0.5">{lang === 'ar' ? 'المسافة' : 'Distance'}</span>
- <span className="text-xs font-black text-slate-800">
- {distance !== -1 ? `${distance} ${lang === 'ar' ? 'كم' : 'km'}` : (lang === 'ar' ? 'غير محدد' : 'N/A')}
+ <span className="text-[9px] uppercase font-bold text-slate-400 block mb-0.5">{lang === 'ar' ? 'المكافأة' : 'Reward'}</span>
+ <span className="text-xs sm:text-sm font-black text-emerald-600 dark:text-emerald-400 font-mono">
+ {Number(quest.cashReward || 0).toLocaleString()} <span className="text-[9px] font-sans">د.ج</span>
  </span>
  </div>
- <div className="text-center flex flex-col justify-center items-center border-x border-slate-100">
+ <div className="text-center flex flex-col justify-center items-center border-x border-slate-200/60 dark:border-slate-700/60">
  <span className="text-[9px] uppercase font-bold text-slate-400 block mb-0.5">{lang === 'ar' ? 'رسوم الحجز' : 'Booking Fee'}</span>
- <span className="text-xs font-black text-amber-500">{tokenAmount}</span>
+ <span className="text-xs font-black text-amber-500 font-mono">{tokenAmount}</span>
  </div>
  <div className="text-center flex flex-col justify-center items-center">
  <span className="text-[9px] uppercase font-bold text-slate-400 block mb-0.5">{lang === 'ar' ? 'الوقت المتبقي' : 'Time Left'}</span>
- <span className={`font-mono text-[11px] font-black ${isNearExpiry ? 'text-[#FF3B7C] animate-pulse' : 'text-slate-800'}`}>
+ <span className={`font-mono text-[11px] font-black ${isNearExpiry ? 'text-[#FF3B7C] animate-pulse' : 'text-slate-800 dark:text-slate-200'}`}>
  {remainingText}
  </span>
  </div>
@@ -468,83 +488,7 @@ export default function UnifiedQuestCard({
  </div>
 
  {/* Middle Content Section Container */}
- <div className="p-6 pt-5 pb-6 space-y-5 flex flex-col items-start w-full">
- 
- {/* Description Section Card */}
- <div className="w-full space-y-2 text-start">
- <div className="flex justify-between items-center w-full">
- <span className="text-[10px] font-black uppercase tracking-wider text-slate-450 flex items-center gap-1.5">
- <span>{lang === 'ar' ? 'تفاصيل المهمة' : 'Quest Details'}</span>
- </span>
- {isCreator && (
- <button
- type="button"
- onClick={() => {
- setTempDescription(quest.description);
- setIsEditingDescription(true);
- }}
- className="flex items-center gap-1.5 text-[11px] font-black text-blue-650 hover:text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg transition-all active:scale-95 cursor-pointer border-none"
- title={lang === 'ar' ? 'تعديل الوصف' : 'Edit description'}
- >
- <Edit className="w-3 h-3" />
- <span>{lang === 'ar' ? 'تعديل' : 'Edit'}</span>
- </button>
- )}
- </div>
-
- <div className="text-xs sm:text-sm text-slate-700 dark:text-slate-200 leading-relaxed font-medium whitespace-pre-line text-start w-full font-sans">
- {quest.description}
- </div>
-
- {/* Long Term Job Additional Meta Card */}
- {quest.questType === 'long_term' && (
- <div className="bg-sky-50/50 border border-sky-100 rounded-2xl p-3.5 space-y-2.5 w-full text-start text-xs">
- <div className="flex items-center justify-between border-b border-sky-100 pb-2">
- <span className="font-extrabold text-sky-900 flex items-center gap-1.5">
- <span>{lang === 'ar' ? 'شروط فرصة العمل' : 'Job Offer Details'}</span>
- </span>
- <span className="font-black text-sky-700 bg-sky-100 px-2.5 py-0.5 rounded-full text-[10px]">
- {quest.salaryPeriod === 'monthly' ? (lang === 'ar' ? 'راتب شهري' : 'Monthly Salary') :
- quest.salaryPeriod === 'weekly' ? (lang === 'ar' ? 'راتب أسبوعي' : 'Weekly Salary') :
- quest.salaryPeriod === 'daily' ? (lang === 'ar' ? 'أجر يومي' : 'Daily Rate') :
- (lang === 'ar' ? 'أجر بالساعة' : 'Hourly Rate')}
- </span>
- </div>
-
- <div className="grid grid-cols-2 gap-2 text-[11px]">
- <div className="bg-white/80 p-2 rounded-xl border border-sky-100/80">
- <span className="text-gray-400 block text-[9.5px] font-bold">{lang === 'ar' ? 'نوع الدوام' : 'Employment'}</span>
- <span className="font-extrabold text-slate-800">
- {quest.employmentType === 'part_time' ? (lang === 'ar' ? 'دوام جزئي' : 'Part-time') : (lang === 'ar' ? 'دوام كامل' : 'Full-time')}
- </span>
- </div>
-
- <div className="bg-white/80 p-2 rounded-xl border border-sky-100/80">
- <span className="text-gray-400 block text-[9.5px] font-bold">{lang === 'ar' ? 'مدة العمل' : 'Duration'}</span>
- <span className="font-extrabold text-slate-800">
- {quest.durationType === 'fixed' ? (lang === 'ar' ? 'فترة محددة' : 'Fixed Term') : (lang === 'ar' ? 'عمل مستمر' : 'Continuous')}
- </span>
- </div>
- </div>
-
- {quest.requiredSkills && quest.requiredSkills.length > 0 && (
- <div className="pt-1">
- <span className="text-[10px] font-bold text-sky-800 block mb-1">
- {lang === 'ar' ? 'المهارات والخبرات المطلوبة:' : 'Required Skills & Qualifications:'}
- </span>
- <div className="flex flex-wrap gap-1">
- {quest.requiredSkills.map((skill, sIdx) => (
- <span key={sIdx} className="bg-white text-sky-800 border border-sky-200 px-2 py-0.5 rounded-lg text-[10px] font-bold">
- {skill}
- </span>
- ))}
- </div>
- </div>
- )}
- </div>
- )}
- </div>
-
+ <div className="p-6 sm:p-8 pt-6 pb-8 space-y-6 flex flex-col items-start w-full">
  {/* Swipeable / Grid Images Section */}
  {galleryImages.length > 0 && (
  <div className="mt-5 w-full space-y-2">
@@ -662,6 +606,82 @@ export default function UnifiedQuestCard({
  </div>
  </div>
  )}
+
+ 
+ {/* Description Section Card */}
+ <div className="w-full space-y-2 text-start">
+ <div className="flex justify-between items-center w-full">
+ <span className="text-[10px] font-black uppercase tracking-wider text-slate-450 flex items-center gap-1.5">
+ <span>{lang === 'ar' ? 'تفاصيل المهمة' : 'Quest Details'}</span>
+ </span>
+ {isCreator && (
+ <button
+ type="button"
+ onClick={() => {
+ setTempDescription(quest.description);
+ setIsEditingDescription(true);
+ }}
+ className="flex items-center gap-1.5 text-[11px] font-black text-blue-650 hover:text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg transition-all active:scale-95 cursor-pointer border-none"
+ title={lang === 'ar' ? 'تعديل الوصف' : 'Edit description'}
+ >
+ <Edit className="w-3 h-3" />
+ <span>{lang === 'ar' ? 'تعديل' : 'Edit'}</span>
+ </button>
+ )}
+ </div>
+
+ <div className="text-xs sm:text-sm text-slate-700 dark:text-slate-200 leading-relaxed font-medium whitespace-pre-line text-start w-full font-sans">
+ {quest.description}
+ </div>
+
+ {/* Long Term Job Additional Meta Card */}
+ {quest.questType === 'long_term' && (
+ <div className="bg-sky-50/50 border border-sky-100 rounded-2xl p-3.5 space-y-2.5 w-full text-start text-xs">
+ <div className="flex items-center justify-between border-b border-sky-100 pb-2">
+ <span className="font-extrabold text-sky-900 flex items-center gap-1.5">
+ <span>{lang === 'ar' ? 'شروط فرصة العمل' : 'Job Offer Details'}</span>
+ </span>
+ <span className="font-black text-sky-700 bg-sky-100 px-2.5 py-0.5 rounded-full text-[10px]">
+ {quest.salaryPeriod === 'monthly' ? (lang === 'ar' ? 'راتب شهري' : 'Monthly Salary') :
+ quest.salaryPeriod === 'weekly' ? (lang === 'ar' ? 'راتب أسبوعي' : 'Weekly Salary') :
+ quest.salaryPeriod === 'daily' ? (lang === 'ar' ? 'أجر يومي' : 'Daily Rate') :
+ (lang === 'ar' ? 'أجر بالساعة' : 'Hourly Rate')}
+ </span>
+ </div>
+
+ <div className="grid grid-cols-2 gap-2 text-[11px]">
+ <div className="bg-white/80 p-2 rounded-xl border border-sky-100/80">
+ <span className="text-gray-400 block text-[9.5px] font-bold">{lang === 'ar' ? 'نوع الدوام' : 'Employment'}</span>
+ <span className="font-extrabold text-slate-800">
+ {quest.employmentType === 'part_time' ? (lang === 'ar' ? 'دوام جزئي' : 'Part-time') : (lang === 'ar' ? 'دوام كامل' : 'Full-time')}
+ </span>
+ </div>
+
+ <div className="bg-white/80 p-2 rounded-xl border border-sky-100/80">
+ <span className="text-gray-400 block text-[9.5px] font-bold">{lang === 'ar' ? 'مدة العمل' : 'Duration'}</span>
+ <span className="font-extrabold text-slate-800">
+ {quest.durationType === 'fixed' ? (lang === 'ar' ? 'فترة محددة' : 'Fixed Term') : (lang === 'ar' ? 'عمل مستمر' : 'Continuous')}
+ </span>
+ </div>
+ </div>
+
+ {quest.requiredSkills && quest.requiredSkills.length > 0 && (
+ <div className="pt-1">
+ <span className="text-[10px] font-bold text-sky-800 block mb-1">
+ {lang === 'ar' ? 'المهارات والخبرات المطلوبة:' : 'Required Skills & Qualifications:'}
+ </span>
+ <div className="flex flex-wrap gap-1">
+ {quest.requiredSkills.map((skill, sIdx) => (
+ <span key={sIdx} className="bg-white text-sky-800 border border-sky-200 px-2 py-0.5 rounded-lg text-[10px] font-bold">
+ {skill}
+ </span>
+ ))}
+ </div>
+ </div>
+ )}
+ </div>
+ )}
+ </div>
 
  {/* Hired Profile Box if booked/assigned */}
  {(quest.status !== 'open' && quest.status !== 'applications' && (quest.status as string) !== 'pending' || !!quest.assignedRunnerId || !!quest.helperId) && (() => {
@@ -1226,7 +1246,12 @@ export default function UnifiedQuestCard({
 
  {/* Lightbox Overlay */}
  {lightboxImage && (
- <div className="fixed inset-0 bg-black/95 z-55 flex items-center justify-center p-4" onClick={() => setLightboxImage(null)}>
+ <div 
+ className="fixed inset-0 bg-black/95 z-[9999] flex items-center justify-center p-4 select-none" 
+ style={{ touchAction: 'none' }}
+ onClick={() => setLightboxImage(null)}
+ onTouchMove={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}
+ >
  <button className="absolute top-5 right-5 text-white/80 hover:text-white text-3xl font-bold cursor-pointer">&times;</button>
  <img src={lightboxImage} alt="Fullscreen Reference Preview" className="max-w-full max-h-full object-contain rounded-lg" referrerPolicy="no-referrer" />
  </div>
@@ -1451,3 +1476,5 @@ export default function UnifiedQuestCard({
  // Standalone rendering
  return cardContent;
 }
+
+export default React.memo(UnifiedQuestCard);

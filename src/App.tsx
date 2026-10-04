@@ -22,23 +22,36 @@ import { App as CapApp } from '@capacitor/app';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { triggerPhoneDeviceNotification } from './utils/phoneNotifications';
+import { initGlobalClickHaptic } from './utils/audio';
 import Navbar from './components/Navbar';
 import QuestLogo from './components/QuestLogo';
 import HomeView from './components/HomeView';
-import MapView from './components/MapView';
-import LeaderboardView from './components/LeaderboardView';
-import MyQuestsView from './components/MyQuestsView';
-import ProfileView from './components/ProfileView';
-
-import PublicProfileView from './components/PublicProfileView';
-import ReciprocalRatingModal from './components/ReciprocalRatingModal';
-import NotificationScreen, { NotificationDoc } from './components/NotificationScreen';
-import InboxScreen from './components/InboxScreen';
+import type { NotificationDoc } from './components/NotificationScreen';
 import UnifiedQuestCard from './components/UnifiedQuestCard';
-import QuestDetailScreen from './components/QuestDetailScreen';
-import GlobalCreateQuestModal from './components/GlobalCreateQuestModal';
-import TermsConsentModal from './components/TermsConsentModal';
-import OnboardingModal from './components/OnboardingModal';
+
+// Optimized Lazy-Loaded Secondary Views & Modals for Lightweight Instant Boot
+const MapView = React.lazy(() => import('./components/MapView'));
+const MyQuestsView = React.lazy(() => import('./components/MyQuestsView'));
+const ProfileView = React.lazy(() => import('./components/ProfileView'));
+
+const PublicProfileView = React.lazy(() => import('./components/PublicProfileView'));
+const ReciprocalRatingModal = React.lazy(() => import('./components/ReciprocalRatingModal'));
+const NotificationScreen = React.lazy(() => import('./components/NotificationScreen'));
+const InboxScreen = React.lazy(() => import('./components/InboxScreen'));
+const QuestDetailScreen = React.lazy(() => import('./components/QuestDetailScreen'));
+const GlobalCreateQuestModal = React.lazy(() => import('./components/GlobalCreateQuestModal'));
+const TermsConsentModal = React.lazy(() => import('./components/TermsConsentModal'));
+const OnboardingModal = React.lazy(() => import('./components/OnboardingModal'));
+
+const ViewLoadingFallback = () => (
+  <div className="flex-1 min-h-[40vh] flex flex-col items-center justify-center p-8 space-y-3 select-none pointer-events-none">
+    <div className="flex items-center gap-1.5">
+      <div className="w-2.5 h-2.5 rounded-full bg-[#1F2A44] animate-bounce [animation-delay:-0.3s]"></div>
+      <div className="w-2.5 h-2.5 rounded-full bg-[#FF3B7C] animate-bounce [animation-delay:-0.15s]"></div>
+      <div className="w-2.5 h-2.5 rounded-full bg-[#FFD34D] animate-bounce"></div>
+    </div>
+  </div>
+);
 import SmartContextualGuide from './components/SmartContextualGuide';
 import ActiveQuestFloatingWidget from './components/ActiveQuestFloatingWidget';
 import { motion, AnimatePresence } from 'motion/react';
@@ -46,12 +59,14 @@ import { Geolocator } from './utils/geolocator';
 import { calculateBookingFee } from './utils/fee';
 import AuthScreen from './components/AuthScreen';
 import { getDeviceLanguage } from './utils/language';
+import { lockBodyScroll } from './utils/scrollLock';
 import { Lock, CheckCircle2, Star, X, Coins, ShieldX, MessageSquare, Users } from 'lucide-react';
+import { isQuestExpired, isContractTimedOut, PENDING_QUEST_TIMEOUT, ACTIVE_CONTRACT_TIMEOUT } from './utils/questExpiry';
 
 const generateShortId = () => {
- const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+ const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
  let result = 'QST-';
- for (let i = 0; i < 4; i++) {
+ for (let i = 0; i < 8; i++) {
  result += chars.charAt(Math.floor(Math.random() * chars.length));
  }
  return result;
@@ -69,6 +84,17 @@ const hashString = (str: string): string => {
 
 export default function App() {
  const [currentView, setCurrentView] = useState<ViewState>('home');
+
+  // Idle background prefetch of common secondary views after initial launch
+  useEffect(() => {
+    const idlePrefetch = setTimeout(() => {
+      import('./components/MyQuestsView');
+      import('./components/InboxScreen');
+      import('./components/ProfileView');
+      import('./components/MapView');
+    }, 2500);
+    return () => clearTimeout(idlePrefetch);
+  }, []);
  const [isInsideChat, setIsInsideChat] = useState<boolean>(false);
 
  useEffect(() => {
@@ -133,6 +159,13 @@ export default function App() {
  const [showTermsConsentModal, setShowTermsConsentModal] = useState<boolean>(false);
  const [showOnboardingModal, setShowOnboardingModal] = useState<boolean>(false);
  const [navigationHistory, setNavigationHistory] = useState<{ view: ViewState; questDetailId: string | null; selectedPublicProfileId: string | null }[]>([]);
+
+  // Freeze background scrolling when any modal overlay is active
+  useEffect(() => {
+    if (showGlobalCreateQuest || selectedPublicProfileId || showNotifications || showTermsConsentModal || showOnboardingModal) {
+      return lockBodyScroll();
+    }
+  }, [showGlobalCreateQuest, selectedPublicProfileId, showNotifications, showTermsConsentModal, showOnboardingModal]);
 
  // State variables for the instant payment-before-evaluation safety/lock system
  const [blockedQuestRatings, setBlockedQuestRatings] = useState<Record<string, number>>({});
@@ -457,6 +490,7 @@ export default function App() {
  };
 
  useEffect(() => {
+ initGlobalClickHaptic();
  let backListener: any = null;
 
  if (Capacitor.isNativePlatform()) {
@@ -521,7 +555,9 @@ export default function App() {
  ]);
  
  // Real-time hardware GPS level tracking coordinates
- const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(null);
+ const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(() => {
+ return Geolocator.getCachedLocation();
+ });
 
  useEffect(() => {
  if (!userLoc && navigator.geolocation) {
@@ -555,176 +591,187 @@ export default function App() {
 
  // Quest Cleanup, Expiration & Extension System task loop
  useEffect(() => {
- const PENDING_QUEST_TIMEOUT = 8 * 60 * 60 * 1000; // 8 Hours
- const ACTIVE_CONTRACT_TIMEOUT = 24 * 60 * 60 * 1000; // 24 Hours
+  const runCleanup = async () => {
+   if (!quests || quests.length === 0) return;
 
- const intervalId = setInterval(async () => {
- if (!quests || quests.length === 0) return;
+   const now = new Date().getTime();
+   let hasChanges = false;
+   const updatedList = [...quests];
 
- const now = new Date().getTime();
- let hasChanges = false;
- const updatedList = [...quests];
+   for (let i = 0; i < updatedList.length; i++) {
+    const quest = updatedList[i];
 
- for (let i = 0; i < updatedList.length; i++) {
- const quest = updatedList[i];
+    // Skip quick task timeout logic for long-term job contracts
+    if (quest.questType === 'long_term') {
+     if (quest.durationType === 'fixed' && quest.endDate && quest.status !== 'expired' && quest.status !== 'archived' && quest.status !== 'terminated') {
+      const endMs = new Date(quest.endDate).getTime();
+      if (!isNaN(endMs) && now >= endMs) {
+       const updatedQuest: Quest = {
+        ...quest,
+        status: 'expired',
+        archived: true,
+        terminatedAt: new Date().toISOString(),
+        terminatedBy: 'system'
+       };
+       updatedList[i] = updatedQuest;
+       hasChanges = true;
 
- // Skip quick task timeout logic for long-term job contracts
- if (quest.questType === 'long_term') {
- if (quest.durationType === 'fixed' && quest.endDate && quest.status !== 'expired' && quest.status !== 'archived' && quest.status !== 'terminated') {
- const endMs = new Date(quest.endDate).getTime();
- if (!isNaN(endMs) && now >= endMs) {
- const updatedQuest: Quest = {
- ...quest,
- status: 'expired',
- archived: true,
- terminatedAt: new Date().toISOString(),
- terminatedBy: 'system'
- };
- updatedList[i] = updatedQuest;
- hasChanges = true;
+       const workerId = quest.employeeId || quest.helperId || quest.assignedRunnerId;
+       if (workerId) {
+        if (auth.currentUser) {
+         try {
+          await setDoc(doc(db, 'users', workerId), { isAvailable: true }, { merge: true });
+         } catch (e) {
+          console.warn("Could not reset worker availability on contract expiry:", e);
+         }
+        }
+        if (userProfile && workerId === userProfile.id) {
+         syncProfile({ ...userProfile, isAvailable: true });
+        }
+       }
 
- const workerId = quest.employeeId || quest.helperId || quest.assignedRunnerId;
- if (workerId) {
- if (auth.currentUser) {
- try {
- await setDoc(doc(db, 'users', workerId), { isAvailable: true }, { merge: true });
- } catch (e) {
- console.warn("Could not reset worker availability on contract expiry:", e);
- }
- }
- if (userProfile && workerId === userProfile.id) {
- syncProfile({ ...userProfile, isAvailable: true });
- }
- }
+       if (auth.currentUser) {
+        try {
+         await setDoc(doc(db, 'quests', quest.id), cleanData(updatedQuest));
+         if (quest.contractId) {
+          await setDoc(doc(db, 'contracts', quest.contractId), {
+           status: 'expired',
+           archived: true,
+           terminatedAt: new Date().toISOString(),
+           terminatedBy: 'system'
+          }, { merge: true });
+         }
+        } catch (e) {
+         console.error(`Failed to mark fixed-term job ${quest.id} as expired:`, e);
+        }
+       }
+      }
+     }
+     continue;
+    }
 
- if (auth.currentUser) {
- try {
- await setDoc(doc(db, 'quests', quest.id), cleanData(updatedQuest));
- if (quest.contractId) {
- await setDoc(doc(db, 'contracts', quest.contractId), {
- status: 'expired',
- archived: true,
- terminatedAt: new Date().toISOString(),
- terminatedBy: 'system'
- }, { merge: true });
- }
- } catch (e) {
- console.error(`Failed to mark fixed-term job ${quest.id} as expired:`, e);
- }
- }
- }
- }
- continue;
- }
+    // Case 1: Pending/Open Quest 8-Hour publication timeout -> Delete permanently from DB & memory
+    if (quest.status === 'open' || (quest.status as any) === 'pending') {
+     const createdAtTime = quest.createdAt ? new Date(quest.createdAt).getTime() : 0;
+     if (!isNaN(createdAtTime) && createdAtTime > 0 && (now - createdAtTime >= PENDING_QUEST_TIMEOUT)) {
+      console.log(`Quest ${quest.id} has expired (8h deadline reached). Expunging from database...`);
+      
+      // Delete from Firestore
+      if (auth.currentUser) {
+       try {
+        await deleteDoc(doc(db, 'quests', quest.id));
+       } catch (err) {
+        console.error(`Failed to auto-delete expired quest ${quest.id}:`, err);
+       }
+      }
 
- // Case 1: Pending/Open Quest 8-Hour limit
- if (quest.status === 'open') {
- const createdAtTime = new Date(quest.createdAt).getTime();
- if (now - createdAtTime >= PENDING_QUEST_TIMEOUT) {
- console.log(`Quest ${quest.id} has expired.`);
- 
- // Delete from Firestore
- if (auth.currentUser) {
- try {
- await deleteDoc(doc(db, 'quests', quest.id));
- } catch (err) {
- console.error(`Failed to auto-delete expired quest ${quest.id}:`, err);
- }
- }
+      // Trigger server background cleanup API as well
+      fetch('/api/cleanup-expired-quests', { method: 'POST' }).catch(() => {});
 
- // Remove from creator list if creator is the current active user, without token refund
- if (userProfile && quest.creatorId === userProfile.id) {
- if (auth.currentUser) {
- try {
- await setDoc(doc(db, 'users', auth.currentUser.uid), {
- tokenBalance: userProfile.tokenBalance,
- tokens: (userProfile as any).tokens || userProfile.tokenBalance
- }, { merge: true });
- } catch (e) {
- console.warn("Could not sync profile expiration DB:", e);
- }
- }
+      // Immediately purge from client array for all viewing users!
+      updatedList.splice(i, 1);
+      i--;
+      hasChanges = true;
 
- // Update client profile state (safely decrement count and clear from created lists)
- syncProfile({
- ...userProfile,
- questsCreated: Math.max(0, userProfile.questsCreated - 1),
- createdQuestsIds: userProfile.createdQuestsIds.filter(id => id !== quest.id),
- tokenBalance: userProfile.tokenBalance,
- tokens: (userProfile as any).tokens || userProfile.tokenBalance
- } as any);
+      // Remove from creator list if creator is the current active user, without token refund
+      if (userProfile && quest.creatorId === userProfile.id) {
+       if (auth.currentUser) {
+        try {
+         await setDoc(doc(db, 'users', auth.currentUser.uid), {
+          tokenBalance: userProfile.tokenBalance,
+          tokens: (userProfile as any).tokens || userProfile.tokenBalance
+         }, { merge: true });
+        } catch (e) {
+         console.warn("Could not sync profile expiration DB:", e);
+        }
+       }
 
- showToast(
- userProfile.language === 'ar'
- ? ` انتهت صلاحية نشر مهمة "${quest.title}" (8 ساعات). تم سحب المنشور تلقائياً!`
- : ` Your quest "${quest.title}" has expired (8h deadline). The post has been automatically withdrawn!`
- );
- }
- }
- }
+       // Update client profile state (safely decrement count and clear from created lists)
+       syncProfile({
+        ...userProfile,
+        questsCreated: Math.max(0, userProfile.questsCreated - 1),
+        createdQuestsIds: (userProfile.createdQuestsIds || []).filter(id => id !== quest.id),
+        tokenBalance: userProfile.tokenBalance,
+        tokens: (userProfile as any).tokens || userProfile.tokenBalance
+       } as any);
 
- // Case 2: Active Contract 24-Hour limit
- if (quest.status === 'active' || quest.status === 'booked') {
- const assignTime = quest.assignedAt ? new Date(quest.assignedAt).getTime() : new Date(quest.createdAt).getTime();
- if (now - assignTime >= ACTIVE_CONTRACT_TIMEOUT) {
- console.log(`Contract ${quest.id} has timed out.`);
- 
- // Unblock worker availability
- const assignedRunners = quest.assignedRunnerIds && quest.assignedRunnerIds.length > 0
- ? quest.assignedRunnerIds
- : [quest.helperId || quest.assignedRunnerId].filter(Boolean) as string[];
+       showToast(
+        userProfile.language === 'ar'
+        ? ` انتهت صلاحية نشر مهمة "${quest.title}" (8 ساعات). تم سحب المنشور تلقائياً!`
+        : ` Your quest "${quest.title}" has expired (8h deadline). The post has been automatically withdrawn!`
+       );
+      }
+      continue;
+     }
+    }
 
- assignedRunners.forEach(async (runnerId) => {
- if (auth.currentUser) {
- try {
- await setDoc(doc(db, 'users', runnerId), { isAvailable: true }, { merge: true });
- } catch (err) {
- console.warn(`Could not reset runner ${runnerId} availability:`, err);
- }
- }
- if (userProfile && runnerId === userProfile.id) {
- syncProfile({
- ...userProfile,
- isAvailable: true
- });
- }
- });
+    // Case 2: Active Contract 24-Hour limit
+    if (quest.status === 'active' || quest.status === 'booked') {
+     const assignTime = quest.assignedAt ? new Date(quest.assignedAt).getTime() : new Date(quest.createdAt).getTime();
+     if (now - assignTime >= ACTIVE_CONTRACT_TIMEOUT) {
+      console.log(`Contract ${quest.id} has timed out.`);
+      
+      // Unblock worker availability
+      const assignedRunners = quest.assignedRunnerIds && quest.assignedRunnerIds.length > 0
+       ? quest.assignedRunnerIds
+       : [quest.helperId || quest.assignedRunnerId].filter(Boolean) as string[];
 
- // Update quest status
- const updatedQuest: Quest = {
- ...quest,
- status: 'cancelled_by_timeout'
- };
+      assignedRunners.forEach(async (runnerId) => {
+       if (auth.currentUser) {
+        try {
+         await setDoc(doc(db, 'users', runnerId), { isAvailable: true }, { merge: true });
+        } catch (err) {
+         console.warn(`Could not reset runner ${runnerId} availability:`, err);
+        }
+       }
+       if (userProfile && runnerId === userProfile.id) {
+        syncProfile({
+         ...userProfile,
+         isAvailable: true
+        });
+       }
+      });
 
- if (auth.currentUser) {
- try {
- await setDoc(doc(db, 'quests', quest.id), cleanData(updatedQuest));
- } catch (e) {
- console.error(`Failed to update quest ${quest.id} status to timeout cancelled:`, e);
- }
- } else {
- updatedList[i] = updatedQuest;
- hasChanges = true;
- }
+      // Update quest status
+      const updatedQuest: Quest = {
+       ...quest,
+       status: 'cancelled_by_timeout'
+      };
 
- if (userProfile && (quest.creatorId === userProfile.id || assignedRunners.includes(userProfile.id))) {
- showToast(
- userProfile.language === 'ar'
- ? ` تم إلغاء عقد العمل لمهمة "${quest.title}" تلقائياً لتجاوز الموعد النهائي (24 ساعة).`
- : ` Contract for "${quest.title}" canceled automatically due to timeout (24 hours deadline).`
- );
- }
- }
- }
- }
+      if (auth.currentUser) {
+       try {
+        await setDoc(doc(db, 'quests', quest.id), cleanData(updatedQuest));
+       } catch (e) {
+        console.error(`Failed to update quest ${quest.id} status to timeout cancelled:`, e);
+       }
+      } else {
+       updatedList[i] = updatedQuest;
+       hasChanges = true;
+      }
 
- if (hasChanges && !auth.currentUser) {
- setQuests(updatedList);
- localStorage.setItem('quest_app_quests', JSON.stringify(updatedList));
- }
- }, 10000);
+      if (userProfile && (quest.creatorId === userProfile.id || assignedRunners.includes(userProfile.id))) {
+       showToast(
+        userProfile.language === 'ar'
+        ? ` تم إلغاء عقد العمل لمهمة "${quest.title}" تلقائياً لتجاوز الموعد النهائي (24 ساعة).`
+        : ` Contract for "${quest.title}" canceled automatically due to timeout (24 hours deadline).`
+       );
+      }
+     }
+    }
+   }
 
- return () => clearInterval(intervalId);
+   if (hasChanges) {
+    setQuests(updatedList);
+    localStorage.setItem('quest_app_quests', JSON.stringify(updatedList));
+   }
+  };
+
+  // Run cleanup immediately on load
+  runCleanup();
+
+  // And repeat every 30 seconds
+  const intervalId = setInterval(runCleanup, 30000);
+  return () => clearInterval(intervalId);
  }, [quests, userProfile]);
 
   // Auto-repair & reconcile user availability and active quest flags against actual active quests
@@ -732,7 +779,7 @@ export default function App() {
     if (!userProfile?.id || !loadedQuests) return;
 
     const hasActiveWorkerAssignment = quests.some(q => 
-      (q.status === 'active' || q.status === 'booked' || q.status === 'in_progress' || q.status === 'assigned') &&
+      (q.status === 'active' || q.status === 'booked' || (q.status as any) === 'in_progress' || (q.status as any) === 'assigned') &&
       (q.helperId === userProfile.id || q.assignedRunnerId === userProfile.id || q.employeeId === userProfile.id || (q.assignedRunnerIds && q.assignedRunnerIds.includes(userProfile.id)))
     );
 
@@ -839,7 +886,7 @@ export default function App() {
  setShowConnectionBar(true);
  const timer = setTimeout(() => {
  setShowConnectionBar(false);
- }, 10000);
+ }, 60000);
  return () => clearTimeout(timer);
  }, [activeConnectionStatus]);
 
@@ -1144,7 +1191,26 @@ export default function App() {
  if (firebaseUser.photoURL && (!loadedProf.avatar || loadedProf.avatar.includes('unsplash.com'))) {
  loadedProf.avatar = firebaseUser.photoURL;
  }
- setUserProfile(loadedProf);
+ setUserProfile(prev => {
+   if (!prev) return loadedProf;
+   if (
+     prev.id === loadedProf.id &&
+     prev.name === loadedProf.name &&
+     prev.avatar === loadedProf.avatar &&
+     prev.tokenBalance === loadedProf.tokenBalance &&
+     prev.questsCreated === loadedProf.questsCreated &&
+     prev.questsCompleted === loadedProf.questsCompleted &&
+     prev.isAvailable === loadedProf.isAvailable &&
+     prev.hasActiveQuest === loadedProf.hasActiveQuest &&
+     prev.rating === loadedProf.rating &&
+     prev.role === loadedProf.role &&
+     prev.lastCheckInDate === loadedProf.lastCheckInDate &&
+     prev.checkInStreak === loadedProf.checkInStreak
+   ) {
+     return prev;
+   }
+   return loadedProf;
+ });
  }
  }, (e) => handleFirestoreError(e, OperationType.GET, `users/${firebaseUser.uid}`));
 
@@ -1170,13 +1236,19 @@ export default function App() {
  snap.forEach((docSnap) => {
  const id = docSnap.id;
  const data = docSnap.data();
+ const q = { ...data, id } as Quest;
+
+ // Immediate Expiration Filter: If an open quest exceeded 8 hours or fixed contract ended, never load it
+ if (isQuestExpired(q)) {
+   if (auth.currentUser) {
+     deleteDoc(doc(db, 'quests', id)).catch(() => {});
+   }
+   return;
+ }
+
  // Automatically purge legacy mock/trial quests from Firestore to keep DB pure
- if (id.startsWith('q-') && !id.startsWith('q-user-')) {
- deleteDoc(doc(db, 'quests', id)).catch(err => {
- console.warn(`Failed to legacy purge mock quest ${id}:`, err);
- });
- } else {
- loadedQuestsData.push({ ...data, id } as Quest);
+ if (!id.startsWith('q-') || id.startsWith('q-user-')) {
+   loadedQuestsData.push(q);
  }
  });
  loadedQuestsData.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -1467,8 +1539,9 @@ export default function App() {
 
  // 2. Synchronize states with either cloud database (Firestore) or LocalStorage
  const syncQuests = (newQuests: Quest[], deletedId?: string) => {
- setQuests(newQuests);
- localStorage.setItem('quest_app_quests', JSON.stringify(newQuests));
+ const sanitizedQuests = newQuests.filter(q => !isQuestExpired(q));
+ setQuests(sanitizedQuests);
+ localStorage.setItem('quest_app_quests', JSON.stringify(sanitizedQuests));
 
  if (auth.currentUser) {
  if (deletedId) {
@@ -1847,7 +1920,7 @@ export default function App() {
  // Match active challenges that have reached their target but haven't been claimed yet
  const unclaimedChallengesCount = challenges.filter(ch => ch.currentCount >= ch.targetCount).length;
  // Ongoing quests in which the user is helping
- const unreadTasksCount = quests.filter(q => q.helperId === userProfile?.id && q.status === 'ongoing').length;
+ const unreadTasksCount = quests.filter(q => q.helperId === userProfile?.id && (q.status === 'active' || q.status === 'booked' || (q.status as any) === 'ongoing')).length;
 
  // Real-time badge counts for Notification Center and Chat Inbox
  const unreadNotificationsCount = notifications.filter(n => !n.read).length;
@@ -2064,14 +2137,22 @@ export default function App() {
         onPassed(coords);
         return;
       }
-      const fallbackLoc = userLoc || Geolocator.getCachedLocation() || { lat: 36.75288, lng: 3.05858 };
-      setUserLoc(fallbackLoc);
-      onPassed(fallbackLoc);
+      const fallbackLoc = userLoc || Geolocator.getCachedLocation();
+      if (fallbackLoc) {
+        setUserLoc(fallbackLoc);
+        onPassed(fallbackLoc);
+      } else {
+        showToast(userProfile?.language === 'ar' ? ' يرجى تفعيل الموقع الجغرافي (GPS) لإتمام العملية' : ' Please enable GPS location to proceed');
+      }
     } catch (err: any) {
       console.warn("verifyGpsHardwareAndExecute notice:", err);
-      const fallbackLoc = userLoc || Geolocator.getCachedLocation() || { lat: 36.75288, lng: 3.05858 };
-      setUserLoc(fallbackLoc);
-      onPassed(fallbackLoc);
+      const fallbackLoc = userLoc || Geolocator.getCachedLocation();
+      if (fallbackLoc) {
+        setUserLoc(fallbackLoc);
+        onPassed(fallbackLoc);
+      } else {
+        showToast(userProfile?.language === 'ar' ? ' يتعذر تحديد الموقع. يرجى السماح للـ GPS' : ' Location unavailable. Please grant GPS access');
+      }
     }
   };
 
@@ -2164,6 +2245,7 @@ export default function App() {
  });
 
  syncQuests(updatedQuests);
+ setMyQuestsActiveTab('obligations');
 
  showToast(userProfile.language === 'ar' 
  ? (isFreeBooking ? '🎉 تم تقديم طلبك بنجاح مجاناً! (عرض خاص: أول 3 حجوزات مجانية بالكامل) .. في انتظار قبول صاحب العمل' : ' تم تقديم طلبك بنجاح.. في انتظار اختيار صاحب العمل ') 
@@ -2326,8 +2408,8 @@ export default function App() {
  employerName: targetQuest.creatorName,
  employerAvatar: targetQuest.creatorAvatar,
  employeeId: applicantId,
- employeeName: selectedApplicant?.name || 'موظف',
- employeeAvatar: selectedApplicant?.avatar || '',
+ employeeName: (selectedApplicant as any)?.name || (selectedApplicant as any)?.applicantName || 'موظف',
+ employeeAvatar: (selectedApplicant as any)?.avatar || (selectedApplicant as any)?.applicantAvatar || '',
  startDate: targetQuest.startDate || new Date().toISOString(),
  endDate: targetQuest.endDate || null,
  contractType: targetQuest.durationType || 'ongoing',
@@ -2351,7 +2433,7 @@ export default function App() {
  status: 'active_employment' as any,
  employeeId: applicantId,
  helperId: applicantId,
- helperName: selectedApplicant?.name || 'موظف',
+ helperName: (selectedApplicant as any)?.name || (selectedApplicant as any)?.applicantName || 'موظف',
  helperPhone: (selectedApplicant as any)?.phone || '',
  contractId: contractId,
  assignedAt: new Date().toISOString()
@@ -2417,8 +2499,8 @@ export default function App() {
  ...q,
  status: (isFullyBooked ? 'active' : 'open') as any, // Only flip to 'active' once fully booked
  helperId: applicantId, // fallback
- helperName: selectedApplicant?.name || 'صياد كويست',
- helperPhone: selectedApplicant?.phone || '',
+ helperName: (selectedApplicant as any)?.name || (selectedApplicant as any)?.applicantName || 'صياد كويست',
+ helperPhone: (selectedApplicant as any)?.phone || (selectedApplicant as any)?.applicantPhone || '',
  assignedRunnerId: applicantId, // fallback
  assignedRunnerIds: updatedAssigned,
  assignedAt: new Date().toISOString()
@@ -2438,12 +2520,12 @@ export default function App() {
  detail: {
  chatId: approvedChatId,
  questTitle: targetQuest.title,
- recipientName: selectedApplicant?.name || 'صياد كويست',
- recipientAvatar: selectedApplicant?.avatar || 'https://api.dicebear.com/7.x/initials/svg?seed=Runner&backgroundColor=f43f5e'
+ recipientName: (selectedApplicant as any)?.name || (selectedApplicant as any)?.applicantName || 'صياد كويست',
+ recipientAvatar: (selectedApplicant as any)?.avatar || (selectedApplicant as any)?.applicantAvatar || 'https://api.dicebear.com/7.x/initials/svg?seed=Runner&backgroundColor=f43f5e'
  }
  }));
  }, 100);
- const isContractNotice = targetQuest.jobType === 'employment' || targetQuest.isLongTerm || targetQuest.contractType === 'long_term' || targetQuest.contractType === 'full_time' || targetQuest.contractType === 'part_time';
+ const isContractNotice = (targetQuest as any).jobType === 'employment' || (targetQuest as any).isLongTerm || (targetQuest as any).contractType === 'long_term' || (targetQuest as any).contractType === 'full_time' || (targetQuest as any).contractType === 'part_time';
 
  const noticeText = isContractNotice ? 'تم تفعيل العقد' : 'تم تفعيل المهمة';
  addNotification(
@@ -2490,8 +2572,8 @@ export default function App() {
  ownerName: targetQuest.creatorName,
  ownerAvatar: targetQuest.creatorAvatar,
  applicantId: applicantId,
- applicantName: selectedApplicant?.name || 'صياد كويست',
- applicantAvatar: selectedApplicant?.avatar || 'https://api.dicebear.com/7.x/initials/svg?seed=Runner&backgroundColor=f43f5e',
+ applicantName: (selectedApplicant as any)?.name || (selectedApplicant as any)?.applicantName || 'صياد كويست',
+ applicantAvatar: (selectedApplicant as any)?.avatar || (selectedApplicant as any)?.applicantAvatar || 'https://api.dicebear.com/7.x/initials/svg?seed=Runner&backgroundColor=f43f5e',
  messages: [systemMsg],
  createdAt: new Date().toISOString()
  });
@@ -2526,8 +2608,8 @@ export default function App() {
  ownerName: targetQuest.creatorName,
  ownerAvatar: targetQuest.creatorAvatar,
  applicantId: applicantId,
- applicantName: selectedApplicant?.name || 'صياد كويست',
- applicantAvatar: selectedApplicant?.avatar || 'https://api.dicebear.com/7.x/initials/svg?seed=Runner&backgroundColor=f43f5e',
+ applicantName: (selectedApplicant as any)?.name || (selectedApplicant as any)?.applicantName || 'صياد كويست',
+ applicantAvatar: (selectedApplicant as any)?.avatar || (selectedApplicant as any)?.applicantAvatar || 'https://api.dicebear.com/7.x/initials/svg?seed=Runner&backgroundColor=f43f5e',
  messages: [systemMsg],
  createdAt: new Date().toISOString()
  };
@@ -2950,7 +3032,7 @@ export default function App() {
 
  // Generate Hunter Review
  const finalRating = rating || 5;
- const finalComment = comment || (userProfile && userProfile.lang === 'ar' ? 'عمل ممتاز وسريع للغاية! شكراً جزيلاً.' : 'Excellent work, fast and professional! Highly recommended.');
+ const finalComment = comment || (userProfile && (userProfile.language === 'ar' || (userProfile as any).lang === 'ar') ? 'عمل ممتاز وسريع للغاية! شكراً جزيلاً.' : 'Excellent work, fast and professional! Highly recommended.');
  const helperId = targetQuest.helperId || targetQuest.assignedRunnerId || (targetQuest.assignedRunnerIds && targetQuest.assignedRunnerIds[0]) || 'leader-1';
  const helperName = targetQuest.helperName || 'رشيد بن علي';
  const rewardDA = targetQuest.cashReward || 1000;
@@ -3094,6 +3176,7 @@ export default function App() {
 
  const updatedQuests = [newQuest, ...quests];
  syncQuests(updatedQuests);
+ setMyQuestsActiveTab('created');
 
  // Update Profile statistics for created list
  const updatedCreatedList = [...userProfile.createdQuestsIds, newQuest.id];
@@ -3201,7 +3284,7 @@ export default function App() {
     if (!targetQuest) return;
 
     const isCreator = targetQuest.creatorId === userProfile.id;
-    const workerId = targetQuest.employeeId || targetQuest.helperId || targetQuest.assignedRunnerId || (targetQuest.assignedRunnerIds && targetQuest.assignedRunnerIds[0]) || (targetQuest.jobApplicants && targetQuest.jobApplicants.find(a => a.status === 'hired')?.applicantId);
+    const workerId = targetQuest.employeeId || targetQuest.helperId || targetQuest.assignedRunnerId || (targetQuest.assignedRunnerIds && targetQuest.assignedRunnerIds[0]) || (targetQuest.jobApplicants && targetQuest.jobApplicants.find(a => (a.status as any) === 'hired' || a.status === 'accepted')?.applicantId);
     const isWorker = workerId === userProfile.id || targetQuest.helperId === userProfile.id || targetQuest.assignedRunnerId === userProfile.id || targetQuest.employeeId === userProfile.id || targetQuest.assignedRunnerIds?.includes(userProfile.id);
 
     if (!isCreator && !isWorker) return;
@@ -3795,7 +3878,7 @@ export default function App() {
  : [];
 
  return (
- <div className="min-h-screen bg-white text-slate-800 font-sans antialiased relative">
+ <div className="min-h-screen bg-slate-50 dark:bg-[#0B1120] text-slate-800 dark:text-slate-100 font-sans antialiased relative selection:bg-[#FF3B7C]/20">
  
  {/* Instant Completion-before-Evaluation Block Overlay */}
  {pendingVerificationQuests.length > 0 && (
@@ -4007,6 +4090,7 @@ export default function App() {
  {/* Real-time Notification Center Slide-over Overlay */}
  <AnimatePresence>
  {showNotifications && (
+  <React.Suspense fallback={null}>
  <NotificationScreen 
  notifications={notifications}
  onClose={() => setShowNotifications(false)}
@@ -4089,6 +4173,7 @@ export default function App() {
  }
  }}
  />
+ </React.Suspense>
  )}
  </AnimatePresence>
 
@@ -4096,32 +4181,34 @@ export default function App() {
 
  {/* Dynamic Member Profile Inspection Full Screen View */}
  {selectedPublicProfileId && (
-   <div 
-     id="public-profile-backdrop"
-     className="fixed inset-0 bg-slate-50 dark:bg-[#121A2D] z-[9999] overflow-y-auto w-full h-full flex flex-col"
-   >
-     <div className="w-full min-h-screen flex-1 flex flex-col p-2 sm:p-6 max-w-5xl mx-auto">
-       <PublicProfileView 
-         userId={selectedPublicProfileId}
-         currentUser={userProfile}
-         leaders={leaders}
-         quests={quests}
-         hunterReviews={hunterReviews}
-         godfatherReviews={godfatherReviews}
-         lang={userProfile?.language || 'ar'}
-         onReportUser={handleReportUser}
-         onClose={() => setSelectedPublicProfileId(null)}
-         showToast={showToast}
-         userFlags={userFlags}
-       />
-     </div>
+    <div 
+      id="public-profile-backdrop"
+      className="fixed inset-0 bg-[#F8FAFC] dark:bg-[#0B1120] z-[9999] overflow-y-auto w-full h-full flex flex-col text-slate-900 dark:text-slate-100"
+    >
+      <div className="w-full min-h-screen flex-1 flex flex-col">
+        <React.Suspense fallback={<ViewLoadingFallback />}>
+          <PublicProfileView 
+           userId={selectedPublicProfileId}
+           currentUser={userProfile}
+           leaders={leaders}
+           quests={quests}
+           hunterReviews={hunterReviews}
+           godfatherReviews={godfatherReviews}
+           lang={userProfile?.language || 'ar'}
+           onReportUser={handleReportUser}
+           onClose={() => setSelectedPublicProfileId(null)}
+           showToast={showToast}
+           userFlags={userFlags}
+          />
+        </React.Suspense>
+      </div>
    </div>
  )}
 
  {/* Main Navigation & Top Header Frame */}
  <Navbar 
  currentView={currentView}
- isHeaderHidden={isInsideChat}
+ isHeaderHidden={isInsideChat || currentView === 'messages' || currentView === 'profile' || currentView === 'my-quests'}
  onViewChange={(view) => {
  setShowNotifications(false);
  setSelectedPublicProfileId(null);
@@ -4202,10 +4289,19 @@ export default function App() {
  />
 
  {/* Main Scroll Content Area */}
- <main className={currentView === 'messages' && !globalQuestDetailId ? "w-full max-w-none px-0 pt-0 pb-0" : "max-w-5xl mx-auto px-4 md:px-8 pt-28 pb-28 md:pb-32"}>
+ <main className={
+ currentView === 'messages' && !globalQuestDetailId 
+   ? "w-full max-w-none px-0 pt-0 pb-0" 
+   : currentView === 'profile' && !globalQuestDetailId
+    ? "w-full max-w-none px-0 pt-0 pb-[calc(6.5rem+env(safe-area-inset-bottom,0px))] md:pb-32"
+    : currentView === 'my-quests' && !globalQuestDetailId
+    ? "w-full max-w-none px-0 pt-0 pb-[calc(6.5rem+env(safe-area-inset-bottom,0px))] md:pb-32"
+    : "w-full max-w-none px-0 pt-[calc(5.5rem+env(safe-area-inset-top,0px))] pb-[calc(6.5rem+env(safe-area-inset-bottom,0px))] md:pb-32"
+ }>
  <h2 className="sr-only">محتوى صفحة كويست الرئيسي</h2>
  <div key={globalQuestDetailId ? `quest-detail-${globalQuestDetailId}` : currentView}>
  {/* View Switching logic with dynamic stack-based router */}
+  <React.Suspense fallback={<ViewLoadingFallback />}>
  {globalQuestDetailId ? (
  <QuestDetailScreen
  questId={globalQuestDetailId}
@@ -4329,8 +4425,18 @@ export default function App() {
  onViewQuestDetail={navigateToQuestDetail}
  onUpdateProfile={syncProfile}
  onTriggerCreateQuest={() => {
- setCurrentView('my-quests');
- setAutoOpenCreateQuest(true);
+ const activeCount = userProfile?.hasActiveQuest === false ? 0 : quests.filter(q => q.creatorId === userProfile?.id && !['completed', 'cancelled', 'cancelled_by_timeout', 'stale_cleared', 'expired', 'terminated', 'archived'].includes(q.status) && !q.archived).length;
+ if (activeCount > 0) {
+ alert(
+ userProfile?.language === 'ar'
+ ? 'لا يمكنك نشر أكثر من مهمة واحدة نشطة في نفس الوقت '
+ : userProfile?.language === 'fr'
+ ? "Vous ne pouvez publier qu'une seule tâche active à la fois "
+ : 'You can only have one active published quest at a time '
+ );
+ return;
+ }
+ setShowGlobalCreateQuest(true);
  }}
  onViewChange={(v) => handleViewNavigation(v as ViewState)}
  onStartNavigation={(q) => {
@@ -4353,6 +4459,7 @@ export default function App() {
  <MapView 
  quests={quests}
  userProfile={userProfile}
+ userLoc={userLoc}
  lang={userProfile.language}
  onBookQuest={handleBookQuest}
  showToast={showToast}
@@ -4468,6 +4575,7 @@ export default function App() {
  
  </>
  )}
+  </React.Suspense>
  </div>
  </main>
 
@@ -4674,44 +4782,51 @@ export default function App() {
  )}
  </AnimatePresence>
 
- {/* Reciprocal Forced Rating Modal Overlay (Dual Evaluation) */}
- {!isLoadingRating && activeRatingQuestId && userProfile && (
- <ReciprocalRatingModal
- questId={activeRatingQuestId}
- quests={quests}
- userProfile={userProfile}
- onSaveHunterReview={handleSaveHunterReviewFromReciprocal}
- onSaveGodfatherReview={handleSaveGodfatherReviewFromReciprocal}
- />
- )}
+  {/* Modals & Overlays - Lazy Loaded & Suspense Protected */}
+  <React.Suspense fallback={null}>
+    {/* Reciprocal Forced Rating Modal Overlay (Dual Evaluation) */}
+    {!isLoadingRating && activeRatingQuestId && userProfile && (
+      <ReciprocalRatingModal
+        questId={activeRatingQuestId}
+        quests={quests}
+        userProfile={userProfile}
+        onSaveHunterReview={handleSaveHunterReviewFromReciprocal}
+        onSaveGodfatherReview={handleSaveGodfatherReviewFromReciprocal}
+      />
+    )}
 
- {/* Immersive Global Full-screen Quest Creator */}
- <GlobalCreateQuestModal
- isOpen={showGlobalCreateQuest}
- onClose={() => setShowGlobalCreateQuest(false)}
- onPostQuest={handlePostNewQuest}
- lang={userProfile?.language || getDeviceLanguage()}
- userProfile={userProfile}
- audioEnabled={userProfile?.audioEffectsEnabled !== false}
- />
+    {/* Immersive Global Full-screen Quest Creator */}
+    {showGlobalCreateQuest && (
+      <GlobalCreateQuestModal
+        isOpen={showGlobalCreateQuest}
+        onClose={() => setShowGlobalCreateQuest(false)}
+        onPostQuest={handlePostNewQuest}
+        lang={userProfile?.language || getDeviceLanguage()}
+        userProfile={userProfile}
+        audioEnabled={userProfile?.audioEffectsEnabled !== false}
+      />
+    )}
 
- {/* Terms of Use & Privacy Policy First-Time Consent Modal */}
- <TermsConsentModal
- isOpen={showTermsConsentModal}
- onAccept={handleAcceptTerms}
- lang={userProfile?.language || getDeviceLanguage()}
- />
+    {/* Terms of Use & Privacy Policy First-Time Consent Modal */}
+    {showTermsConsentModal && (
+      <TermsConsentModal
+        isOpen={showTermsConsentModal}
+        onAccept={handleAcceptTerms}
+        lang={userProfile?.language || getDeviceLanguage()}
+      />
+    )}
 
- {/* First-Time Login Onboarding Modal (Step 1 Phone, Step 2 Location with Wilaya & Communes) */}
- {showOnboardingModal && userProfile && (
- <OnboardingModal
- userProfile={userProfile}
- lang={userProfile.language || 'ar'}
- onSaveProfile={(updated) => syncProfile({ ...userProfile, ...updated })}
- showToast={showToast}
- onClose={() => setShowOnboardingModal(false)}
- />
- )}
+    {/* First-Time Login Onboarding Modal (Step 1 Phone, Step 2 Location with Wilaya & Communes) */}
+    {showOnboardingModal && userProfile && (
+      <OnboardingModal
+        userProfile={userProfile}
+        lang={userProfile.language || 'ar'}
+        onSaveProfile={(updated) => syncProfile({ ...userProfile, ...updated })}
+        showToast={showToast}
+        onClose={() => setShowOnboardingModal(false)}
+      />
+    )}
+  </React.Suspense>
 
  {/* Smart Step-by-Step Contextual Hints Guide */}
  {authenticatedUser && userProfile && !showTermsConsentModal && !showOnboardingModal && (

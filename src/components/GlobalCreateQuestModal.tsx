@@ -203,16 +203,20 @@ export default function GlobalCreateQuestModal({
  playSound();
  setGpsLoading(true);
  setGpsCoords(null);
- setGpsAccuracyInfo(lang === 'ar' ? 'جاري الاتصال بـ GPS لالتقاط الموقع عبر المستشعر...' : 'Connecting GPS sensor...');
+ setGpsAccuracyInfo(lang === 'ar' ? 'جاري الاتصال بـ GPS وطلب دقة الموقع...' : 'Connecting GPS & requesting high accuracy...');
 
  try {
- const accurate = await Geolocator.getAccuratePhysicalLocation((sampleCount, bestAcc) => {
- setGpsAccuracyInfo(
- lang === 'ar'
- ? `جاري معايرة الدقة... عينات: ${sampleCount} • أفضل دقة: ±${Math.round(bestAcc)}م`
- : `Calibrating precision... Samples: ${sampleCount} • Best accuracy: ±${Math.round(bestAcc)}m`
- );
- });
+ // 1. Explicitly request permissions (same as MapView)
+ await Geolocator.requestPermissions();
+
+ // 2. Clear stale cache and trigger high-accuracy hardware GPS
+      const accurate = await Geolocator.getAccuratePhysicalLocation((sampleCount, bestAcc) => {
+        setGpsAccuracyInfo(
+          lang === 'ar'
+            ? `جاري معايرة الدقة... عينات: ${sampleCount} • أفضل دقة: ±${Math.round(bestAcc)}م`
+            : `Calibrating precision... Samples: ${sampleCount} • Best accuracy: ±${Math.round(bestAcc)}m`
+        );
+      }, true);
 
  const coords = { lat: accurate.lat, lng: accurate.lng };
  setGpsCoords(coords);
@@ -401,7 +405,7 @@ export default function GlobalCreateQuestModal({
  }}
  >
  {/* Scrollable Center Content Area */}
- <div className="flex-1 flex flex-col justify-start p-4 md:p-8 pt-8 sm:pt-10 overflow-y-auto max-w-2xl mx-auto w-full relative z-10">
+ <div className="flex-1 flex flex-col justify-start p-4 md:p-8 pt-[max(2.5rem,calc(env(safe-area-inset-top,0px)+1.5rem))] pb-[max(1.5rem,calc(env(safe-area-inset-bottom,0px)+1rem))] overflow-y-auto max-w-2xl mx-auto w-full relative z-10">
  <form id="global-create-quest-form" onSubmit={handleSubmit} className="w-full space-y-6">
  {/* In-Design Action Buttons (Inside the design, no header bar, slightly below top) */}
  <div className="w-full flex items-center justify-between pb-1">
@@ -1281,27 +1285,11 @@ export default function GlobalCreateQuestModal({
  )}
  </AnimatePresence>
 
- {/* Redesigned Bottom Progress Bar & Navigation Controls */}
- <div className="pt-4 border-t border-slate-200/80 dark:border-white/10 space-y-3.5">
- {/* Redesigned Modern Progress Bar Card */}
- <div className="w-full bg-slate-100/90 dark:bg-slate-900/60 p-3 sm:p-3.5 rounded-2xl border border-slate-200/80 dark:border-white/10 backdrop-blur-md space-y-2.5 shadow-xs">
- <div className="flex items-center justify-between">
- <div className="flex items-center gap-2 min-w-0">
- <span className="w-2.5 h-2.5 rounded-full bg-[#FF3B7C] shadow-sm shadow-[#FF3B7C] animate-pulse shrink-0" />
- <span className="text-slate-900 dark:text-white font-black text-xs shrink-0">
- {lang === 'ar' ? `الخطوة ${step} من 8` : lang === 'fr' ? `Étape ${step} sur 8` : `Step ${step} of 8`}
- </span>
- <span className="text-slate-400 dark:text-gray-500 text-[11px] font-bold truncate">
- • {stepTitles[step]?.[lang] || stepTitles[step]?.en}
- </span>
- </div>
- <div className="flex items-center gap-1.5 font-mono text-xs font-black text-[#FF3B7C] shrink-0">
- <span>{Math.round((step / 8) * 100)}%</span>
- </div>
- </div>
-
+ {/* Compact Bottom Progress Bar & Navigation Controls */}
+ <div className="pt-3 border-t border-slate-200/80 dark:border-white/10">
+ <div className="w-full bg-slate-100/90 dark:bg-slate-900/60 p-2.5 sm:p-3 rounded-2xl border border-slate-200/80 dark:border-white/10 backdrop-blur-md shadow-xs flex items-center gap-3">
  {/* Segmented Pill Progress Track */}
- <div className="grid grid-cols-8 gap-1.5 sm:gap-2">
+ <div className="flex-1 grid grid-cols-8 gap-1.5 sm:gap-2 items-center">
  {[1, 2, 3, 4, 5, 6, 7, 8].map((s) => (
  <button
  key={s}
@@ -1323,6 +1311,11 @@ export default function GlobalCreateQuestModal({
  }`}
  />
  ))}
+ </div>
+
+ {/* Percentage Number on the same level as the progress bar */}
+ <div className="font-mono text-xs sm:text-sm font-black text-[#FF3B7C] shrink-0 min-w-[2.5rem] text-center select-none bg-rose-50/70 dark:bg-rose-950/40 px-2 py-0.5 rounded-lg border border-rose-200/50 dark:border-rose-900/40 leading-none">
+ {Math.round((step / 8) * 100)}%
  </div>
  </div>
  </div>

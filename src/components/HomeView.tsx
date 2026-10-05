@@ -141,11 +141,14 @@ function HomeView({
  const [visibleCount, setVisibleCount] = useState<number>(30);
  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
 
- const requestHomeLocation = async () => {
+ const requestHomeLocation = async (isManual = false) => {
  setIsGpsRequesting(true);
  try {
- const coords = await Geolocator.getCurrentPhysicalLocation();
+ await Geolocator.requestPermissions();
+ const accurate = await Geolocator.getAccuratePhysicalLocation(undefined, isManual || !userLoc);
+ const coords = { lat: accurate.lat, lng: accurate.lng };
  setUserLoc(coords);
+ Geolocator.saveCachedLocation(coords.lat, coords.lng);
  setGpsDenied(false);
  } catch {
  setGpsDenied(true);
@@ -155,7 +158,13 @@ function HomeView({
  };
 
  useEffect(() => {
- requestHomeLocation();
+ Geolocator.getPermissionState().then((perm) => {
+ if (perm === 'granted' || perm === 'prompt' || !userLoc) {
+ requestHomeLocation(false);
+ } else if (perm === 'denied') {
+ setGpsDenied(true);
+ }
+ });
  }, []);
 
  const calculateDistanceKm = (targetLat: number, targetLng: number) => {
@@ -1219,7 +1228,7 @@ function HomeView({
  </div>
  <button
  type="button"
- onClick={requestHomeLocation}
+ onClick={() => requestHomeLocation(true)}
  disabled={isGpsRequesting}
  className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-slate-950 rounded-2xl text-xs font-black shadow-sm transition-all cursor-pointer flex items-center justify-center gap-2 mx-auto"
  >

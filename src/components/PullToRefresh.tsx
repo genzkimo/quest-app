@@ -21,13 +21,15 @@ interface PullToRefreshProps {
 function WorkerHammeringMascot({
   pullState,
   progress,
+  isSuccessful = false,
 }: {
-  pullState: 'idle' | 'pulling' | 'ready' | 'refreshing' | 'success';
+  pullState: 'idle' | 'pulling' | 'ready' | 'refreshing' | 'success' | 'closing';
   progress: number;
+  isSuccessful?: boolean;
 }) {
   const isRefreshing = pullState === 'refreshing';
   const isReady = pullState === 'ready';
-  const isSuccess = pullState === 'success';
+  const isSuccess = pullState === 'success' || (pullState === 'closing' && isSuccessful);
 
   return (
     <div className="flex flex-col items-center justify-center select-none pointer-events-none py-1 w-full overflow-visible">
@@ -190,26 +192,39 @@ function WorkerHammeringMascot({
           <ellipse cx="32" cy="55" rx="4.8" ry="2.8" fill="#1F2A44" />
           <ellipse cx="42" cy="55" rx="4.8" ry="2.8" fill="#1F2A44" />
 
-          {/* Work Dungarees / Overalls */}
-          <rect
-            x="27"
-            y="34"
-            width="20"
-            height="18"
-            rx="5"
+          {/* Neck connecting Head to Torso */}
+          <rect x="34" y="28" width="6" height="6" rx="2" fill="#FDDCB5" stroke="#1F2A44" strokeWidth="1.2" />
+
+          {/* Connected Shoulders & Upper Body Shirt (يمتد بسلاسة من الكتف الأيسر إلى الأيمن) */}
+          <path
+            d="M21 40 C21 33 26 30 37 30 C48 30 53 33 53 40 L48 51 L26 51 Z"
+            fill="#EA580C"
+            stroke="#1F2A44"
+            strokeWidth="1.5"
+            strokeLinejoin="round"
+          />
+
+          {/* Left & Right Shoulder Sleeve Caps (أكتاف القميص المتصلة بالجذع) */}
+          <circle cx="23" cy="38" r="3.5" fill="#EA580C" stroke="#C2410C" strokeWidth="1" />
+          <circle cx="51" cy="38" r="3.5" fill="#EA580C" stroke="#C2410C" strokeWidth="1" />
+
+          {/* Work Dungarees / Overalls on top of shirt */}
+          <path
+            d="M26 37 L48 37 L47 52 L27 52 Z"
             fill="#1F2A44"
             stroke="#0F172A"
             strokeWidth="1.5"
+            strokeLinejoin="round"
           />
 
-          {/* Orange Work Shirt / Collar */}
-          <path d="M29 34 L37 40 L45 34" fill="#EA580C" />
+          {/* Orange Work Shirt Collar V */}
+          <path d="M33 30 L37 35 L41 30" fill="#EA580C" stroke="#C2410C" strokeWidth="1" />
 
-          {/* Cyan Overalls Straps */}
-          <rect x="29" y="34" width="3" height="8" rx="1" fill="#0284C7" />
-          <rect x="42" y="34" width="3" height="8" rx="1" fill="#0284C7" />
-          <circle cx="30.5" cy="39" r="0.8" fill="#F8FAFC" />
-          <circle cx="43.5" cy="39" r="0.8" fill="#F8FAFC" />
+          {/* Cyan Overalls Straps arching securely over the shoulders */}
+          <line x1="28" y1="30" x2="28" y2="42" stroke="#0284C7" strokeWidth="3" strokeLinecap="round" />
+          <line x1="46" y1="30" x2="46" y2="42" stroke="#0284C7" strokeWidth="3" strokeLinecap="round" />
+          <circle cx="28" cy="38" r="0.9" fill="#F8FAFC" />
+          <circle cx="46" cy="38" r="0.9" fill="#F8FAFC" />
 
           {/* Front Tool Pocket with mini pencil / tool */}
           <rect x="32" y="42" width="10" height="7" rx="2" fill="#0F172A" />
@@ -299,30 +314,32 @@ function WorkerHammeringMascot({
 
           {/* ======================================================== */}
           {/* 5. GESTURE OF COMPLETION ("حركة تدل على أنه تم")          */}
-          {/* Left Arm: Thumbs up gesture on completion!              */}
+          {/* Left Arm: Connected firmly to Left Shoulder Socket      */}
           {/* ======================================================== */}
           {isSuccess ? (
             <motion.g
-              initial={{ scale: 0, x: 5 }}
+              initial={{ scale: 0, x: 3 }}
               animate={{ scale: 1, x: 0 }}
               transition={{ type: 'spring', stiffness: 260, damping: 16 }}
-              transform="translate(25, 34)"
             >
-              {/* Arm reaching out with thumbs up */}
-              <path d="M3 6 L-5 4 L-8 1" stroke="#EA580C" strokeWidth="4.2" strokeLinecap="round" fill="none" />
+              {/* Arm reaching out from shoulder socket (23, 38) with thumbs up */}
+              <path d="M23 38 L16 38 L12 34" stroke="#EA580C" strokeWidth="4.2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
               {/* Glove / Fist */}
-              <circle cx="-8" cy="1" r="3.2" fill="#FDDCB5" stroke="#1F2A44" strokeWidth="1.2" />
+              <circle cx="12" cy="34" r="3.2" fill="#FDDCB5" stroke="#1F2A44" strokeWidth="1.2" />
               {/* Clear Thumbs Up pointing upwards */}
-              <path d="M-8 1 L-8 -4.5" stroke="#FDDCB5" strokeWidth="2.8" strokeLinecap="round" />
-              <path d="M-8 1 L-8 -4.5" stroke="#1F2A44" strokeWidth="1" strokeLinecap="round" />
+              <path d="M12 34 L12 28.5" stroke="#FDDCB5" strokeWidth="2.8" strokeLinecap="round" />
+              <path d="M12 34 L12 28.5" stroke="#1F2A44" strokeWidth="1" strokeLinecap="round" />
             </motion.g>
           ) : (
-            /* Left hand resting on waist during pulling/hammering */
-            <path d="M27 38 C23 41 23 45 26 47" stroke="#1F2A44" strokeWidth="2.8" strokeLinecap="round" fill="none" />
+            /* Left arm connected firmly to shoulder socket (23, 38) resting on waist */
+            <g>
+              <path d="M23 38 C18 41 18 46 24 48" stroke="#EA580C" strokeWidth="4.2" strokeLinecap="round" fill="none" />
+              <path d="M23 38 C18 41 18 46 24 48" stroke="#1F2A44" strokeWidth="2.2" strokeLinecap="round" fill="none" />
+            </g>
           )}
 
           {/* ======================================================== */}
-          {/* 6. RIGHT ARM & HAMMER (يطرق المسمار بنشاط ثم يريح المطرقة)*/}
+          {/* 6. RIGHT ARM & HAMMER (متصل بالكتف الأيمن 51, 38)       */}
           {/* ======================================================== */}
           <motion.g
             animate={
@@ -341,11 +358,13 @@ function WorkerHammeringMascot({
                 ? { repeat: Infinity, duration: 0.32, ease: 'easeInOut' }
                 : { type: 'spring', stiffness: 200, damping: 20 }
             }
-            style={{ transformOrigin: '46px 35px' }}
+            style={{ transformOrigin: '51px 38px' }}
           >
-            {/* Worker Arm */}
+            {/* Shoulder Pivot Socket */}
+            <circle cx="51" cy="38" r="3.2" fill="#EA580C" />
+            {/* Worker Arm extending from right shoulder to hammer */}
             <path
-              d="M46 35 Q56 31 66 33"
+              d="M51 38 Q58 32 66 33"
               stroke="#EA580C"
               strokeWidth="4.5"
               strokeLinecap="round"
@@ -404,12 +423,15 @@ export default function PullToRefresh({
   className = '',
 }: PullToRefreshProps) {
   const [pullDistance, setPullDistance] = useState(0);
-  const [pullState, setPullState] = useState<'idle' | 'pulling' | 'ready' | 'refreshing' | 'success'>('idle');
+  const [pullState, setPullState] = useState<'idle' | 'pulling' | 'ready' | 'refreshing' | 'success' | 'closing'>('idle');
+  const [isPulling, setIsPulling] = useState(false);
 
   const startY = useRef(0);
   const currentY = useRef(0);
   const isPullingRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const wasSuccessRef = useRef(false);
+  const closingTimeoutRef = useRef<any>(null);
 
   // Dead-zone: do not show indicator or trigger on slight drags (< 28px)
   const activationThreshold = 28; 
@@ -417,12 +439,18 @@ export default function PullToRefresh({
   const pullThreshold = 98; // Increased pull distance to show animation nicely
   const maxPullDistance = 135; // Generous maximum visual pull offset
 
+  useEffect(() => {
+    return () => {
+      if (closingTimeoutRef.current) clearTimeout(closingTimeoutRef.current);
+    };
+  }, []);
+
   const handleTouchStart = (e: TouchEvent) => {
     const container = containerRef.current;
     
-    // Ignore pull-to-refresh if the touch started on Leaflet map, input, modal or marked container
+    // Ignore pull-to-refresh if the touch started on buttons, links, Leaflet map, input, modal or marked container
     const target = e.target as HTMLElement;
-    if (target && (target.closest('.leaflet-container') || target.closest('.no-pull-refresh') || target.closest('input') || target.closest('textarea') || target.closest('select'))) {
+    if (target && (target.closest('button') || target.closest('a') || target.closest('[role="button"]') || target.closest('.leaflet-container') || target.closest('.no-pull-refresh') || target.closest('input') || target.closest('textarea') || target.closest('select'))) {
       return;
     }
 
@@ -433,14 +461,17 @@ export default function PullToRefresh({
       document.body.scrollTop <= 2 && 
       (!container || container.scrollTop <= 2);
 
-    if (isAtTop && pullState !== 'refreshing' && pullState !== 'success') {
+    if (isAtTop && pullState !== 'refreshing' && pullState !== 'success' && pullState !== 'closing') {
+      if (closingTimeoutRef.current) clearTimeout(closingTimeoutRef.current);
       startY.current = e.touches[0].clientY;
       isPullingRef.current = true;
+      setIsPulling(true);
+      wasSuccessRef.current = false;
     }
   };
 
   const handleTouchMove = (e: TouchEvent) => {
-    if (!isPullingRef.current || pullState === 'refreshing' || pullState === 'success') return;
+    if (!isPullingRef.current || pullState === 'refreshing' || pullState === 'success' || pullState === 'closing') return;
 
     currentY.current = e.touches[0].clientY;
     const diff = currentY.current - startY.current;
@@ -476,14 +507,16 @@ export default function PullToRefresh({
       }
     } else {
       isPullingRef.current = false;
+      setIsPulling(false);
       setPullDistance(0);
       setPullState('idle');
     }
   };
 
   const handleTouchEnd = async () => {
-    if (!isPullingRef.current || pullState === 'refreshing' || pullState === 'success') return;
+    if (!isPullingRef.current || pullState === 'refreshing' || pullState === 'success' || pullState === 'closing') return;
     isPullingRef.current = false;
+    setIsPulling(false);
 
     if (pullDistance >= (pullThreshold - activationThreshold)) {
       setPullState('refreshing');
@@ -495,17 +528,28 @@ export default function PullToRefresh({
       try {
         await onRefresh();
         setPullState('success');
+        wasSuccessRef.current = true;
         triggerHaptic('sharp', hapticFeedbackEnabled);
-        await new Promise((resolve) => setTimeout(resolve, 600));
+        await new Promise((resolve) => setTimeout(resolve, 550));
       } catch (error) {
         console.error('Pull-to-refresh failed:', error);
       } finally {
-        setPullState('idle');
+        // Smoothly collapse back to 0 with deceleration animation
+        setPullState('closing');
         setPullDistance(0);
+        closingTimeoutRef.current = setTimeout(() => {
+          setPullState('idle');
+          wasSuccessRef.current = false;
+        }, 360);
       }
     } else {
+      // Released finger before reaching refresh threshold -> smooth gentle glide back to 0
+      setPullState('closing');
       setPullDistance(0);
-      setPullState('idle');
+      wasSuccessRef.current = false;
+      closingTimeoutRef.current = setTimeout(() => {
+        setPullState('idle');
+      }, 320);
     }
   };
 
@@ -530,12 +574,8 @@ export default function PullToRefresh({
     1
   );
 
-  // The yellow strip is ONLY revealed when pulling or actively refreshing
-  // When idle, it does NOT exist (completely hidden from DOM, 0 height, no border line)
-  const isRevealed = 
-    (pullDistance > 0 && (pullState === 'pulling' || pullState === 'ready')) || 
-    pullState === 'refreshing' || 
-    pullState === 'success';
+  // The banner stays mounted while pulling, ready, refreshing, success, AND while smoothly closing back to 0
+  const isRevealed = pullState !== 'idle';
 
   return (
     <div 
@@ -545,23 +585,38 @@ export default function PullToRefresh({
     >
       {/* 
         The Yellow Pull Gap:
-        Hidden completely when idle (does not exist in layout).
-        Revealed ONLY on intentional pull or during active refresh,
-        filling the entire screen width (w-full min-w-full) edge-to-edge with vibrant Algerian yellow (#FFD34D).
-        Featuring the Cartoon Construction Worker hammering a nail, then gesturing "Done / Completed!".
+        Hidden completely when idle (0 height, no borders).
+        Revealed on intentional pull or during active refresh,
+        filling the entire screen width with vibrant Algerian yellow (#FFD34D),
+        and gently sliding back up with smooth deceleration upon release or completion.
       */}
       {isRevealed && (
-        <div
-          className="w-full min-w-full bg-[#FFD34D] dark:bg-[#E5A812] overflow-hidden flex items-center justify-center relative select-none pointer-events-none border-b-2 border-amber-500/30 shadow-inner"
-          style={{
-            height: pullState === 'refreshing' || pullState === 'success' 
+        <motion.div
+          initial={false}
+          animate={{
+            height: (pullState === 'refreshing' || pullState === 'success') 
               ? 86 
+              : (pullState === 'closing') 
+              ? 0 
               : pullDistance,
-            transition: isPullingRef.current ? 'none' : 'height 0.25s cubic-bezier(0.2, 0.8, 0.2, 1)'
+            opacity: pullState === 'closing' ? 0 : 1,
           }}
+          transition={
+            isPulling
+              ? { duration: 0 } // Real-time 60fps tracking under the fingertip
+              : {
+                  height: { duration: 0.32, ease: [0.22, 1, 0.36, 1] }, // Smooth elastic deceleration
+                  opacity: { duration: 0.26, ease: 'easeOut' },
+                }
+          }
+          className="w-full min-w-full bg-[#FFD34D] dark:bg-[#E5A812] overflow-hidden flex items-center justify-center relative select-none pointer-events-none border-b-2 border-amber-500/30 shadow-inner"
         >
-          <WorkerHammeringMascot pullState={pullState} progress={progress} />
-        </div>
+          <WorkerHammeringMascot 
+            pullState={pullState} 
+            progress={progress} 
+            isSuccessful={wasSuccessRef.current} 
+          />
+        </motion.div>
       )}
 
       {/* Page Content */}

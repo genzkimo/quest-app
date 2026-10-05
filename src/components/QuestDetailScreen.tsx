@@ -72,7 +72,7 @@ export default function QuestDetailScreen({
 
   return (
     <div
-      className="w-full max-w-lg mx-auto font-sans pb-32"
+      className="w-full max-w-lg mx-auto font-sans pt-[max(1rem,calc(env(safe-area-inset-top,0px)+0.75rem))] pb-32"
       style={{ direction: isRTL ? 'rtl' : 'ltr' }}
     >
  {/* Top Breadcrumb Navigation Header */}

@@ -59,7 +59,7 @@ import PullToRefresh from './PullToRefresh';
 import InfoButton from './InfoButton';
 import { lockBodyScroll } from '../utils/scrollLock';
 import { translations } from '../data/translations';
-import { playCoinSound, triggerHaptic, playCameraShutter } from '../utils/audio';
+import { playCoinSound, triggerHaptic, playCameraShutter, playSoftClick } from '../utils/audio';
 import { compressImage } from '../utils/imageCompressor';
 import LeaderboardView from './LeaderboardView';
 import { formatJoinedDate, formatReviewDate } from '../utils/dateFormatter';
@@ -1279,7 +1279,7 @@ function ProfileView({
  setRefillLoading(true);
 
  try {
- const response = await fetch(`${API_BASE_URL}/api/wallet/initiate-paypal-refill`, {
+const response = await fetch(`${API_BASE_URL}/api/wallet/initiate-paypal-refill`, {
  method: 'POST',
  headers: { 'Content-Type': 'application/json' },
  body: JSON.stringify({
@@ -1379,7 +1379,7 @@ function ProfileView({
 
  // Step 2 & 3: API call to the server-side validation which handles database logging and balance updates securely
  try {
- const response = await fetch(`${API_BASE_URL}/api/wallet/refill-manual`, {
+const response = await fetch(`${API_BASE_URL}/api/wallet/refill-manual`, {
  method: 'POST',
  headers: { 'Content-Type': 'application/json' },
  body: JSON.stringify({
@@ -1603,7 +1603,7 @@ function ProfileView({
  // Render Leaderboard Screen if active!
  if (showLeaderboardScreen) {
  return (
- <div className="space-y-6 pb-32 font-sans text-[#1F2A44] leading-relaxed select-none animate-in fade-in duration-200" style={{ direction: isRtl ? 'rtl' : 'ltr' }}>
+ <div className="space-y-6 pt-[max(1.25rem,calc(env(safe-area-inset-top,0px)+0.75rem))] px-3 sm:px-6 pb-32 font-sans text-[#1F2A44] leading-relaxed select-none animate-in fade-in duration-200" style={{ direction: isRtl ? 'rtl' : 'ltr' }}>
  
  {/* Leaderboard Back Navigation Header */}
  <div className="flex items-center gap-3.5 bg-gradient-to-r from-[#1F2A44] to-[#1E2E4E] text-white p-5 rounded-3xl shadow-md relative overflow-hidden">
@@ -1648,7 +1648,7 @@ function ProfileView({
  // Render Settings Screen if active!
  if (showSettingsScreen) {
  return (
- <div className="space-y-6 pb-32 font-sans text-[#1F2A44] leading-relaxed select-none" style={{ direction: isRtl ? 'rtl' : 'ltr' }}>
+ <div className="space-y-6 pt-[max(1.25rem,calc(env(safe-area-inset-top,0px)+0.75rem))] px-3 sm:px-6 pb-32 font-sans text-[#1F2A44] leading-relaxed select-none" style={{ direction: isRtl ? 'rtl' : 'ltr' }}>
  
  {/* Settings Back Navigation Header */}
  <div className="flex items-center gap-3.5 bg-gradient-to-r from-[#1F2A44] to-[#1E2E4E] text-white p-5 rounded-3xl shadow-md relative overflow-hidden">
@@ -3924,14 +3924,14 @@ function ProfileView({
  
  {/* Dynamic Profile Header with adaptive banner filling screen edge-to-edge */}
       {/* Full-width Edge-to-Edge Banner */}
-        <div className="w-full h-32 sm:h-40 bg-gradient-to-r from-[#1F2A44] via-[#1A2640] to-[#1E2E4E] relative">
+        <div className="w-full min-h-[9rem] sm:min-h-[10.5rem] pt-[max(1rem,calc(env(safe-area-inset-top,0px)+0.5rem))] bg-gradient-to-r from-[#1F2A44] via-[#1A2640] to-[#1E2E4E] relative">
           {/* Floating Settings Gear Icon Button on the top dynamic corner */}
           <button 
             onClick={() => {
               setShowSettingsScreen(true);
               setActiveSubmenu('main');
             }}
-            className={`absolute ${isRtl ? 'left-4' : 'right-4'} top-4 bg-white/10 hover:bg-white/20 text-white backdrop-blur-md p-2 rounded-full z-20 cursor-pointer transition-all duration-200 border border-white/20 shadow-xs active:scale-95`}
+            className={`absolute ${isRtl ? 'left-4' : 'right-4'} top-[max(1rem,calc(env(safe-area-inset-top,0px)+0.75rem))] bg-white/10 hover:bg-white/20 text-white backdrop-blur-md p-2 rounded-full z-20 cursor-pointer transition-all duration-200 border border-white/20 shadow-xs active:scale-95`}
             title={lang === 'ar' ? 'الإعدادات العامة' : 'Settings'}
           >
             <Settings className="w-5 h-5 animate-spin" style={{ animationDuration: '6s' }} />
@@ -3943,7 +3943,7 @@ function ProfileView({
               setLeaderboardInitialTab('leaders');
               setShowLeaderboardScreen(true);
             }}
-            className={`absolute ${isRtl ? 'left-14' : 'right-14'} top-4 bg-white/10 hover:bg-white/20 text-[#FFD34D] backdrop-blur-md p-2 rounded-full z-20 cursor-pointer transition-all duration-200 border border-white/20 shadow-xs active:scale-95`}
+            className={`absolute ${isRtl ? 'left-14' : 'right-14'} top-[max(1rem,calc(env(safe-area-inset-top,0px)+0.75rem))] bg-white/10 hover:bg-white/20 text-[#FFD34D] backdrop-blur-md p-2 rounded-full z-20 cursor-pointer transition-all duration-200 border border-white/20 shadow-xs active:scale-95`}
             title={lang === 'ar' ? 'قائمة المتصدرين والنقاط' : 'Leaderboard & Points'}
           >
             <Trophy className="w-5 h-5" />
@@ -4098,11 +4098,12 @@ function ProfileView({
             <button
               id="profile-rating-badge-btn"
               type="button"
-              onClick={() => {
-                playSoftClick(userProfile.audioEffectsEnabled !== false);
+              onClick={(e) => {
+                e.stopPropagation();
+                playSoftClick(userProfile?.audioEffectsEnabled !== false);
                 setShowReviewsModal(true);
               }}
-              className="relative overflow-hidden bg-gradient-to-b from-amber-50 to-amber-100/50 hover:from-amber-100 hover:to-amber-200/50 dark:from-amber-950/30 dark:to-amber-900/20 dark:hover:from-amber-900/40 dark:hover:to-amber-900/30 border-2 border-amber-300/80 hover:border-amber-400 dark:border-amber-600/40 p-2 sm:p-2.5 rounded-2xl flex flex-col items-center justify-center shadow-xs hover:shadow-md cursor-pointer active:scale-92 active:shadow-inner transition-all group ring-1 ring-amber-400/20"
+              className="relative overflow-hidden bg-gradient-to-b from-amber-50 to-amber-100/50 hover:from-amber-100 hover:to-amber-200/50 dark:from-amber-950/30 dark:to-amber-900/20 dark:hover:from-amber-900/40 dark:hover:to-amber-900/30 border-2 border-amber-300/80 hover:border-amber-400 dark:border-amber-600/40 p-2 sm:p-2.5 rounded-2xl flex flex-col items-center justify-center shadow-xs hover:shadow-md cursor-pointer active:scale-92 active:shadow-inner transition-all group ring-1 ring-amber-400/20 select-none"
               title={lang === 'ar' ? 'انقر لعرض جميع تقييماتك' : 'Click to view all reviews'}
             >
               <span className="absolute top-1 right-1 sm:top-1.5 sm:right-1.5 w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
@@ -4111,7 +4112,7 @@ function ProfileView({
                 {dynamicRating.toFixed(1)}
               </span>
               <span className="text-[8.5px] sm:text-[9.5px] text-amber-800 dark:text-amber-300 font-extrabold uppercase tracking-wide block mt-1">
-                {lang === 'ar' ? 'التقييمات ↗' : 'Reviews ↗'}
+                {lang === 'ar' ? 'التقييمات' : 'Reviews'}
               </span>
             </button>
 
@@ -4141,11 +4142,12 @@ function ProfileView({
             <button
               id="profile-info-modal-btn"
               type="button"
-              onClick={() => {
-                playSoftClick(userProfile.audioEffectsEnabled !== false);
+              onClick={(e) => {
+                e.stopPropagation();
+                playSoftClick(userProfile?.audioEffectsEnabled !== false);
                 setShowContactInfoModal(true);
               }}
-              className="relative overflow-hidden bg-gradient-to-b from-sky-50 to-sky-100/50 hover:from-sky-100 hover:to-sky-200/50 dark:from-sky-950/30 dark:to-sky-900/20 dark:hover:from-sky-900/40 dark:hover:to-sky-900/30 border-2 border-sky-300/80 hover:border-sky-400 dark:border-sky-600/40 p-2 sm:p-2.5 rounded-2xl flex flex-col items-center justify-center shadow-xs hover:shadow-md cursor-pointer active:scale-92 active:shadow-inner transition-all group ring-1 ring-sky-400/20"
+              className="relative overflow-hidden bg-gradient-to-b from-sky-50 to-sky-100/50 hover:from-sky-100 hover:to-sky-200/50 dark:from-sky-950/30 dark:to-sky-900/20 dark:hover:from-sky-900/40 dark:hover:to-sky-900/30 border-2 border-sky-300/80 hover:border-sky-400 dark:border-sky-600/40 p-2 sm:p-2.5 rounded-2xl flex flex-col items-center justify-center shadow-xs hover:shadow-md cursor-pointer active:scale-92 active:shadow-inner transition-all group ring-1 ring-sky-400/20 select-none"
               title={lang === 'ar' ? 'عرض معلومات الحساب والاتصال' : 'View Account & Contact Details'}
             >
               <span className="absolute top-1 right-1 sm:top-1.5 sm:right-1.5 w-1.5 h-1.5 rounded-full bg-[#4FC3F7] animate-pulse"></span>
@@ -4155,8 +4157,8 @@ function ProfileView({
               </span>
               <span className="text-[8.5px] sm:text-[9.5px] text-sky-800 dark:text-sky-300 font-extrabold uppercase tracking-wide block mt-1">
                 {userProfile.idVerificationStatus === 'verified' 
-                  ? (lang === 'ar' ? 'موثق 🛡️' : 'Verified 🛡️') 
-                  : (lang === 'ar' ? 'معلومات ↗' : 'Info ↗')}
+                  ? (lang === 'ar' ? 'موثق' : 'Verified') 
+                  : (lang === 'ar' ? 'معلومات' : 'Info')}
               </span>
             </button>
         </div>
@@ -4727,7 +4729,7 @@ function ProfileView({
  <AnimatePresence>
  {showContactInfoModal && (
         <div 
-          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 overscroll-contain"
+          className="fixed inset-0 z-[99999] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 overscroll-contain"
           onClick={() => setShowContactInfoModal(false)}
           onTouchMove={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}
         >
@@ -4932,7 +4934,7 @@ function ProfileView({
   <AnimatePresence>
     {showReviewsModal && (
       <div 
-        className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overscroll-contain select-none"
+        className="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overscroll-contain select-none"
         style={{ touchAction: 'none' }}
         onClick={() => setShowReviewsModal(false)}
         onTouchMove={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}

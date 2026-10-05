@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { playSoftClick } from '../utils/audio';
 import { 
   X, 
   ShieldCheck, 
@@ -342,7 +343,7 @@ export default function PublicProfileView({
         )}
 
         {/* Full-width Edge-to-Edge Banner */}
-        <div className="w-full h-32 sm:h-40 bg-gradient-to-r from-[#1F2A44] via-[#1A2640] to-[#1E2E4E] relative flex items-start justify-between p-4">
+        <div className="w-full min-h-[9rem] sm:min-h-[10.5rem] pt-[max(1rem,calc(env(safe-area-inset-top,0px)+0.75rem))] px-4 pb-4 bg-gradient-to-r from-[#1F2A44] via-[#1A2640] to-[#1E2E4E] relative flex items-start justify-between">
           {/* Back button on banner */}
           <button 
             type="button"
@@ -413,18 +414,21 @@ export default function PublicProfileView({
             <button
               id="public-rating-badge-btn"
               type="button"
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
+                playSoftClick(currentUser?.audioEffectsEnabled !== false);
                 setModalReviewRoleTab(activeTab);
                 setShowReviewsModal(true);
               }}
-              className="bg-slate-50 hover:bg-slate-100/80 dark:bg-[#1A2640] dark:hover:bg-[#1E2E4E] border border-gray-150 dark:border-slate-800 p-2 sm:p-2.5 rounded-2xl flex flex-col items-center justify-center shadow-2xs cursor-pointer active:scale-95 transition-all group"
+              className="relative overflow-hidden bg-gradient-to-b from-amber-50 to-amber-100/50 hover:from-amber-100 hover:to-amber-200/50 dark:from-amber-950/30 dark:to-amber-900/20 dark:hover:from-amber-900/40 dark:hover:to-amber-900/30 border-2 border-amber-300/80 hover:border-amber-400 dark:border-amber-600/40 p-2 sm:p-2.5 rounded-2xl flex flex-col items-center justify-center shadow-xs hover:shadow-md cursor-pointer active:scale-92 active:shadow-inner transition-all group ring-1 ring-amber-400/20 select-none"
               title={isRtl ? 'انقر لعرض جميع التقييمات' : 'Click to view all reviews'}
             >
+              <span className="absolute top-1 right-1 sm:top-1.5 sm:right-1.5 w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
               <span className="text-sm sm:text-base font-black text-slate-900 dark:text-white font-mono flex items-center justify-center gap-0.5 leading-none group-hover:scale-105 transition-transform">
                 <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-400 shrink-0" />
                 {(activeTab === 'hunter' ? dynamicWorkerRating : godfatherAverageRating).toFixed(1)}
               </span>
-              <span className="text-[8.5px] sm:text-[9.5px] text-slate-500 dark:text-slate-300 font-extrabold uppercase tracking-wide block mt-1">
+              <span className="text-[8.5px] sm:text-[9.5px] text-amber-800 dark:text-amber-300 font-extrabold uppercase tracking-wide block mt-1">
                 {isRtl ? 'التقييمات' : 'Reviews'}
               </span>
             </button>
@@ -455,16 +459,23 @@ export default function PublicProfileView({
             <button
               id="public-info-modal-btn"
               type="button"
-              onClick={() => setShowContactInfoModal(true)}
-              className="bg-slate-50 hover:bg-slate-100/80 dark:bg-[#1A2640] dark:hover:bg-[#1E2E4E] border border-gray-150 dark:border-slate-800 p-2 sm:p-2.5 rounded-2xl flex flex-col items-center justify-center shadow-2xs cursor-pointer active:scale-95 transition-all group"
+              onClick={(e) => {
+                e.stopPropagation();
+                playSoftClick(currentUser?.audioEffectsEnabled !== false);
+                setShowContactInfoModal(true);
+              }}
+              className="relative overflow-hidden bg-gradient-to-b from-sky-50 to-sky-100/50 hover:from-sky-100 hover:to-sky-200/50 dark:from-sky-950/30 dark:to-sky-900/20 dark:hover:from-sky-900/40 dark:hover:to-sky-900/30 border-2 border-sky-300/80 hover:border-sky-400 dark:border-sky-600/40 p-2 sm:p-2.5 rounded-2xl flex flex-col items-center justify-center shadow-xs hover:shadow-md cursor-pointer active:scale-92 active:shadow-inner transition-all group ring-1 ring-sky-400/20 select-none"
               title={isRtl ? 'عرض تفاصيل الحساب والمعلومات' : 'View account info'}
             >
+              <span className="absolute top-1 right-1 sm:top-1.5 sm:right-1.5 w-1.5 h-1.5 rounded-full bg-[#4FC3F7] animate-pulse"></span>
               <span className="text-sm sm:text-base font-black font-mono flex items-center justify-center gap-1 text-slate-900 dark:text-white leading-none group-hover:scale-105 transition-transform">
                 <IdCard className="w-3.5 h-3.5 text-[#4FC3F7] shrink-0" />
                 <span className="text-xs sm:text-sm font-black font-mono tracking-tight">ID</span>
               </span>
-              <span className="text-[8.5px] sm:text-[9.5px] text-slate-500 dark:text-slate-300 font-extrabold uppercase tracking-wide block mt-1">
-                {targetUser.idVerificationStatus === 'verified' ? (isRtl ? 'معتمد وموثق' : 'Verified') : (isRtl ? 'معلومات' : 'Info')}
+              <span className="text-[8.5px] sm:text-[9.5px] text-sky-800 dark:text-sky-300 font-extrabold uppercase tracking-wide block mt-1">
+                {targetUser.idVerificationStatus === 'verified' 
+                  ? (isRtl ? 'موثق' : 'Verified') 
+                  : (isRtl ? 'معلومات' : 'Info')}
               </span>
             </button>
         </div>
@@ -718,7 +729,7 @@ export default function PublicProfileView({
     <AnimatePresence>
       {showContactInfoModal && (
         <div 
-          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 overscroll-contain"
+          className="fixed inset-0 z-[99999] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 overscroll-contain"
           onClick={() => setShowContactInfoModal(false)}
           onTouchMove={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}
         >
@@ -923,7 +934,7 @@ export default function PublicProfileView({
   <AnimatePresence>
     {showReviewsModal && (
       <div 
-        className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overscroll-contain select-none"
+        className="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overscroll-contain select-none"
         style={{ touchAction: 'none' }}
         onClick={() => setShowReviewsModal(false)}
         onTouchMove={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}

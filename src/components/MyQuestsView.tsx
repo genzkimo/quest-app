@@ -658,7 +658,7 @@ function MyQuestsView({
  audioEffectsEnabled={userProfile?.audioEffectsEnabled !== false}
  hapticFeedbackEnabled={userProfile?.hapticFeedbackEnabled !== false}
  >
- <div className="space-y-6 pt-3.5 sm:pt-5 pb-32 font-sans text-[#1F2A44] px-3 sm:px-6 w-full" style={{ direction: isRtl ? 'rtl' : 'ltr' }}>
+ <div className="space-y-6 pt-[max(1.75rem,calc(env(safe-area-inset-top,0px)+1.25rem))] pb-32 font-sans text-[#1F2A44] px-3 sm:px-6 w-full" style={{ direction: isRtl ? 'rtl' : 'ltr' }}>
  
  {/* Persistent Tabs (The PinnedTabBar) */}
  <div className="flex bg-gray-100 p-1.5 rounded-2xl border border-gray-200 items-center gap-2">

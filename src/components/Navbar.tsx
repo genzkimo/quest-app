@@ -259,7 +259,7 @@ function Navbar({
  },
  ];
 
- 
+
 
  const isRtl = lang === 'ar';
 
@@ -274,7 +274,7 @@ function Navbar({
  }`}
  >
  <header 
- className="relative min-h-[3.75rem] pt-[max(0.75rem,env(safe-area-inset-top,0px))] pb-3.5 flex items-center justify-between px-4 md:px-8 select-none border-none shadow-none bg-gradient-to-b from-white via-white/85 to-transparent dark:from-[#0B1120] dark:via-[#0B1120]/85 dark:to-transparent backdrop-blur-md"
+ className="relative min-h-[3.75rem] pt-[max(1rem,calc(env(safe-area-inset-top,0px)+0.5rem))] pb-3.5 flex items-center justify-between px-4 md:px-8 select-none border-none shadow-none bg-gradient-to-b from-white via-white/85 to-transparent dark:from-[#0B1120] dark:via-[#0B1120]/85 dark:to-transparent backdrop-blur-md"
  >
  {/* Brand Name Logo on the left */}
  <div className="flex items-center gap-2">

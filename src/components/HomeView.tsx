@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { isQuestExpired } from '../utils/questExpiry';
+import { serverShield } from '../utils/performanceEngine';
 import { 
  Wrench, 
  Truck, 
@@ -158,13 +159,7 @@ function HomeView({
  };
 
  useEffect(() => {
- Geolocator.getPermissionState().then((perm) => {
- if (perm === 'granted' || perm === 'prompt' || !userLoc) {
  requestHomeLocation(false);
- } else if (perm === 'denied') {
- setGpsDenied(true);
- }
- });
  }, []);
 
  const calculateDistanceKm = (targetLat: number, targetLng: number) => {
@@ -618,29 +613,30 @@ function HomeView({
    return quests.filter(q => q.creatorId === userProfile?.id && q.status !== 'completed' && q.status !== 'cancelled' && q.status !== 'cancelled_by_timeout' && q.status !== 'stale_cleared' && !q.archived && !isQuestExpired(q)).length;
  }, [quests, userProfile?.hasActiveQuest, userProfile?.id]);
 
- const handleRefresh = async () => {
- try {
- // 1. Fetch latest quests directly from Firestore
- const questsQuery = query(collection(db, 'quests'), orderBy('createdAt', 'desc'), limit(300));
- const questsSnapshot = await getDocs(questsQuery);
- const fetchedQuests: Quest[] = [];
- questsSnapshot.forEach((doc) => {
-   const qData = { id: doc.id, ...doc.data() } as Quest;
-   if (!isQuestExpired(qData)) {
-     fetchedQuests.push(qData);
-   }
- });
+  const handleRefresh = async () => {
+    try {
+      // Coalesced cached fetch protects Firestore from rapid pull-to-refresh spikes
+      const fetchedQuests = await serverShield.coalesceFetch('quests_feed_refresh', async () => {
+        const questsQuery = query(collection(db, 'quests'), orderBy('createdAt', 'desc'), limit(300));
+        const questsSnapshot = await getDocs(questsQuery);
+        const list: Quest[] = [];
+        questsSnapshot.forEach((doc) => {
+          const qData = { id: doc.id, ...doc.data() } as Quest;
+          if (!isQuestExpired(qData)) {
+            list.push(qData);
+          }
+        });
+        return list;
+      }, { forceFresh: true, ttlMs: 15000 });
 
- // Update parent global states
- if (setQuests && fetchedQuests.length > 0) {
- setQuests(fetchedQuests);
- }
- 
- } catch (error) {
- console.error("Failed to refresh feed:", error);
- showToast(lang === 'ar' ? ' فشل تحديث البيانات، يرجى التحقق من اتصال الشبكة.' : ' Failed to update feed. Please check network.');
- }
- };
+      if (setQuests && fetchedQuests.length > 0) {
+        setQuests(fetchedQuests);
+      }
+    } catch (error) {
+      console.error("Failed to refresh feed:", error);
+      showToast(lang === 'ar' ? ' فشل تحديث البيانات، يرجى التحقق من اتصال الشبكة.' : ' Failed to update feed. Please check network.');
+    }
+  };
 
  return (
  <PullToRefresh

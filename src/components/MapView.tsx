@@ -28,7 +28,9 @@ import UnifiedQuestCard from './UnifiedQuestCard';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Geolocator } from '../utils/geolocator';
+import { resolveCityFromCoords } from '../utils/locationFormatter';
 import { Capacitor } from '@capacitor/core';
+import { SpatialOptimizer, LatLngBounds, serverShield } from '../utils/performanceEngine';
 
 // Complete Algeria Geographic Bounds & Center (covering all 58 wilayas from coastal north to deep south)
 const ALGERIA_BOUNDS: L.LatLngBoundsExpression = [
@@ -90,11 +92,23 @@ function MapView({
  }, [propUserLoc, isGpsConfirmed]);
  const [selectedQuest, setSelectedQuest] = useState<Quest | null>(null);
  const [pinnedQuest, setPinnedQuest] = useState<Quest | null>(null);
+ const [viewportBounds, setViewportBounds] = useState<LatLngBounds | null>(null);
  const [userLocAccuracy, setUserLocAccuracy] = useState<number | null>(null);
  const [isGpsLost, setIsGpsLost] = useState<boolean>(false);
  const [isLocStale, setIsLocStale] = useState<boolean>(false);
  const [isInfoPanelMinimized, setIsInfoPanelMinimized] = useState<boolean>(false);
  const accuracyCircleRef = useRef<L.Circle | null>(null);
+
+ // Accurate GPS check: only true when accuracy is verified and <= 100 meters
+ const isAccurateGps = useMemo(() => {
+ return isGpsConfirmed && !!userLoc && typeof userLocAccuracy === 'number' && userLocAccuracy <= 100;
+ }, [isGpsConfirmed, userLoc, userLocAccuracy]);
+
+ // City-level name resolved for approximate/inaccurate mode
+ const detectedCityName = useMemo(() => {
+ if (!userLoc) return '';
+ return resolveCityFromCoords(userLoc.lat, userLoc.lng, lang);
+ }, [userLoc, lang]);
  const watchIdRef = useRef<number | null>(null);
  const lastLocUpdateTimeRef = useRef<number>(0);
  const updateCountRef = useRef<number>(0);
@@ -141,21 +155,24 @@ function MapView({
  }, [navigatingQuest]);
 
  const handleRefresh = async () => {
- try {
- const questsQuery = query(collection(db, 'quests'), orderBy('createdAt', 'desc'), limit(300));
- const questsSnapshot = await getDocs(questsQuery);
- const fetchedQuests: Quest[] = [];
- questsSnapshot.forEach((doc) => {
- fetchedQuests.push({ id: doc.id, ...doc.data() } as any);
- });
- if (setQuests && fetchedQuests.length > 0) {
- setQuests(fetchedQuests);
- }
- showToast(lang === 'ar' ? ' تم تحديث كويستات الخريطة بنجاح!' : ' Map quests refreshed successfully!');
- } catch (error) {
- console.error("Failed to refresh quests in MapView:", error);
- showToast(lang === 'ar' ? ' فشل تحديث بيانات الخريطة.' : ' Failed to update map data.');
- }
+  try {
+   const fetchedQuests = await serverShield.coalesceFetch('quests_map_refresh', async () => {
+    const questsQuery = query(collection(db, 'quests'), orderBy('createdAt', 'desc'), limit(300));
+    const questsSnapshot = await getDocs(questsQuery);
+    const list: Quest[] = [];
+    questsSnapshot.forEach((doc) => {
+     list.push({ id: doc.id, ...doc.data() } as any);
+    });
+    return list;
+   }, { forceFresh: true, ttlMs: 15000 });
+   if (setQuests && fetchedQuests.length > 0) {
+    setQuests(fetchedQuests);
+   }
+   showToast(lang === 'ar' ? ' تم تحديث كويستات الخريطة بنجاح!' : ' Map quests refreshed successfully!');
+  } catch (error) {
+   console.error("Failed to refresh quests in MapView:", error);
+   showToast(lang === 'ar' ? ' فشل تحديث بيانات الخريطة.' : ' Failed to update map data.');
+  }
  };
  
  // Automatically select quest passed from home or other views
@@ -560,7 +577,7 @@ function MapView({
  updateCountRef.current = currentCount + 1;
 
  const fetchedLoc = { lat: loc.lat, lng: loc.lng };
- const accuracy = loc.accuracy ? Math.round(loc.accuracy) : 25;
+ const accuracy = loc.accuracy ? Math.round(loc.accuracy) : 250;
  setUserLoc(fetchedLoc);
  setIsGpsConfirmed(true);
  setIsLocStale(false);
@@ -573,10 +590,17 @@ function MapView({
  setIsGpsLost(false);
  Geolocator.saveCachedLocation(fetchedLoc.lat, fetchedLoc.lng);
 
+ const isPrecise = accuracy <= 100;
+
  if (mapInstanceRef.current && !hasFlownToUserLocRef.current && !navigatingQuest) {
    hasFlownToUserLocRef.current = true;
    userHasMovedCameraRef.current = false;
-   mapInstanceRef.current.flyTo([fetchedLoc.lat, fetchedLoc.lng], 15, { animate: true, duration: 1.8 });
+   if (isPrecise) {
+     mapInstanceRef.current.flyTo([fetchedLoc.lat, fetchedLoc.lng], 15, { animate: true, duration: 1.8 });
+   } else {
+     // Location is not accurate: "اعرض المدينة فقط" -> zoom 11
+     mapInstanceRef.current.flyTo([fetchedLoc.lat, fetchedLoc.lng], 11, { animate: true, duration: 1.5 });
+   }
  }
  },
  (error) => {
@@ -600,9 +624,10 @@ function MapView({
 
  try {
  // 1. Try to get accurate physical location directly first
- const accurate = await Geolocator.getAccuratePhysicalLocation();
+ await Geolocator.requestPermissions();
+ const accurate = await Geolocator.getAccuratePhysicalLocation(undefined, isManualReset);
  const fetchedLoc = { lat: accurate.lat, lng: accurate.lng };
- const accuracy = accurate.accuracy ? Math.round(accurate.accuracy) : 15;
+ const accuracy = accurate.accuracy ? Math.round(accurate.accuracy) : 250;
 
  setUserLoc(fetchedLoc);
  setIsGpsConfirmed(true);
@@ -616,6 +641,8 @@ function MapView({
  setIsGpsServiceEnabled(true);
  setIsGpsLost(false);
  Geolocator.saveCachedLocation(fetchedLoc.lat, fetchedLoc.lng);
+
+ const isPrecise = accuracy <= 100;
 
  if (!hasFlownToUserLocRef.current) {
    hasFlownToUserLocRef.current = true;
@@ -631,11 +658,21 @@ function MapView({
          [dest.lat, dest.lng]
        ], { padding: [60, 60] });
      } else {
-       mapInstanceRef.current.flyTo([fetchedLoc.lat, fetchedLoc.lng], 15, { animate: true, duration: 1.8 });
+       if (isPrecise) {
+         mapInstanceRef.current.flyTo([fetchedLoc.lat, fetchedLoc.lng], 15, { animate: true, duration: 1.8 });
+       } else {
+         // Location is not accurate: "اعرض المدينة فقط" -> zoom 11
+         mapInstanceRef.current.flyTo([fetchedLoc.lat, fetchedLoc.lng], 11, { animate: true, duration: 1.5 });
+       }
      }
    }
  }
- showToast(lang === 'ar' ? ' تم تأكيد موقعك الفعلي بنجاح وتوسيط الخريطة!' : ' GPS location verified & centered!');
+ if (isPrecise) {
+   showToast(lang === 'ar' ? ' تم تأكيد موقعك الفعلي بدقة وتوسيط الخريطة!' : ' GPS location verified & centered!');
+ } else {
+   const city = resolveCityFromCoords(fetchedLoc.lat, fetchedLoc.lng, lang);
+   showToast(lang === 'ar' ? ` تم عرض نطاق المدينة: ${city}` : ` City level view: ${city}`);
+ }
  startGpsWatch();
  return;
  } catch (err: any) {
@@ -741,23 +778,11 @@ function MapView({
     triggerHaptic('sharp', hapticEnabled);
   };
 
- // Permission-aware GPS initialization & online/offline recovery
+ // Direct GPS acquisition on map entry
  useEffect(() => {
- Geolocator.getPermissionState().then((perm) => {
- if (perm === 'granted' || userLoc) {
  setIsGpsServiceEnabled(true);
  setGpsDenied(false);
  triggerGPSGet(true);
- } else if (perm === 'denied') {
- setIsGpsServiceEnabled(false);
- setGpsDenied(true);
- } else {
- // 'prompt' mode: allow map interaction freely and attempt silent GPS request
- setIsGpsServiceEnabled(true);
- setGpsDenied(false);
- triggerGPSGet(true);
- }
- });
 
  const gpsIntervalId = setInterval(() => {
  Geolocator.getPermissionState().then((perm) => {
@@ -841,18 +866,31 @@ function MapView({
  }, 5000); // Wait 5 seconds of absolute stillness
  };
 
- map.on('dragstart', handleUserInteractionStart);
- map.on('zoomstart', handleUserInteractionStart);
- map.on('dragend', handleUserInteractionEnd);
- map.on('zoomend', () => {
- setMapZoom(map.getZoom());
- handleUserInteractionEnd();
- });
- map.on('touchstart', handleUserInteractionStart);
- map.on('touchend', handleUserInteractionEnd);
- map.on('mousedown', handleUserInteractionStart);
- map.on('mouseup', handleUserInteractionEnd);
-
+  const updateBounds = () => {
+   if (!map) return;
+   const b = map.getBounds();
+   setViewportBounds({
+    southWest: { lat: b.getSouthWest().lat, lng: b.getSouthWest().lng },
+    northEast: { lat: b.getNorthEast().lat, lng: b.getNorthEast().lng }
+   });
+  };
+  updateBounds();
+  map.on('moveend', updateBounds);
+  map.on('dragstart', handleUserInteractionStart);
+  map.on('zoomstart', handleUserInteractionStart);
+  map.on('dragend', () => {
+   updateBounds();
+   handleUserInteractionEnd();
+  });
+  map.on('zoomend', () => {
+   setMapZoom(map.getZoom());
+   updateBounds();
+   handleUserInteractionEnd();
+  });
+  map.on('touchstart', handleUserInteractionStart);
+  map.on('touchend', handleUserInteractionEnd);
+  map.on('mousedown', handleUserInteractionStart);
+  map.on('mouseup', handleUserInteractionEnd);
  mapInstanceRef.current = map;
  }
 
@@ -879,6 +917,7 @@ function MapView({
  polylineRef.current = null;
  }
  if (mapInstanceRef.current) {
+      mapInstanceRef.current.off('moveend');
  mapInstanceRef.current.off('dragstart');
  mapInstanceRef.current.off('zoomstart');
  mapInstanceRef.current.off('dragend');
@@ -921,11 +960,15 @@ function MapView({
  }
  }
  } else if (userLoc) {
- // When location is captured, fly directly to user location!
+ // When location is captured, fly to user location (street if accurate, city if not)!
  if (!hasFlownToUserLocRef.current) {
    hasFlownToUserLocRef.current = true;
    userHasMovedCameraRef.current = false;
-   mapInstanceRef.current.flyTo([userLoc.lat, userLoc.lng], 15, { animate: true, duration: 1.5 });
+   if (isAccurateGps) {
+     mapInstanceRef.current.flyTo([userLoc.lat, userLoc.lng], 15, { animate: true, duration: 1.5 });
+   } else {
+     mapInstanceRef.current.flyTo([userLoc.lat, userLoc.lng], 11, { animate: true, duration: 1.5 });
+   }
  } else if (hasCenteredGPS && gpsActive && !isUserInteractingRef.current && !userHasMovedCameraRef.current) {
    mapInstanceRef.current.setView([userLoc.lat, userLoc.lng], mapInstanceRef.current.getZoom());
  }
@@ -941,8 +984,8 @@ function MapView({
  // A map of desired markers to place on the map
  const desiredMarkers = new Map<string, { latlng: L.LatLngExpression; icon: L.DivIcon; onClick?: () => void }>();
 
- // Add User Current Location pulsing radar icon (ONLY after confirmed GPS acquisition)
- if (isGpsConfirmed && userLoc) {
+ // Add User Current Location pulsing radar icon (ONLY when GPS is ACCURATE <= 100m)
+ if (isAccurateGps && userLoc) {
  const isGray = isLocStale || isGpsLost || !gpsActive || (typeof navigator !== 'undefined' && !navigator.onLine);
  const pingBg = isGray ? 'bg-[#9CA3AF]/30' : 'bg-[#4FC3F7]/30';
  const pulseBg = isGray ? 'bg-[#9CA3AF]/10' : 'bg-[#4FC3F7]/10';
@@ -1033,10 +1076,17 @@ function MapView({
  }
 
  // Filter quests that aren't actively navigated, selected, or pinned
- const questsToPlot = filteredMapQuests.filter(quest => 
- !(navigatingQuest && navigatingQuest.id === quest.id) &&
- !(targetQuest && targetQuest.id === quest.id)
- );
+  // Viewport Culling & LOD Budgeting (Uber/Airbnb architecture)
+  const culledQuests = SpatialOptimizer.cullAndBudgetQuests(
+   filteredMapQuests,
+   getQuestCoords,
+   viewportBounds,
+   140
+  );
+  const questsToPlot = culledQuests.filter(quest => 
+   !(navigatingQuest && navigatingQuest.id === quest.id) &&
+   !(targetQuest && targetQuest.id === quest.id)
+  );
 
  // Calculate dynamic distance threshold for clustering based on zoom level
  const zoom = mapZoom;
@@ -1208,8 +1258,8 @@ function MapView({
  }
  }
 
- // Update GPS Accuracy Circle on Map
- if (gpsActive && userLoc && userLocAccuracy && userLocAccuracy > 0) {
+ // Update GPS Accuracy Circle on Map (ONLY when GPS is accurate <= 100m)
+ if (isAccurateGps && gpsActive && userLoc && userLocAccuracy && userLocAccuracy > 0) {
  if (accuracyCircleRef.current) {
  accuracyCircleRef.current.setLatLng([userLoc.lat, userLoc.lng]);
  accuracyCircleRef.current.setRadius(userLocAccuracy);
@@ -1427,9 +1477,9 @@ function MapView({
  <div className="absolute top-0 left-0 right-0 z-[10005] bg-slate-950/80 backdrop-blur-md p-4 flex items-center justify-between border-b border-slate-800">
  {/* Left section: App name or state */}
  <div className="flex items-center gap-2 select-none">
- <span className="w-2.5 h-2.5 bg-[#FF3B7C] rounded-full animate-pulse"></span>
+ <span className="w-2.5 h-2.5 rounded-full bg-[#4FC3F7] animate-pulse"></span>
  <span className="text-[10px] text-slate-300 font-black tracking-widest uppercase">
- {lang === 'ar' ? 'خريطة المهام ' : 'LIVE QUEST MAP'}
+ {lang === 'ar' ? 'خريطة المهام' : 'LIVE QUEST MAP'}
  </span>
  </div>
 
@@ -1464,33 +1514,7 @@ function MapView({
  </button>
  )}
 
- {/* Non-intrusive GPS Activation Pill on Map when not yet confirmed */}
- <AnimatePresence>
- {!isGpsConfirmed && !navigatingQuest && (
-   <motion.div
-     initial={{ y: -30, opacity: 0 }}
-     animate={{ y: 0, opacity: 1 }}
-     exit={{ y: -30, opacity: 0 }}
-     className="absolute top-16 sm:top-20 left-4 right-4 max-w-sm mx-auto z-[45] bg-slate-950/90 text-white px-3.5 py-2.5 rounded-2xl border border-sky-400/40 shadow-xl backdrop-blur-md flex items-center justify-between gap-3 text-start select-none"
-     style={{ direction: isRtl ? 'rtl' : 'ltr' }}
-   >
-     <div className="flex items-center gap-2.5 min-w-0">
-       <MapPin className="w-4 h-4 text-sky-400 shrink-0 animate-bounce" />
-       <span className="text-[11px] font-bold text-slate-200 truncate">
-         {isRtl ? 'تحديد الموقع الميداني غير مفعّل' : 'Field GPS location disabled'}
-       </span>
-     </div>
-     <button
-       onClick={() => triggerGPSGet(true)}
-       disabled={isLocating}
-       className="px-3 py-1.5 bg-sky-500 hover:bg-sky-400 active:scale-95 text-slate-950 text-[10px] font-black rounded-xl transition cursor-pointer shrink-0 shadow-sm flex items-center gap-1.5"
-     >
-       <Compass className={`w-3.5 h-3.5 ${isLocating ? 'animate-spin' : ''}`} />
-       <span>{isLocating ? (isRtl ? 'جاري القفل...' : 'Locating...') : (isRtl ? 'تفعيل موقعي' : 'Enable GPS')}</span>
-     </button>
-   </motion.div>
- )}
- </AnimatePresence>
+ 
 
  {/* GPS Calibration Waiting Banner during Navigation */}
  <AnimatePresence>
@@ -1617,7 +1641,7 @@ function MapView({
  >
  <Target className={`w-5.5 h-5.5 ${isLocating ? 'animate-pulse text-[#FFD34D]' : 'text-white'}`} />
  <span className="absolute right-14 bg-slate-900 text-white text-[9px] font-bold px-2.5 py-1 rounded shadow-lg pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
- {lang === 'ar' ? 'تحديد موقعي الميداني' : 'Snap Camera to GPS'}
+ {lang === "ar" ? "تحديد موقعي (GPS)" : "Snap Camera to GPS"}
  </span>
  </button>
 

@@ -33,7 +33,6 @@ import UnifiedQuestCard from './components/UnifiedQuestCard';
 const MapView = React.lazy(() => import('./components/MapView'));
 const MyQuestsView = React.lazy(() => import('./components/MyQuestsView'));
 const ProfileView = React.lazy(() => import('./components/ProfileView'));
-
 const PublicProfileView = React.lazy(() => import('./components/PublicProfileView'));
 const ReciprocalRatingModal = React.lazy(() => import('./components/ReciprocalRatingModal'));
 const NotificationScreen = React.lazy(() => import('./components/NotificationScreen'));
@@ -56,6 +55,7 @@ import SmartContextualGuide from './components/SmartContextualGuide';
 import ActiveQuestFloatingWidget from './components/ActiveQuestFloatingWidget';
 import { motion, AnimatePresence } from 'motion/react';
 import { Geolocator } from './utils/geolocator';
+import { serverShield } from './utils/performanceEngine';
 import { calculateBookingFee } from './utils/fee';
 import AuthScreen from './components/AuthScreen';
 import { getDeviceLanguage } from './utils/language';
@@ -560,7 +560,7 @@ export default function App() {
  });
 
  useEffect(() => {
- if (!userLoc && navigator.geolocation) {
+ if (typeof navigator !== "undefined" && navigator.geolocation) {
  navigator.geolocation.getCurrentPosition(
  (pos) => {
  const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
@@ -568,7 +568,7 @@ export default function App() {
  Geolocator.saveCachedLocation(coords.lat, coords.lng);
  },
  (err) => console.warn("App GPS auto-init warning:", err),
- { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+ { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
  );
  }
  }, []);
@@ -1254,6 +1254,8 @@ export default function App() {
  loadedQuestsData.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
  
  setQuests(loadedQuestsData);
+        serverShield.setCache('quests_feed_refresh', loadedQuestsData);
+        serverShield.setCache('quests_map_refresh', loadedQuestsData);
  setLoadedQuests(true);
  }, (e) => {
  handleFirestoreError(e, OperationType.LIST, 'quests');

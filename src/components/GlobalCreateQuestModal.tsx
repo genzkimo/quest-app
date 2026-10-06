@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
  X,
  Plus,
@@ -34,7 +34,7 @@ import { translations } from '../data/translations';
 import { compressImage } from '../utils/imageCompressor';
 import InfoButton from './InfoButton';
 import { Geolocator } from '../utils/geolocator';
-import { resolveNeighborhoodFromCoords, cleanLocationName } from '../utils/locationFormatter';
+import { resolveNeighborhoodFromCoords, resolveCityFromCoords, cleanLocationName } from '../utils/locationFormatter';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { storage } from '../utils/firebase';
 import { lockBodyScroll } from '../utils/scrollLock';
@@ -148,6 +148,7 @@ export default function GlobalCreateQuestModal({
  const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
  const [locationText, setLocationText] = useState<string>('');
  const [gpsAccuracyInfo, setGpsAccuracyInfo] = useState<string>('');
+ const [gpsAccuracyValue, setGpsAccuracyValue] = useState<number | null>(null);
 
  // Long-term Job additional fields
  const [salaryPeriod, setSalaryPeriod] = useState<'monthly' | 'weekly' | 'daily' | 'hourly'>('monthly');
@@ -166,83 +167,106 @@ export default function GlobalCreateQuestModal({
  const cameraInputRef = useRef<HTMLInputElement>(null);
 
  // Play audio clicking feed
- const playSound = () => {
- if (audioEnabled) {
- playSoftClick(true);
- }
- };
+  const playSound = () => {
+    if (audioEnabled) {
+      playSoftClick(true);
+    }
+  };
 
- // Reset fields on open or close
- useEffect(() => {
- if (isOpen) {
- setStep(1);
- setQuestType('quick');
- setTitle('');
- setDesc('');
- setCategory('صيانة');
- setUrgency('normal');
- setCashReward(1500);
- setRequiredWorkers(1);
- setImages([]);
- setGpsCoords(null);
- setLocationText('');
- setGpsAccuracyInfo('');
- setSalaryPeriod('monthly');
- setEmploymentType('full_time');
- setDurationType('ongoing');
- setStartDate(new Date().toISOString().split('T')[0]);
- setEndDate('');
- setSkillsText('');
- }
- }, [isOpen]);
+  const handleAutoGPS = useCallback(async (withSound: boolean = true) => {
+    if (withSound) {
+      playSound();
+    }
+    setGpsLoading(true);
+    setGpsAccuracyInfo(lang === "ar" ? "جاري الاتصال بـ GPS وطلب دقة الموقع..." : "Connecting GPS & requesting high accuracy...");
 
- // Require manual GPS trigger via the button on Step 3
- if (!isOpen) return null;
+    try {
+      await Geolocator.requestPermissions();
 
- const handleAutoGPS = async () => {
- playSound();
- setGpsLoading(true);
- setGpsCoords(null);
- setGpsAccuracyInfo(lang === 'ar' ? 'جاري الاتصال بـ GPS وطلب دقة الموقع...' : 'Connecting GPS & requesting high accuracy...');
-
- try {
- // 1. Explicitly request permissions (same as MapView)
- await Geolocator.requestPermissions();
-
- // 2. Clear stale cache and trigger high-accuracy hardware GPS
       const accurate = await Geolocator.getAccuratePhysicalLocation((sampleCount, bestAcc) => {
         setGpsAccuracyInfo(
-          lang === 'ar'
+          lang === "ar"
             ? `جاري معايرة الدقة... عينات: ${sampleCount} • أفضل دقة: ±${Math.round(bestAcc)}م`
             : `Calibrating precision... Samples: ${sampleCount} • Best accuracy: ±${Math.round(bestAcc)}m`
         );
       }, true);
 
- const coords = { lat: accurate.lat, lng: accurate.lng };
- setGpsCoords(coords);
- Geolocator.saveCachedLocation(coords.lat, coords.lng);
- 
- const resolvedName = resolveNeighborhoodFromCoords(coords.lat, coords.lng, '', lang);
- if (resolvedName && !locationText) {
- setLocationText(resolvedName);
- }
+      const coords = { lat: accurate.lat, lng: accurate.lng };
+      const accuracy = typeof accurate.accuracy === "number" ? Math.round(accurate.accuracy) : 250;
+      setGpsCoords(coords);
+      setGpsAccuracyValue(accuracy);
+      Geolocator.saveCachedLocation(coords.lat, coords.lng);
 
- setGpsAccuracyInfo(
- lang === 'ar'
- ? `تمت معايرة الموقع بنجاح (±${Math.round(accurate.accuracy)}م)`
- : `GPS location tagged (±${Math.round(accurate.accuracy)}m)`
- );
- } catch (err) {
- console.warn("GPS Calibration Notice:", err);
- setGpsAccuracyInfo(
- lang === 'ar'
- ? 'تعذر التقاط إشارة GPS، يرجى تفعيل خدمة الموقع ثم إعادة المحاولة'
- : 'Live GPS hardware fix unavailable, please verify location services'
- );
- } finally {
- setGpsLoading(false);
- }
- };
+      const isAccurate = accuracy <= 100;
+      const resolvedName = isAccurate
+        ? resolveNeighborhoodFromCoords(coords.lat, coords.lng, "", lang)
+        : resolveCityFromCoords(coords.lat, coords.lng, lang);
+
+      if (resolvedName) {
+        setLocationText((prev) => (prev && prev.trim() ? prev : resolvedName));
+      }
+
+      setGpsAccuracyInfo(
+        isAccurate
+          ? (lang === "ar" ? `تم رصد الموقع بدقة عالية (±${accuracy}م)` : `Accurate GPS tagged (±${accuracy}m)`)
+          : (lang === "ar" ? `تم تحديد نطاق المدينة فقط: ${resolvedName}` : `City level only: ${resolvedName}`)
+      );
+    } catch (err) {
+      console.warn("GPS Calibration Notice:", err);
+      const cached = Geolocator.getCachedLocation();
+      if (cached) {
+        setGpsCoords(cached);
+        setGpsAccuracyValue(250);
+        const resolvedName = resolveCityFromCoords(cached.lat, cached.lng, lang);
+        if (resolvedName) {
+          setLocationText((prev) => (prev && prev.trim() ? prev : resolvedName));
+        }
+        setGpsAccuracyInfo(lang === "ar" ? `تم تحديد نطاق المدينة: ${resolvedName}` : `City level only: ${resolvedName}`);
+      } else {
+        setGpsAccuracyInfo(
+          lang === "ar"
+            ? "تعذر التقاط إشارة GPS، يرجى تفعيل خدمة الموقع ثم إعادة المحاولة"
+            : "Live GPS hardware fix unavailable, please verify location services"
+        );
+      }
+    } finally {
+      setGpsLoading(false);
+    }
+  }, [lang, audioEnabled]);
+
+  // Reset fields on open and auto-request GPS
+  useEffect(() => {
+    if (isOpen) {
+      setStep(1);
+      setQuestType("quick");
+      setTitle("");
+      setDesc("");
+      setCategory("صيانة");
+      setUrgency("normal");
+      setCashReward(1500);
+      setRequiredWorkers(1);
+      setImages([]);
+      setGpsCoords(null);
+      setLocationText("");
+      setGpsAccuracyInfo("");
+      setGpsAccuracyValue(null);
+      setSalaryPeriod("monthly");
+      setEmploymentType("full_time");
+      setDurationType("ongoing");
+      setStartDate(new Date().toISOString().split("T")[0]);
+      setEndDate("");
+      setSkillsText("");
+      handleAutoGPS(false);
+    }
+  }, [isOpen, handleAutoGPS]);
+
+  useEffect(() => {
+    if (isOpen && step === 3 && !gpsCoords && !gpsLoading) {
+      handleAutoGPS(false);
+    }
+  }, [isOpen, step, gpsCoords, gpsLoading, handleAutoGPS]);
+
+  if (!isOpen) return null;
 
  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
  const files = e.target.files;
@@ -653,8 +677,20 @@ export default function GlobalCreateQuestModal({
 
  <div className="bg-white dark:bg-slate-900/40 border border-slate-200/80 dark:border-white/5 rounded-3xl p-6 text-center space-y-5 shadow-sm">
  <div className="flex justify-center">
- <div className={`w-16 h-16 rounded-full flex items-center justify-center ${gpsCoords ? 'bg-sky-500/10 border-2 border-sky-500' : 'bg-[#FF3B7C]/10 border-2 border-dashed border-[#FF3B7C]'} relative`}>
- <MapPin className={`w-8 h-8 ${gpsCoords ? 'text-sky-500 dark:text-sky-400' : 'text-[#FF3B7C] animate-bounce'}`} />
+ <div className={`w-16 h-16 rounded-full flex items-center justify-center ${
+   gpsCoords 
+     ? (typeof gpsAccuracyValue === 'number' && gpsAccuracyValue <= 100
+         ? 'bg-sky-500/10 border-2 border-sky-500' 
+         : 'bg-amber-500/10 border-2 border-amber-500') 
+     : 'bg-[#FF3B7C]/10 border-2 border-dashed border-[#FF3B7C]'
+ } relative`}>
+ <MapPin className={`w-8 h-8 ${
+   gpsCoords 
+     ? (typeof gpsAccuracyValue === 'number' && gpsAccuracyValue <= 100 
+         ? 'text-sky-500 dark:text-sky-400' 
+         : 'text-amber-500 dark:text-amber-400') 
+     : 'text-[#FF3B7C] animate-bounce'
+ }`} />
  {gpsLoading && (
  <span className="absolute inset-0 rounded-full border-4 border-t-transparent border-[#FF3B7C] animate-spin"></span>
  )}
@@ -663,12 +699,24 @@ export default function GlobalCreateQuestModal({
 
  {gpsCoords ? (
  <div className="space-y-2">
- <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-sky-500/10 border border-sky-500/20 text-sky-600 dark:text-sky-400 text-[10px] font-black rounded-lg uppercase tracking-wider">
+ <div className={`inline-flex items-center gap-1.5 px-3 py-1 border text-[10px] font-black rounded-lg uppercase tracking-wider ${
+   typeof gpsAccuracyValue === 'number' && gpsAccuracyValue <= 100
+     ? 'bg-sky-500/10 border-sky-500/20 text-sky-600 dark:text-sky-400'
+     : 'bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400'
+ }`}>
  <Check className="w-3.5 h-3.5" />
- <span>{lang === 'ar' ? 'تم التقاط إحداثيات الـ GPS بنجاح' : 'GPS Coordinates Tagged'}</span>
+ <span>
+   {typeof gpsAccuracyValue === 'number' && gpsAccuracyValue <= 100
+     ? (lang === 'ar' ? 'تم التقاط إحداثيات الـ GPS بدقة' : 'GPS Coordinates Tagged')
+     : (lang === 'ar' ? `تم تحديد نطاق المدينة (${locationText || 'المدينة'})` : 'City Level Tagged')}
+ </span>
  </div>
  {gpsAccuracyInfo && (
- <p className="text-[11px] font-bold text-sky-600 dark:text-sky-400/90 bg-sky-500/10 px-2.5 py-1 rounded-md inline-block">
+ <p className={`text-[11px] font-bold px-2.5 py-1 rounded-md inline-block ${
+   typeof gpsAccuracyValue === 'number' && gpsAccuracyValue <= 100
+     ? 'text-sky-600 dark:text-sky-400/90 bg-sky-500/10'
+     : 'text-amber-600 dark:text-amber-400/90 bg-amber-500/10'
+ }`}>
  {gpsAccuracyInfo}
  </p>
  )}
@@ -689,7 +737,7 @@ export default function GlobalCreateQuestModal({
  <button
  id="gps-trigger-button"
  type="button"
- onClick={handleAutoGPS}
+ onClick={() => handleAutoGPS(true)}
  disabled={gpsLoading}
  className="w-full py-4 rounded-2xl bg-gradient-to-r from-[#FF3B7C] to-[#E0245E] hover:opacity-95 text-white font-extrabold text-xs shadow-lg shadow-[#FF3B7C]/15 cursor-pointer flex items-center justify-center gap-2 select-none disabled:opacity-50"
  >

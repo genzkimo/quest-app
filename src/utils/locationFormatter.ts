@@ -122,3 +122,87 @@ export function resolveNeighborhoodFromCoords(
 
  return lang === 'ar' ? 'موقع جغرافي محدد' : 'Tagged Location';
 }
+
+/**
+ * Resolves city/wilaya name only (without street/neighborhood precision).
+ * Used when GPS location is coarse/inaccurate to show only the city.
+ */
+export function resolveCityFromCoords(
+ lat: number,
+ lng: number,
+ lang: 'ar' | 'fr' | 'en' = 'ar'
+): string {
+ // Algiers Region (36.60 to 36.88 N, 2.8 to 3.35 E)
+ if (lat >= 36.60 && lat <= 36.88 && lng >= 2.80 && lng <= 3.35) {
+ return lang === 'ar' ? 'الجزائر العاصمة' : 'Alger';
+ }
+ // Oran Region (35.50 to 35.85 N, -0.80 to -0.40 E)
+ if (lat >= 35.50 && lat <= 35.85 && lng >= -0.80 && lng <= -0.40) {
+ return lang === 'ar' ? 'وهران' : 'Oran';
+ }
+ // Constantine Region (36.25 to 36.45 N, 6.50 to 6.75 E)
+ if (lat >= 36.25 && lat <= 36.45 && lng >= 6.50 && lng <= 6.75) {
+ return lang === 'ar' ? 'قسنطينة' : 'Constantine';
+ }
+ // M'Sila / Ben Srour Region (35.0 to 35.8 N, 4.0 to 5.0 E)
+ if (lat >= 35.0 && lat <= 35.8 && lng >= 4.0 && lng <= 5.0) {
+ return lang === 'ar' ? 'المسيلة' : 'M\'Sila';
+ }
+ // Annaba
+ if (lat >= 36.80 && lat <= 37.00 && lng >= 7.60 && lng <= 7.90) {
+ return lang === 'ar' ? 'عنابة' : 'Annaba';
+ }
+ // Blida
+ if (lat >= 36.35 && lat <= 36.60 && lng >= 2.70 && lng <= 3.00) {
+ return lang === 'ar' ? 'البليدة' : 'Blida';
+ }
+ // Setif
+ if (lat >= 36.10 && lat <= 36.30 && lng >= 5.30 && lng <= 5.55) {
+ return lang === 'ar' ? 'سطيف' : 'Sétif';
+ }
+ // Batna
+ if (lat >= 35.45 && lat <= 35.70 && lng >= 6.05 && lng <= 6.35) {
+ return lang === 'ar' ? 'باتنة' : 'Batna';
+ }
+ // Tlemcen
+ if (lat >= 34.80 && lat <= 35.00 && lng >= -1.45 && lng <= -1.15) {
+ return lang === 'ar' ? 'تلمسان' : 'Tlemcen';
+ }
+ // Bejaia
+ if (lat >= 36.65 && lat <= 36.85 && lng >= 4.95 && lng <= 5.20) {
+ return lang === 'ar' ? 'بجاية' : 'Béjaïa';
+ }
+ // Biskra
+ if (lat >= 34.75 && lat <= 35.00 && lng >= 5.60 && lng <= 5.85) {
+ return lang === 'ar' ? 'بسكرة' : 'Biskra';
+ }
+ // Tizi Ouzou
+ if (lat >= 36.60 && lat <= 36.80 && lng >= 3.95 && lng <= 4.20) {
+ return lang === 'ar' ? 'تيزي وزو' : 'Tizi Ouzou';
+ }
+ // Djelfa
+ if (lat >= 34.55 && lat <= 34.80 && lng >= 3.15 && lng <= 3.40) {
+ return lang === 'ar' ? 'الجلفة' : 'Djelfa';
+ }
+ // Chlef
+ if (lat >= 36.10 && lat <= 36.30 && lng >= 1.20 && lng <= 1.45) {
+ return lang === 'ar' ? 'الشلف' : 'Chlef';
+ }
+ // Tiaret
+ if (lat >= 35.25 && lat <= 35.50 && lng >= 1.20 && lng <= 1.50) {
+ return lang === 'ar' ? 'تيارت' : 'Tiaret';
+ }
+ // Ghardaia
+ if (lat >= 32.35 && lat <= 32.60 && lng >= 3.55 && lng <= 3.85) {
+ return lang === 'ar' ? 'غرداية' : 'Ghardaïa';
+ }
+ // Ouargla
+ if (lat >= 31.80 && lat <= 32.10 && lng >= 5.20 && lng <= 6.20) {
+ return lang === 'ar' ? 'ورقلة' : 'Ouargla';
+ }
+ // Fallback within Algerian borders
+ if (lat >= 19.0 && lat <= 37.2 && lng >= -8.5 && lng <= 12.0) {
+ return lang === 'ar' ? 'مدينة جزائرية' : 'Algerian City';
+ }
+ return lang === 'ar' ? 'المدينة' : 'City';
+}

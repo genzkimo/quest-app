@@ -1,3 +1,4 @@
+import { Geolocation } from '@capacitor/geolocation';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
  X,
@@ -167,6 +168,10 @@ export default function GlobalCreateQuestModal({
  const cameraInputRef = useRef<HTMLInputElement>(null);
 
  // Play audio clicking feed
+  const inFlightGpsRef = useRef<boolean>(false);
+  const hasAutoRequestedRef = useRef<boolean>(false);
+  const lastProgressUpdateRef = useRef<number>(0);
+
   const playSound = () => {
     if (audioEnabled) {
       playSoftClick(true);
@@ -174,32 +179,29 @@ export default function GlobalCreateQuestModal({
   };
 
   const handleAutoGPS = useCallback(async (withSound: boolean = true) => {
+    if (inFlightGpsRef.current) return;
+    inFlightGpsRef.current = true;
+
     if (withSound) {
       playSound();
     }
     setGpsLoading(true);
-    setGpsAccuracyInfo(lang === "ar" ? "جاري الاتصال بـ GPS وطلب دقة الموقع..." : "Connecting GPS & requesting high accuracy...");
+    setGpsAccuracyInfo(lang === 'ar' ? 'جاري طلب إذن وتحديد الموقع الجغرافي...' : 'Requesting location permission...');
 
-    try {
-      await Geolocator.requestPermissions();
-
-      const accurate = await Geolocator.getAccuratePhysicalLocation((sampleCount, bestAcc) => {
-        setGpsAccuracyInfo(
-          lang === "ar"
-            ? `جاري معايرة الدقة... عينات: ${sampleCount} • أفضل دقة: ±${Math.round(bestAcc)}م`
-            : `Calibrating precision... Samples: ${sampleCount} • Best accuracy: ±${Math.round(bestAcc)}m`
-        );
-      }, true);
-
-      const coords = { lat: accurate.lat, lng: accurate.lng };
-      const accuracy = typeof accurate.accuracy === "number" ? Math.round(accurate.accuracy) : 250;
+    const applyLocationSuccess = (latitude: number, longitude: number, acc?: number) => {
+      const coords = { lat: latitude, lng: longitude };
+      const accuracy = Math.round(acc || 15);
       setGpsCoords(coords);
       setGpsAccuracyValue(accuracy);
-      Geolocator.saveCachedLocation(coords.lat, coords.lng);
+      try {
+        localStorage.setItem('last_user_lat', coords.lat.toString());
+        localStorage.setItem('last_user_lng', coords.lng.toString());
+        localStorage.setItem('last_user_loc_timestamp', Date.now().toString());
+      } catch {}
 
       const isAccurate = accuracy <= 100;
       const resolvedName = isAccurate
-        ? resolveNeighborhoodFromCoords(coords.lat, coords.lng, "", lang)
+        ? resolveNeighborhoodFromCoords(coords.lat, coords.lng, '', lang)
         : resolveCityFromCoords(coords.lat, coords.lng, lang);
 
       if (resolvedName) {
@@ -208,63 +210,124 @@ export default function GlobalCreateQuestModal({
 
       setGpsAccuracyInfo(
         isAccurate
-          ? (lang === "ar" ? `تم رصد الموقع بدقة عالية (±${accuracy}م)` : `Accurate GPS tagged (±${accuracy}m)`)
-          : (lang === "ar" ? `تم تحديد نطاق المدينة فقط: ${resolvedName}` : `City level only: ${resolvedName}`)
+          ? (lang === 'ar' ? `تم رصد الموقع بدقة عالية (±${accuracy}م)` : `Accurate GPS tagged (±${accuracy}m)`)
+          : (lang === 'ar' ? `تم تحديد نطاق المدينة: ${resolvedName}` : `City level: ${resolvedName}`)
       );
-    } catch (err) {
-      console.warn("GPS Calibration Notice:", err);
-      const cached = Geolocator.getCachedLocation();
-      if (cached) {
-        setGpsCoords(cached);
-        setGpsAccuracyValue(250);
-        const resolvedName = resolveCityFromCoords(cached.lat, cached.lng, lang);
-        if (resolvedName) {
-          setLocationText((prev) => (prev && prev.trim() ? prev : resolvedName));
-        }
-        setGpsAccuracyInfo(lang === "ar" ? `تم تحديد نطاق المدينة: ${resolvedName}` : `City level only: ${resolvedName}`);
-      } else {
-        setGpsAccuracyInfo(
-          lang === "ar"
-            ? "تعذر التقاط إشارة GPS، يرجى تفعيل خدمة الموقع ثم إعادة المحاولة"
-            : "Live GPS hardware fix unavailable, please verify location services"
-        );
-      }
-    } finally {
       setGpsLoading(false);
+      inFlightGpsRef.current = false;
+    };
+
+    // Step 1: Explicitly call Geolocation.requestPermissions() directly from this page
+    try {
+      const perm = await Geolocation.requestPermissions();
+      if (perm.location === 'denied') {
+        setGpsAccuracyInfo(lang === 'ar' ? 'تم رفض إذن الموقع من قبل المستخدم' : 'Location permission denied');
+        setGpsLoading(false);
+        inFlightGpsRef.current = false;
+        return;
+      }
+    } catch (permErr) {
+      console.warn('Direct Geolocation.requestPermissions handled:', permErr);
+    }
+
+    // Step 2: Explicitly call Geolocation.getCurrentPosition() directly from this page
+    try {
+      const position = await Geolocation.getCurrentPosition({
+        enableHighAccuracy: true,
+        timeout: 12000,
+        maximumAge: 0
+      });
+      if (position && position.coords) {
+        applyLocationSuccess(position.coords.latitude, position.coords.longitude, position.coords.accuracy);
+        return;
+      }
+    } catch (geoErr: any) {
+      console.warn('Direct Geolocation.getCurrentPosition fallback to browser:', geoErr);
+    }
+
+    // Step 3: Browser navigator.geolocation fallback
+    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          applyLocationSuccess(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+        },
+        (error) => {
+          console.warn('Browser navigator.geolocation fallback failed:', error);
+          // Try low accuracy network provider
+          navigator.geolocation.getCurrentPosition(
+            (netPos) => {
+              applyLocationSuccess(netPos.coords.latitude, netPos.coords.longitude, netPos.coords.accuracy || 200);
+            },
+            (netErr) => {
+              console.warn('Network location also failed:', netErr);
+              if (error.code === 1) {
+                setGpsAccuracyInfo(lang === 'ar' ? 'تم رفض إذن الموقع، يرجى تفعيله من إعدادات المتصفح' : 'Location permission denied');
+              } else {
+                setGpsAccuracyInfo(lang === 'ar' ? 'يرجى تفعيل خدمة الموقع (GPS) في جهازك ثم المحاولة مجدداً' : 'Please enable location services (GPS)');
+              }
+              setGpsLoading(false);
+              inFlightGpsRef.current = false;
+            },
+            { enableHighAccuracy: false, timeout: 8000, maximumAge: 30000 }
+          );
+        },
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+      );
+    } else {
+      setGpsLoading(false);
+      inFlightGpsRef.current = false;
     }
   }, [lang, audioEnabled]);
 
-  // Reset fields on open and auto-request GPS
+  // Reset fields and pre-seed location on modal open (runs ONCE per open without looping)
   useEffect(() => {
     if (isOpen) {
       setStep(1);
-      setQuestType("quick");
-      setTitle("");
-      setDesc("");
-      setCategory("صيانة");
-      setUrgency("normal");
+      setQuestType('quick');
+      setTitle('');
+      setDesc('');
+      setCategory('صيانة');
+      setUrgency('normal');
       setCashReward(1500);
       setRequiredWorkers(1);
       setImages([]);
-      setGpsCoords(null);
-      setLocationText("");
-      setGpsAccuracyInfo("");
-      setGpsAccuracyValue(null);
-      setSalaryPeriod("monthly");
-      setEmploymentType("full_time");
-      setDurationType("ongoing");
-      setStartDate(new Date().toISOString().split("T")[0]);
-      setEndDate("");
-      setSkillsText("");
-      handleAutoGPS(false);
-    }
-  }, [isOpen, handleAutoGPS]);
+      setSalaryPeriod('monthly');
+      setEmploymentType('full_time');
+      setDurationType('ongoing');
+      setStartDate(new Date().toISOString().split('T')[0]);
+      setEndDate('');
+      setSkillsText('');
+      hasAutoRequestedRef.current = false;
 
-  useEffect(() => {
-    if (isOpen && step === 3 && !gpsCoords && !gpsLoading) {
+      // Pre-seed cached location for immediate display
+      const cached = Geolocator.getCachedLocation();
+      if (cached) {
+        setGpsCoords(cached);
+        setGpsAccuracyValue(50);
+        const resolvedName = resolveCityFromCoords(cached.lat, cached.lng, lang);
+        if (resolvedName) {
+          setLocationText(resolvedName);
+          setGpsAccuracyInfo(lang === 'ar' ? `نطاق: ${resolvedName}` : `Location: ${resolvedName}`);
+        }
+      } else {
+        setGpsCoords(null);
+        setLocationText('');
+        setGpsAccuracyInfo('');
+        setGpsAccuracyValue(null);
+      }
+      // ALWAYS invoke system location request to ensure the system dialog appears!
+      hasAutoRequestedRef.current = true;
       handleAutoGPS(false);
     }
-  }, [isOpen, step, gpsCoords, gpsLoading, handleAutoGPS]);
+  }, [isOpen]);
+
+  // Single-fire trigger when entering Step 3 if still no coords (guaranteed NO loop)
+  useEffect(() => {
+    if (isOpen && step === 3 && !gpsCoords && !hasAutoRequestedRef.current) {
+      hasAutoRequestedRef.current = true;
+      handleAutoGPS(false);
+    }
+  }, [isOpen, step, gpsCoords]);
 
   if (!isOpen) return null;
 

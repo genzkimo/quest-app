@@ -1,7 +1,30 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
+import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import './index.css';
+
+// Intercept global errors to prevent uncaught "Script error." crashes in cross-origin preview frames
+if (typeof window !== 'undefined') {
+  window.addEventListener('error', (event) => {
+    if (event.message === 'Script error.' || event.message?.includes('Script error')) {
+      console.warn('Handled global cross-origin script error:', event);
+      event.preventDefault();
+      return true;
+    }
+  });
+
+  window.addEventListener('unhandledrejection', (event) => {
+    console.warn('Handled unhandled promise rejection:', event.reason);
+    event.preventDefault();
+  });
+
+  window.addEventListener('vite:preloadError', (event) => {
+    console.warn('Handled Vite chunk preload error, auto-recovering:', event);
+    event.preventDefault();
+    window.location.reload();
+  });
+}
 
 // Safety patch for window.confirm in iframe environments to prevent uncaught security DOMExceptions
 try {
@@ -24,7 +47,7 @@ try {
   if (!isIframe && 'serviceWorker' in navigator) {
     window.addEventListener('load', () => {
       try {
-        navigator.serviceWorker.register('./sw.js')
+        navigator.serviceWorker.register('/sw.js')
           .then((reg) => {
             console.log('Quest Service Worker registered successfully:', reg.scope);
           })
@@ -42,6 +65,8 @@ try {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </StrictMode>,
 );

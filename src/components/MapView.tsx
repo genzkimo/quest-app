@@ -1,3 +1,4 @@
+import { Geolocation } from '@capacitor/geolocation';
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { 
  MapPin, 
@@ -615,73 +616,107 @@ function MapView({
  watchCleanupRef.current = cleanup;
  }, []);
 
- const triggerGPSGet = async (isManualReset = false) => {
- setIsLocating(true);
- if (isManualReset) {
- updateCountRef.current = 0;
- lastLocUpdateTimeRef.current = Date.now();
- }
+ const triggerGPSGet = (isManualReset = false) => {
+  setIsLocating(true);
+  if (isManualReset) {
+   updateCountRef.current = 0;
+   lastLocUpdateTimeRef.current = Date.now();
+  }
 
- try {
- // 1. Try to get accurate physical location directly first
- await Geolocator.requestPermissions();
- const accurate = await Geolocator.getAccuratePhysicalLocation(undefined, isManualReset);
- const fetchedLoc = { lat: accurate.lat, lng: accurate.lng };
- const accuracy = accurate.accuracy ? Math.round(accurate.accuracy) : 250;
+  if (typeof navigator === 'undefined' || !navigator.geolocation) {
+   setIsLocating(false);
+   showToast(lang === 'ar' ? 'المتصفح لا يدعم تحديد الموقع' : 'Geolocation not supported');
+   return;
+  }
 
- setUserLoc(fetchedLoc);
- setIsGpsConfirmed(true);
- setIsLocStale(false);
- lastLocUpdateTimeRef.current = Date.now();
- setUserLocAccuracy(accuracy);
- setGpsActive(true);
- setIsLocating(false);
- setHasCenteredGPS(true);
- setGpsDenied(false);
- setIsGpsServiceEnabled(true);
- setIsGpsLost(false);
- Geolocator.saveCachedLocation(fetchedLoc.lat, fetchedLoc.lng);
+  // Direct native browser / system Geolocation API call
+  navigator.geolocation.getCurrentPosition(
+   (position) => {
+    const fetchedLoc = { lat: position.coords.latitude, lng: position.coords.longitude };
+    const accuracy = Math.round(position.coords.accuracy || 15);
 
- const isPrecise = accuracy <= 100;
+    setUserLoc(fetchedLoc);
+    setIsGpsConfirmed(true);
+    setIsLocStale(false);
+    lastLocUpdateTimeRef.current = Date.now();
+    setUserLocAccuracy(accuracy);
+    setGpsActive(true);
+    setIsLocating(false);
+    setHasCenteredGPS(true);
+    setGpsDenied(false);
+    setIsGpsServiceEnabled(true);
+    setIsGpsLost(false);
+    try {
+     localStorage.setItem('last_user_lat', fetchedLoc.lat.toString());
+     localStorage.setItem('last_user_lng', fetchedLoc.lng.toString());
+     localStorage.setItem('last_user_loc_timestamp', Date.now().toString());
+    } catch {}
 
- if (!hasFlownToUserLocRef.current) {
-   hasFlownToUserLocRef.current = true;
-   userHasMovedCameraRef.current = false;
-   setIsUserInteracting(false);
-   isUserInteractingRef.current = false;
+    const isPrecise = accuracy <= 100;
 
-   if (mapInstanceRef.current) {
+    if (mapInstanceRef.current) {
      if (navigatingQuest) {
-       const dest = getQuestCoords(navigatingQuest);
-       mapInstanceRef.current.fitBounds([
-         [fetchedLoc.lat, fetchedLoc.lng],
-         [dest.lat, dest.lng]
-       ], { padding: [60, 60] });
+      const dest = getQuestCoords(navigatingQuest);
+      mapInstanceRef.current.fitBounds([
+       [fetchedLoc.lat, fetchedLoc.lng],
+       [dest.lat, dest.lng]
+      ], { padding: [60, 60] });
      } else {
-       if (isPrecise) {
-         mapInstanceRef.current.flyTo([fetchedLoc.lat, fetchedLoc.lng], 15, { animate: true, duration: 1.8 });
-       } else {
-         // Location is not accurate: "اعرض المدينة فقط" -> zoom 11
-         mapInstanceRef.current.flyTo([fetchedLoc.lat, fetchedLoc.lng], 11, { animate: true, duration: 1.5 });
-       }
+      if (isPrecise) {
+       mapInstanceRef.current.flyTo([fetchedLoc.lat, fetchedLoc.lng], 15, { animate: true, duration: 1.8 });
+      } else {
+       mapInstanceRef.current.flyTo([fetchedLoc.lat, fetchedLoc.lng], 11, { animate: true, duration: 1.5 });
+      }
      }
-   }
- }
- if (isPrecise) {
-   showToast(lang === 'ar' ? ' تم تأكيد موقعك الفعلي بدقة وتوسيط الخريطة!' : ' GPS location verified & centered!');
- } else {
-   const city = resolveCityFromCoords(fetchedLoc.lat, fetchedLoc.lng, lang);
-   showToast(lang === 'ar' ? ` تم عرض نطاق المدينة: ${city}` : ` City level view: ${city}`);
- }
- startGpsWatch();
- return;
- } catch (err: any) {
- console.warn("MapView location acquisition failed:", err);
- setIsLocating(false);
- setIsGpsLost(true);
- setGpsActive(false);
- setIsLocStale(true);
- }
+    }
+
+    if (isPrecise) {
+     showToast(lang === 'ar' ? ' تم تأكيد موقعك الفعلي بدقة وتوسيط الخريطة!' : ' Location verified & centered!');
+    } else {
+     const city = resolveCityFromCoords(fetchedLoc.lat, fetchedLoc.lng, lang);
+     showToast(lang === 'ar' ? ` تم عرض نطاق المدينة: ${city}` : ` City level view: ${city}`);
+    }
+    startGpsWatch();
+   },
+   (error) => {
+    console.warn('Direct MapView GPS attempt failed, trying balanced network fallback:', error);
+    // Fallback to network provider
+    navigator.geolocation.getCurrentPosition(
+     (netPos) => {
+      const fetchedLoc = { lat: netPos.coords.latitude, lng: netPos.coords.longitude };
+      const accuracy = Math.round(netPos.coords.accuracy || 200);
+      setUserLoc(fetchedLoc);
+      setIsGpsConfirmed(true);
+      setIsLocating(false);
+      setGpsActive(true);
+      setUserLocAccuracy(accuracy);
+      try {
+       localStorage.setItem('last_user_lat', fetchedLoc.lat.toString());
+       localStorage.setItem('last_user_lng', fetchedLoc.lng.toString());
+       localStorage.setItem('last_user_loc_timestamp', Date.now().toString());
+      } catch {}
+      if (mapInstanceRef.current) {
+       mapInstanceRef.current.flyTo([fetchedLoc.lat, fetchedLoc.lng], 11, { animate: true, duration: 1.5 });
+      }
+      const city = resolveCityFromCoords(fetchedLoc.lat, fetchedLoc.lng, lang);
+      showToast(lang === 'ar' ? ` تم عرض نطاق المدينة: ${city}` : ` City view: ${city}`);
+      startGpsWatch();
+     },
+     (netErr) => {
+      console.warn('Network location also failed:', netErr);
+      setIsLocating(false);
+      if (error.code === 1) {
+       setGpsDenied(true);
+       showToast(lang === 'ar' ? ' تم رفض إذن الموقع، يرجى تفعيله من إعدادات المتصفح' : ' Location permission denied');
+      } else {
+       showToast(lang === 'ar' ? ' يرجى تفعيل ميزة الموقع (GPS) في جهازك' : ' Please enable device location');
+      }
+     },
+     { enableHighAccuracy: false, timeout: 8000, maximumAge: 30000 }
+    );
+   },
+   { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+  );
  };
 
  const calculateDistanceKm = useCallback((qLat?: number, qLng?: number) => {

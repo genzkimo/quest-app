@@ -1,3 +1,4 @@
+import { Geolocation } from '@capacitor/geolocation';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { isQuestExpired } from '../utils/questExpiry';
 import { serverShield } from '../utils/performanceEngine';
@@ -142,21 +143,74 @@ function HomeView({
  const [visibleCount, setVisibleCount] = useState<number>(30);
  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
 
- const requestHomeLocation = async (isManual = false) => {
- setIsGpsRequesting(true);
- try {
- await Geolocator.requestPermissions();
- const accurate = await Geolocator.getAccuratePhysicalLocation(undefined, isManual || !userLoc);
- const coords = { lat: accurate.lat, lng: accurate.lng };
- setUserLoc(coords);
- Geolocator.saveCachedLocation(coords.lat, coords.lng);
- setGpsDenied(false);
- } catch {
- setGpsDenied(true);
- } finally {
- setIsGpsRequesting(false);
- }
- };
+  const requestHomeLocation = async (isManual = false) => {
+    setIsGpsRequesting(true);
+
+    const applyLocationSuccess = (latitude: number, longitude: number) => {
+      const coords = { lat: latitude, lng: longitude };
+      setUserLoc(coords);
+      try {
+        localStorage.setItem('last_user_lat', coords.lat.toString());
+        localStorage.setItem('last_user_lng', coords.lng.toString());
+        localStorage.setItem('last_user_loc_timestamp', Date.now().toString());
+      } catch {}
+      setGpsDenied(false);
+      setIsGpsRequesting(false);
+    };
+
+    // Step 1: Directly request native / system permissions from this page
+    try {
+      const perm = await Geolocation.requestPermissions();
+      if (perm.location === 'denied') {
+        setGpsDenied(true);
+        setIsGpsRequesting(false);
+        return;
+      }
+    } catch (permErr) {
+      console.warn('HomeView direct Geolocation.requestPermissions handled:', permErr);
+    }
+
+    // Step 2: Directly call Geolocation.getCurrentPosition from this page
+    try {
+      const pos = await Geolocation.getCurrentPosition({
+        enableHighAccuracy: true,
+        timeout: 12000,
+        maximumAge: 0
+      });
+      if (pos && pos.coords) {
+        applyLocationSuccess(pos.coords.latitude, pos.coords.longitude);
+        return;
+      }
+    } catch (geoErr) {
+      console.warn('HomeView direct Geolocation.getCurrentPosition fallback to browser:', geoErr);
+    }
+
+    // Step 3: Browser navigator.geolocation fallback
+    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          applyLocationSuccess(pos.coords.latitude, pos.coords.longitude);
+        },
+        (err) => {
+          console.warn('HomeView direct browser geolocation attempt failed:', err);
+          // Fallback network position
+          navigator.geolocation.getCurrentPosition(
+            (netPos) => {
+              applyLocationSuccess(netPos.coords.latitude, netPos.coords.longitude);
+            },
+            () => {
+              setGpsDenied(true);
+              setIsGpsRequesting(false);
+            },
+            { enableHighAccuracy: false, timeout: 8000, maximumAge: 30000 }
+          );
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    } else {
+      setIsGpsRequesting(false);
+    }
+  };
 
  useEffect(() => {
  requestHomeLocation(false);

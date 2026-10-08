@@ -299,35 +299,13 @@ export default function GlobalCreateQuestModal({
       setSkillsText('');
       hasAutoRequestedRef.current = false;
 
-      // Pre-seed cached location for immediate display
-      const cached = Geolocator.getCachedLocation();
-      if (cached) {
-        setGpsCoords(cached);
-        setGpsAccuracyValue(50);
-        const resolvedName = resolveCityFromCoords(cached.lat, cached.lng, lang);
-        if (resolvedName) {
-          setLocationText(resolvedName);
-          setGpsAccuracyInfo(lang === 'ar' ? `نطاق: ${resolvedName}` : `Location: ${resolvedName}`);
-        }
-      } else {
-        setGpsCoords(null);
-        setLocationText('');
-        setGpsAccuracyInfo('');
-        setGpsAccuracyValue(null);
-      }
-      // ALWAYS invoke system location request to ensure the system dialog appears!
-      hasAutoRequestedRef.current = true;
-      handleAutoGPS(false);
+      setGpsCoords(null);
+      setLocationText('');
+      setGpsAccuracyInfo('');
+      setGpsAccuracyValue(null);
+      hasAutoRequestedRef.current = false;
     }
   }, [isOpen]);
-
-  // Single-fire trigger when entering Step 3 if still no coords (guaranteed NO loop)
-  useEffect(() => {
-    if (isOpen && step === 3 && !gpsCoords && !hasAutoRequestedRef.current) {
-      hasAutoRequestedRef.current = true;
-      handleAutoGPS(false);
-    }
-  }, [isOpen, step, gpsCoords]);
 
   if (!isOpen) return null;
 

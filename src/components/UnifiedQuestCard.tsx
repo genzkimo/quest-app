@@ -7,6 +7,7 @@ import { cleanLocationName } from '../utils/locationFormatter';
 import { calculateBookingFee } from '../utils/fee';
 import { Geolocator } from '../utils/geolocator';
 import { lockBodyScroll } from '../utils/scrollLock';
+import StandardImageLightbox from './StandardImageLightbox';
 
 interface UnifiedQuestCardProps {
  quest: Quest;
@@ -1244,18 +1245,15 @@ function UnifiedQuestCard({
  </div>
  </div>
 
- {/* Lightbox Overlay */}
- {lightboxImage && (
- <div 
- className="fixed inset-0 bg-black/95 z-[9999] flex items-center justify-center p-4 select-none" 
- style={{ touchAction: 'none' }}
- onClick={() => setLightboxImage(null)}
- onTouchMove={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}
- >
- <button className="absolute top-5 right-5 text-white/80 hover:text-white text-3xl font-bold cursor-pointer">&times;</button>
- <img src={lightboxImage} alt="Fullscreen Reference Preview" className="max-w-full max-h-full object-contain rounded-lg" referrerPolicy="no-referrer" />
- </div>
- )}
+  {/* Standard Lightbox Overlay with Pinch-to-zoom & Pan (Strictly bounded) */}
+  <StandardImageLightbox
+    imageUrl={lightboxImage}
+    onClose={() => setLightboxImage(null)}
+    title={quest.title}
+    subtitle={quest.creatorName}
+    caption={quest.description}
+    lang={lang}
+  />
 
  {/* Edit Description Dialog */}
  <AnimatePresence>

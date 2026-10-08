@@ -54,6 +54,7 @@ import { doc, updateDoc, arrayUnion, setDoc, collection, getDocs, query, orderBy
 import { motion, AnimatePresence } from 'motion/react';
 import PullToRefresh from './PullToRefresh';
 import InfoButton from './InfoButton';
+import StandardImageLightbox from './StandardImageLightbox';
 import { translations } from '../data/translations';
 import { playCoinSound, playConfirmSound, triggerHaptic, playLockAndLoadCoins } from '../utils/audio';
 
@@ -212,9 +213,16 @@ function HomeView({
     }
   };
 
- useEffect(() => {
- requestHomeLocation(false);
- }, []);
+  useEffect(() => {
+    // If a cached location exists and is not older than 1 day (24 hours), use it without prompting!
+    const cached = Geolocator.getCachedLocation(24);
+    if (cached) {
+      setUserLoc(cached);
+      setGpsDenied(false);
+      return;
+    }
+    requestHomeLocation(false);
+  }, []);
 
  const calculateDistanceKm = (targetLat: number, targetLng: number) => {
  if (!userLoc) return -1;
@@ -1691,37 +1699,12 @@ function HomeView({
  )}
  </AnimatePresence>
 
- {/* GLORIOUS LIGHTBOX PREVIEW */}
- <AnimatePresence>
- {lightboxImage && (
- <div 
- className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-4 cursor-zoom-out select-none"
- onClick={() => setLightboxImage(null)}
- >
- <motion.div
- initial={{ opacity: 0, scale: 0.95 }}
- animate={{ opacity: 1, scale: 1 }}
- exit={{ opacity: 0, scale: 0.95 }}
- className="relative max-w-5xl max-h-screen flex items-center justify-center"
- >
- <img 
- src={lightboxImage} 
- alt="Enlarged zoom preview" 
- className="max-h-[85vh] max-w-full rounded-2xl object-contain shadow-2xl border border-white/10" 
- />
- <button
- onClick={(e) => {
- e.stopPropagation();
- setLightboxImage(null);
- }}
- className="absolute top-4 right-4 bg-white/10 hover:bg-white/20 text-white rounded-full p-2 w-10 h-10 transition z-50 shadow-md cursor-pointer border border-white/15 flex items-center justify-center"
- >
- <X className="w-5 h-5" />
- </button>
- </motion.div>
- </div>
- )}
- </AnimatePresence>
+  {/* Standard Lightbox Preview with Pinch-to-zoom & Pan (Strictly bounded) */}
+  <StandardImageLightbox
+    imageUrl={lightboxImage}
+    onClose={() => setLightboxImage(null)}
+    lang={lang}
+  />
 
  </div>
  </PullToRefresh>

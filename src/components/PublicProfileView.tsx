@@ -35,6 +35,7 @@ import { formatJoinedDate, formatReviewDate } from '../utils/dateFormatter';
 import { formatDisplayId12 } from '../utils/userIdFormatter';
 import InfoButton from './InfoButton';
 import { lockBodyScroll } from '../utils/scrollLock';
+import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 
 interface PublicProfileViewProps {
  userId: string;
@@ -74,6 +75,16 @@ export default function PublicProfileView({
  const [showReviewsModal, setShowReviewsModal] = useState(false);
  const [modalReviewRoleTab, setModalReviewRoleTab] = useState<'hunter' | 'godfather'>('hunter');
  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+
+ const [reviewImagePreview, setReviewImagePreview] = useState<{
+   imageUrl: string;
+   reviewerName: string;
+   reviewerAvatar?: string;
+   rating: number;
+   comment: string;
+   createdAt?: string | Date;
+   roleType: 'godfather' | 'hunter';
+ } | null>(null);
  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showContactInfoModal, setShowContactInfoModal] = useState(false);
  const [longPressTimer, setLongPressTimer] = useState<any>(null);
@@ -198,10 +209,10 @@ export default function PublicProfileView({
 
  // Lock body scroll and prevent background scroll leakage when modals are open
   useEffect(() => {
-    if (showReviewsModal || showContactInfoModal || showReportModal || !!lightboxUrl) {
+    if (showReviewsModal || showContactInfoModal || showReportModal || !!lightboxUrl || !!reviewImagePreview) {
       return lockBodyScroll();
     }
-  }, [showReviewsModal, showContactInfoModal, showReportModal, lightboxUrl]);
+  }, [showReviewsModal, showContactInfoModal, showReportModal, lightboxUrl, reviewImagePreview]);
 
   useEffect(() => {
  const userRef = doc(db, 'users', userId);
@@ -602,7 +613,7 @@ export default function PublicProfileView({
  return (
  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 sm:gap-2">
  {photos.map((pic, idx) => (
- <div key={idx} className="aspect-square rounded-xl overflow-hidden shadow-2xs relative group bg-gray-100 shadow-xs cursor-zoom-in" onClick={() => setLightboxUrl(pic.url)}>
+ <div key={idx} className="aspect-[3/4] rounded-xl overflow-hidden shadow-2xs relative group bg-gray-100 shadow-xs cursor-zoom-in" onClick={() => {  setLightboxUrl(pic.url); }}>
  <img 
  src={pic.url} 
  alt={pic.caption} 
@@ -624,43 +635,68 @@ export default function PublicProfileView({
 
       </div>
 
- {/* Public Lightbox Modal */}
- <AnimatePresence>
- {lightboxUrl && (
- <div 
- className="fixed inset-0 bg-slate-950/95 z-[9999] flex flex-col items-center justify-center p-4 cursor-zoom-out animate-fadeIn select-none"
- style={{ touchAction: 'none' }}
- onClick={() => setLightboxUrl(null)}
- onTouchMove={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}
- >
- <div className="absolute top-4 right-4 z-50">
- <button 
- onClick={() => setLightboxUrl(null)}
- className="w-10 h-10 bg-white/10 hover:bg-white/20 text-white rounded-full flex items-center justify-center transition-all border-none"
- >
- <X className="w-5 h-5" />
- </button>
- </div>
- <motion.div 
- initial={{ scale: 0.9, opacity: 0 }}
- animate={{ scale: 1, opacity: 1 }}
- exit={{ scale: 0.9, opacity: 0 }}
- className="max-w-3xl w-full text-center"
- onClick={(e) => e.stopPropagation()}
- >
- <img 
- src={lightboxUrl} 
- alt="Zoomed public gallery photograph" 
- className="max-h-[80vh] object-contain mx-auto rounded-2xl border-2 border-white/20 shadow-2xl" 
- referrerPolicy="no-referrer"
- />
- <p className="text-gray-300 text-xs font-semibold mt-3">
- {isRtl ? ' اضغط في أي مكان بالخلفية للعودة للملف' : ' Click anywhere on background to dismiss preview'}
- </p>
- </motion.div>
- </div>
- )}
- </AnimatePresence>
+ {/* Public Gallery Lightbox Modal - Connected Instagram-style card with pinch zoom */}
+  <AnimatePresence>
+  {lightboxUrl && (
+  <div 
+  className="fixed inset-0 bg-black/80 dark:bg-black/95 backdrop-blur-md z-[9999] flex flex-col items-center justify-center p-3 sm:p-4 cursor-zoom-out animate-fadeIn select-none"
+  style={{ touchAction: 'none' }}
+  onClick={() => { setLightboxUrl(null);  }}
+  onTouchMove={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}
+  >
+  <motion.div 
+  initial={{ scale: 0.94, opacity: 0, y: 15 }}
+  animate={{ scale: 1, opacity: 1, y: 0 }}
+  exit={{ scale: 0.94, opacity: 0, y: 15 }}
+  className="max-w-sm sm:max-w-md w-full bg-white dark:bg-[#151F32] rounded-3xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col"
+  style={{ touchAction: 'pan-y' }}
+  onClick={(e) => e.stopPropagation()}
+  >
+    {/* Connected Header */}
+    <div className="px-4 py-3 flex items-center justify-between border-b border-gray-100 dark:border-slate-800/80 bg-white dark:bg-[#151F32]">
+      <button 
+        type="button"
+        onClick={() => { setLightboxUrl(null);  }}
+        className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center transition-all cursor-pointer shadow-xs active:scale-90"
+        aria-label="Close"
+      >
+        <X className="w-4 h-4" />
+      </button>
+      <h4 className="text-xs font-black text-sky-600 dark:text-[#4FC3F7] uppercase tracking-wider">
+        {isRtl ? 'معرض الصور' : 'Visual Gallery'}
+      </h4>
+    </div>
+
+    {/* Connected 3:4 Photo with standard pinch zoom & pan (Strictly bounded) */}
+    <div className="w-full aspect-[3/4] relative bg-black overflow-hidden flex items-center justify-center select-none touch-none">
+      <TransformWrapper
+        initialScale={1}
+        minScale={1}
+        maxScale={4}
+        centerOnInit={true}
+        centerZoomedOut={true}
+        limitToBounds={true}
+        doubleClick={{ disabled: false, mode: 'toggle', step: 1.5 }}
+        panning={{ disabled: false }}
+        pinch={{ disabled: false }}
+      >
+        <TransformComponent
+          wrapperClass="!w-full !h-full flex items-center justify-center overflow-hidden"
+          contentClass="!w-full !h-full flex items-center justify-center"
+        >
+          <img 
+            src={lightboxUrl} 
+            alt="Zoomed public gallery photograph" 
+            className="w-full h-full object-contain pointer-events-auto select-none" 
+            referrerPolicy="no-referrer"
+          />
+        </TransformComponent>
+      </TransformWrapper>
+    </div>
+  </motion.div>
+  </div>
+  )}
+  </AnimatePresence>
 
  {/* 5. Cryptographic Action: Report Peer scams or non-payment Modal popup */}
  <AnimatePresence>
@@ -1048,18 +1084,30 @@ export default function PublicProfileView({
                     className="bg-white border border-gray-150 rounded-2xl overflow-hidden shadow-xs relative flex flex-col justify-between"
                   >
                     {review.completedTaskImage && (
-                      <div className="h-28 w-full overflow-hidden relative bg-slate-50 cursor-pointer" onClick={() => setLightboxUrl(review.completedTaskImage)}>
+                      <div 
+                        className="aspect-[3/4] max-h-72 w-full overflow-hidden relative rounded-xl bg-slate-900 cursor-pointer group" 
+                        onClick={() => {
+                          
+                          setReviewImagePreview({
+                            imageUrl: review.completedTaskImage,
+                            reviewerName: review.godfatherName,
+                            reviewerAvatar: undefined,
+                            rating: review.rating,
+                            comment: review.comment,
+                            createdAt: review.createdAt,
+                            roleType: 'godfather'
+                          });
+                        }}
+                      >
                         <img 
                           src={review.completedTaskImage} 
                           alt="bounty proof"
-                          className="w-full h-full object-cover"
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                         />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/55 to-transparent"></div>
-                        <div className="absolute bottom-2.5 left-2.5 bg-[#FFD34D] text-[#1F2A44] px-2 py-0.5 rounded-lg text-[9px] font-black flex items-center gap-0.5">
-                          {Array.from({ length: review.rating }).map((_, i) => (
-                            <Star key={i} className="w-2.5 h-2.5 fill-[#1F2A44] text-[#1F2A44]" />
-                          ))}
-                          <span className="ml-1 font-mono font-bold">{review.rating}.0</span>
+                        <div className="absolute bottom-2.5 left-2.5 bg-[#FFD34D] text-[#1F2A44] px-2.5 py-1 rounded-xl text-xs font-black flex items-center gap-1 shadow-md">
+                          <Star className="w-3.5 h-3.5 fill-[#1F2A44] text-[#1F2A44]" />
+                          <span className="font-mono font-bold">{review.rating}.0</span>
                         </div>
                       </div>
                     )}
@@ -1096,18 +1144,30 @@ export default function PublicProfileView({
                     className="bg-white border border-gray-150 rounded-2xl overflow-hidden shadow-xs relative flex flex-col justify-between"
                   >
                     {review.completedTaskImage && (
-                      <div className="h-28 w-full overflow-hidden relative bg-slate-50 cursor-pointer" onClick={() => setLightboxUrl(review.completedTaskImage)}>
+                      <div 
+                        className="aspect-[3/4] max-h-72 w-full overflow-hidden relative rounded-xl bg-slate-900 cursor-pointer group" 
+                        onClick={() => {
+                          
+                          setReviewImagePreview({
+                            imageUrl: review.completedTaskImage,
+                            reviewerName: review.hunterName,
+                            reviewerAvatar: undefined,
+                            rating: review.rating,
+                            comment: review.comment,
+                            createdAt: review.createdAt,
+                            roleType: 'hunter'
+                          });
+                        }}
+                      >
                         <img 
                           src={review.completedTaskImage} 
                           alt="completed proof"
-                          className="w-full h-full object-cover"
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                         />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/55 to-transparent"></div>
-                        <div className="absolute bottom-2.5 left-2.5 bg-amber-400 text-slate-900 px-2 py-0.5 rounded-lg text-[9px] font-black flex items-center gap-0.5">
-                          {Array.from({ length: review.rating }).map((_, i) => (
-                            <Star key={i} className="w-2.5 h-2.5 fill-slate-900 text-slate-900" />
-                          ))}
-                          <span className="ml-1 font-mono font-bold">{review.rating}.0</span>
+                        <div className="absolute bottom-2.5 left-2.5 bg-amber-400 text-slate-900 px-2.5 py-1 rounded-xl text-xs font-black flex items-center gap-1 shadow-md">
+                          <Star className="w-3.5 h-3.5 fill-slate-900 text-slate-900" />
+                          <span className="font-mono font-bold">{review.rating}.0</span>
                         </div>
                       </div>
                     )}
@@ -1137,6 +1197,110 @@ export default function PublicProfileView({
     )}
   </AnimatePresence>
 
+  {/* Dedicated Review Image Preview Modal - Connected Instagram-style post card */}
+  <AnimatePresence>
+    {reviewImagePreview && (
+      <div 
+        className="fixed inset-0 bg-black/85 dark:bg-black/95 backdrop-blur-md z-[100000] flex flex-col items-center justify-center p-3 sm:p-4 overscroll-contain select-none animate-fadeIn"
+        style={{ touchAction: 'none' }}
+        onClick={() => { setReviewImagePreview(null);  }}
+        onTouchMove={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}
+      >
+        <motion.div 
+          initial={{ scale: 0.94, opacity: 0, y: 15 }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
+          exit={{ scale: 0.94, opacity: 0, y: 15 }}
+          className="max-w-sm sm:max-w-md w-full bg-white dark:bg-[#151F32] rounded-3xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col"
+          style={{ touchAction: 'pan-y' }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* 1. Connected Instagram-style Header */}
+          <div className="px-4 py-3 flex items-center justify-between border-b border-gray-100 dark:border-slate-800/80 bg-white dark:bg-[#151F32]">
+            {/* Left: Close Button + Rating Badge (Star + Number) */}
+            <div className="flex items-center gap-2">
+              <button 
+                type="button"
+                onClick={() => { setReviewImagePreview(null);  }}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center transition-all cursor-pointer shadow-xs active:scale-90"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+              <div className="flex items-center gap-1 bg-amber-400 text-slate-900 px-2.5 py-1 rounded-xl text-xs font-black shadow-xs">
+                <Star className="w-3.5 h-3.5 fill-slate-900 text-slate-900" />
+                <span className="font-mono">{reviewImagePreview.rating}.0</span>
+              </div>
+            </div>
+
+            {/* Right (RTL): Reviewer Details */}
+            <div className="flex items-center gap-2.5 text-right">
+              <div>
+                <div className="flex items-center gap-1.5 justify-end">
+                  <span className="text-[9px] px-1.5 py-0.5 rounded font-black tracking-wide bg-sky-100 text-sky-700 dark:bg-sky-950/60 dark:text-sky-400">
+                    {reviewImagePreview.roleType === 'godfather'
+                      ? (lang === 'ar' ? 'صاحب العمل' : 'Employer')
+                      : (lang === 'ar' ? 'المنفذ' : 'Runner')}
+                  </span>
+                  <span className="text-xs sm:text-sm font-black text-slate-900 dark:text-white">
+                    {reviewImagePreview.reviewerName}
+                  </span>
+                </div>
+                {reviewImagePreview.createdAt && (
+                  <span className="text-[10px] text-gray-400 dark:text-slate-400 block font-medium">
+                    {formatReviewDate(reviewImagePreview.createdAt, lang)}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* 2. Connected 3:4 Aspect Ratio Photo - Standard Pinch to zoom & Pan (Strictly bounded) */}
+          <div className="w-full aspect-[3/4] relative bg-black overflow-hidden flex items-center justify-center select-none touch-none">
+            <TransformWrapper
+              initialScale={1}
+              minScale={1}
+              maxScale={4}
+              centerOnInit={true}
+              centerZoomedOut={true}
+              limitToBounds={true}
+              doubleClick={{ disabled: false, mode: 'toggle', step: 1.5 }}
+              panning={{ disabled: false }}
+              pinch={{ disabled: false }}
+            >
+              <TransformComponent
+                wrapperClass="!w-full !h-full flex items-center justify-center overflow-hidden"
+                contentClass="!w-full !h-full flex items-center justify-center"
+              >
+                <img 
+                  src={reviewImagePreview.imageUrl} 
+                  alt="Review proof document" 
+                  className="w-full h-full object-contain pointer-events-auto select-none"
+                  referrerPolicy="no-referrer"
+                />
+              </TransformComponent>
+            </TransformWrapper>
+          </div>
+
+          {/* 3. Connected Instagram-style Caption Footer */}
+          <div className="px-4 py-3.5 bg-white dark:bg-[#151F32] border-t border-gray-100 dark:border-slate-800/80 text-right space-y-1.5">
+            <div className="text-xs sm:text-sm leading-relaxed">
+              <span className="font-black text-slate-900 dark:text-white ml-1.5">
+                {reviewImagePreview.reviewerName}
+              </span>
+              <span className="font-medium text-slate-700 dark:text-slate-200 italic">
+                “{reviewImagePreview.comment}”
+              </span>
+            </div>
+            {reviewImagePreview.createdAt && (
+              <div className="flex items-center justify-end pt-1 text-[10px] text-gray-400 dark:text-slate-500">
+                <span>{formatReviewDate(reviewImagePreview.createdAt, lang)}</span>
+              </div>
+            )}
+          </div>
+        </motion.div>
+      </div>
+    )}
+  </AnimatePresence>
  </div>
  );
 }

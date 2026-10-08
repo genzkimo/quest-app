@@ -58,6 +58,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import PullToRefresh from './PullToRefresh';
 import InfoButton from './InfoButton';
 import { lockBodyScroll } from '../utils/scrollLock';
+import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { translations } from '../data/translations';
 import { playCoinSound, triggerHaptic, playCameraShutter, playSoftClick } from '../utils/audio';
 import { compressImage } from '../utils/imageCompressor';
@@ -585,12 +586,22 @@ function ProfileView({
  const [showContactInfoModal, setShowContactInfoModal] = useState(false);
  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
+ const [reviewImagePreview, setReviewImagePreview] = useState<{
+   imageUrl: string;
+   reviewerName: string;
+   reviewerAvatar?: string;
+   rating: number;
+   comment: string;
+   createdAt?: string | Date;
+   roleType: 'godfather' | 'hunter';
+ } | null>(null);
+
   // Lock body scroll completely when modals are open using bulletproof freeze
   useEffect(() => {
-    if (showReviewsModal || showContactInfoModal || !!lightboxUrl) {
+    if (showReviewsModal || showContactInfoModal || !!lightboxUrl || !!reviewImagePreview) {
       return lockBodyScroll();
     }
-  }, [showReviewsModal, showContactInfoModal, lightboxUrl]);
+  }, [showReviewsModal, showContactInfoModal, lightboxUrl, reviewImagePreview]);
 
  const dict = translations[lang];
  const isRtl = lang === 'ar';
@@ -1379,7 +1390,7 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/initiate-paypal-refill`
 
  // Step 2 & 3: API call to the server-side validation which handles database logging and balance updates securely
  try {
-const response = await fetch(`${API_BASE_URL}/api/wallet/refill-manual`, {
+ const response = await fetch(`${API_BASE_URL}/api/wallet/refill-manual`, {
  method: 'POST',
  headers: { 'Content-Type': 'application/json' },
  body: JSON.stringify({
@@ -4314,7 +4325,7 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/refill-manual`, {
  ) : (
  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 sm:gap-2">
  {portfolioPhotos.map((url, idx) => (
- <div key={idx} className="aspect-square rounded-xl overflow-hidden relative group bg-gray-100 shadow-2xs">
+ <div key={idx} className="aspect-[3/4] rounded-xl overflow-hidden relative group bg-gray-100 shadow-2xs">
  <img 
  src={url} 
  alt={`Portfolio sample ${idx}`} 
@@ -4435,137 +4446,156 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/refill-manual`, {
  </div>
  )}
 
- {/* Interactive lightbox zoom modal */}
- <AnimatePresence>
- {lightboxUrl && (
- <div 
- className="fixed inset-0 bg-slate-950/95 z-[9999] flex flex-col items-center justify-center p-4 cursor-zoom-out animate-fadeIn select-none"
- style={{ touchAction: 'none' }}
- onClick={() => setLightboxUrl(null)}
- onTouchMove={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}
- >
- <div className="absolute top-4 right-4 z-50">
- <button 
- onClick={() => setLightboxUrl(null)}
- className="w-10 h-10 bg-white/10 hover:bg-white/20 text-white rounded-full flex items-center justify-center transition-colors border-none cursor-pointer text-center"
- >
- <X className="w-5 h-5" />
- </button>
- </div>
- <motion.div 
- initial={{ scale: 0.9, opacity: 0 }}
- animate={{ scale: 1, opacity: 1 }}
- exit={{ scale: 0.9, opacity: 0 }}
- className="max-w-xl w-full text-center space-y-4"
- style={{ touchAction: 'pan-y' }}
- onClick={(e) => e.stopPropagation()}
- >
- <div className="relative group/zoom rounded-2xl overflow-hidden border border-white/15 bg-black">
- <img 
- src={lightboxUrl} 
- alt="Zoomed portfolio snap" 
- className="max-h-[50vh] object-contain mx-auto rounded-xl" 
- referrerPolicy="no-referrer"
- />
- </div>
+ {/* Interactive portfolio gallery lightbox zoom modal - Connected Instagram-style card */}
+  <AnimatePresence>
+  {lightboxUrl && (
+  <div 
+  className="fixed inset-0 bg-black/80 dark:bg-black/95 backdrop-blur-md z-[9999] flex flex-col items-center justify-center p-3 sm:p-4 cursor-zoom-out animate-fadeIn select-none"
+  style={{ touchAction: 'none' }}
+  onClick={() => { setLightboxUrl(null);  }}
+  onTouchMove={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}
+  >
+  <motion.div 
+  initial={{ scale: 0.94, opacity: 0, y: 15 }}
+  animate={{ scale: 1, opacity: 1, y: 0 }}
+  exit={{ scale: 0.94, opacity: 0, y: 15 }}
+  className="max-w-sm sm:max-w-md w-full bg-white dark:bg-[#151F32] rounded-3xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col"
+  style={{ touchAction: 'pan-y' }}
+  onClick={(e) => e.stopPropagation()}
+  >
+    {/* Header bar connected directly to photo */}
+    <div className="px-4 py-3 flex items-center justify-between border-b border-gray-100 dark:border-slate-800/80 bg-white dark:bg-[#151F32]">
+      <button 
+        type="button"
+        onClick={() => { setLightboxUrl(null);  }}
+        className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center transition-all cursor-pointer shadow-xs active:scale-90"
+        aria-label="Close"
+      >
+        <X className="w-4 h-4" />
+      </button>
+      <h4 className="text-xs font-black text-sky-600 dark:text-[#4FC3F7] uppercase tracking-wider">
+        {lang === 'ar' ? 'معرض الأعمال' : 'Visual Portfolio'}
+      </h4>
+    </div>
 
- {/* Caption and Management Box */}
- <div className="bg-slate-900 border border-white/10 p-5 rounded-2xl text-right flex flex-col gap-3 shadow-2xl">
- {/* Caption Label */}
- <div>
- <h4 className="text-[10px] text-[#4FC3F7] font-black uppercase tracking-wider mb-2 flex items-center gap-1.5 justify-end">
- <span>{lang === 'ar' ? 'الوصف المرفق بالصورة ' : 'Image Caption '}</span>
- </h4>
- {!isEditingCaption ? (
- <p className="text-sm font-bold text-gray-200 leading-relaxed whitespace-pre-line bg-white/5 p-3 rounded-xl min-h-[42px] flex items-center justify-end text-end">
- {portfolioCaptions[lightboxUrl] || (lang === 'ar' ? 'لا يوجد وصف مضاف لهذه الصورة بعد.' : 'No caption added to this portfolio snap yet.')}
- </p>
- ) : (
- <div className="space-y-2">
- <textarea
- value={tempCaption}
- onChange={(e) => setTempCaption(e.target.value)}
- placeholder={lang === 'ar' ? 'اكتب وصفاً أو تعليقاً على هذا العمل الميداني...' : 'Enter a description for this portfolio item...'}
- className="w-full text-xs font-bold p-3 bg-white/5 border border-white/15 rounded-xl text-white outline-none focus:ring-1 focus:ring-[#4FC3F7] text-right"
- rows={3}
- maxLength={250}
- />
- <div className="flex gap-2 justify-end">
- <button
- type="button"
- onClick={() => setIsEditingCaption(false)}
- className="px-3 py-1.5 bg-white/10 hover:bg-white/15 text-white font-black text-[10px] rounded-lg cursor-pointer transition-all border-none"
- >
- {lang === 'ar' ? 'إلغاء' : 'Cancel'}
- </button>
- <button
- type="button"
- onClick={() => {
- const updated = { ...portfolioCaptions, [lightboxUrl]: tempCaption };
- setPortfolioCaptions(updated);
- localStorage.setItem('runner_portfolio_captions', JSON.stringify(updated));
- setIsEditingCaption(false);
- showToast(lang === 'ar' ? ' تم حفظ الوصف الجديد بنجاح!' : ' Caption updated!');
- }}
- className="px-4 py-1.5 bg-[#4FC3F7] hover:bg-[#4FC3F7]/90 text-white font-black text-[10px] rounded-lg cursor-pointer transition-all border-none"
- >
- {lang === 'ar' ? 'حفظ الوصف' : 'Save Caption'}
- </button>
- </div>
- </div>
- )}
- </div>
+    {/* Connected 3:4 Photo - Standard Pinch to Zoom & Pan (Strictly bounded) */}
+    <div className="w-full aspect-[3/4] relative bg-black overflow-hidden flex items-center justify-center select-none touch-none">
+      <TransformWrapper
+        initialScale={1}
+        minScale={1}
+        maxScale={4}
+        centerOnInit={true}
+        centerZoomedOut={true}
+        limitToBounds={true}
+        doubleClick={{ disabled: false, mode: 'toggle', step: 1.5 }}
+        panning={{ disabled: false }}
+        pinch={{ disabled: false }}
+      >
+        <TransformComponent
+          wrapperClass="!w-full !h-full flex items-center justify-center overflow-hidden"
+          contentClass="!w-full !h-full flex items-center justify-center"
+        >
+          <img 
+            src={lightboxUrl} 
+            alt="Zoomed portfolio snap" 
+            className="w-full h-full object-contain pointer-events-auto select-none" 
+            referrerPolicy="no-referrer"
+          />
+        </TransformComponent>
+      </TransformWrapper>
+    </div>
 
- {/* Interactive Options Row (Edit Caption & Delete Photo) */}
- {!isEditingCaption && (
- <div className="flex gap-2.5 pt-2 border-t border-white/5 justify-end">
- {/* Delete Photo Button */}
- <button
- type="button"
- onClick={() => {
- const filtered = portfolioPhotos.filter(url => url !== lightboxUrl);
- setPortfolioPhotos(filtered);
- localStorage.setItem('runner_portfolio_photos', JSON.stringify(filtered));
- 
- const updatedCaptions = { ...portfolioCaptions };
- delete updatedCaptions[lightboxUrl];
- setPortfolioCaptions(updatedCaptions);
- localStorage.setItem('runner_portfolio_captions', JSON.stringify(updatedCaptions));
+    {/* Connected Caption and Management Box */}
+    <div className="p-4 bg-white dark:bg-[#151F32] border-t border-gray-100 dark:border-slate-800/80 text-right flex flex-col gap-3">
+      <div>
+        <h5 className="text-[10px] text-sky-600 dark:text-[#4FC3F7] font-black uppercase tracking-wider mb-1.5 flex items-center gap-1.5 justify-end">
+          <span>{lang === 'ar' ? 'الوصف المرفق بالصورة' : 'Image Caption'}</span>
+        </h5>
+        {!isEditingCaption ? (
+          <p className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-gray-200 leading-relaxed whitespace-pre-line bg-slate-50 dark:bg-white/5 border border-slate-150 dark:border-transparent p-3 rounded-xl min-h-[38px] flex items-center justify-end text-end">
+            {portfolioCaptions[lightboxUrl] || (lang === 'ar' ? 'لا يوجد وصف مضاف لهذه الصورة بعد.' : 'No caption added to this portfolio snap yet.')}
+          </p>
+        ) : (
+          <div className="space-y-2">
+            <textarea
+              value={tempCaption}
+              onChange={(e) => setTempCaption(e.target.value)}
+              placeholder={lang === 'ar' ? 'اكتب وصفاً أو تعليقاً على هذا العمل الميداني...' : 'Enter a description for this portfolio item...'}
+              className="w-full text-xs font-bold p-3 bg-slate-50 dark:bg-white/5 border border-slate-300 dark:border-white/15 rounded-xl text-slate-900 dark:text-white placeholder:text-gray-400 outline-none focus:ring-1 focus:ring-sky-500 dark:focus:ring-[#4FC3F7] text-right"
+              rows={2}
+              maxLength={250}
+            />
+            <div className="flex gap-2 justify-end">
+              <button
+                type="button"
+                onClick={() => setIsEditingCaption(false)}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/15 text-slate-700 dark:text-white font-black text-[10px] rounded-lg cursor-pointer transition-all border-none"
+              >
+                {lang === 'ar' ? 'إلغاء' : 'Cancel'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const updated = { ...portfolioCaptions, [lightboxUrl]: tempCaption };
+                  setPortfolioCaptions(updated);
+                  localStorage.setItem('runner_portfolio_captions', JSON.stringify(updated));
+                  setIsEditingCaption(false);
+                  showToast(lang === 'ar' ? ' تم حفظ الوصف الجديد بنجاح!' : ' Caption updated!');
+                }}
+                className="px-4 py-1.5 bg-sky-500 hover:bg-sky-600 dark:bg-[#4FC3F7] dark:hover:bg-[#4FC3F7]/90 text-white font-black text-[10px] rounded-lg cursor-pointer transition-all border-none shadow-sm"
+              >
+                {lang === 'ar' ? 'حفظ الوصف' : 'Save Caption'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
- setLightboxUrl(null);
- showToast(lang === 'ar' ? ' تم حذف الصورة نهائياً من معرضك!' : ' Photo permanently deleted from portfolio!');
- }}
- className="flex-1 bg-[#FF3B7C] hover:bg-[#FF3B7C]/90 text-white py-2.5 rounded-xl text-[10px] font-black uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer"
- >
- <Trash2 className="w-3.5 h-3.5" />
- <span>{lang === 'ar' ? 'حذف الصورة ' : 'Delete Photo '}</span>
- </button>
+      {/* Options Row (Edit Caption & Delete Photo) */}
+      {!isEditingCaption && (
+        <div className="flex gap-2 pt-1 border-t border-slate-150 dark:border-white/5 justify-end">
+          <button
+            type="button"
+            onClick={() => {
+              const filtered = portfolioPhotos.filter(url => url !== lightboxUrl);
+              setPortfolioPhotos(filtered);
+              localStorage.setItem('runner_portfolio_photos', JSON.stringify(filtered));
+              
+              const updatedCaptions = { ...portfolioCaptions };
+              delete updatedCaptions[lightboxUrl];
+              setPortfolioCaptions(updatedCaptions);
+              localStorage.setItem('runner_portfolio_captions', JSON.stringify(updatedCaptions));
 
- {/* Edit Caption Trigger Button */}
- <button
- type="button"
- onClick={() => {
- setTempCaption(portfolioCaptions[lightboxUrl] || '');
- setIsEditingCaption(true);
- }}
- className="flex-1 bg-[#4FC3F7]/15 hover:bg-[#4FC3F7] hover:text-white border border-[#4FC3F7]/30 text-[#4FC3F7] py-2.5 rounded-xl text-[10px] font-black uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer"
- >
- <Edit2 className="w-3.5 h-3.5" />
- <span>{lang === 'ar' ? 'تعديل الكابشن ' : 'Edit Caption '}</span>
- </button>
- </div>
- )}
- </div>
+              setLightboxUrl(null);
+              
+              showToast(lang === 'ar' ? ' تم حذف الصورة نهائياً من معرضك!' : ' Photo permanently deleted from portfolio!');
+            }}
+            className="flex-1 bg-rose-500 hover:bg-rose-600 dark:bg-[#FF3B7C] dark:hover:bg-[#FF3B7C]/90 text-white py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm active:scale-98"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>{lang === 'ar' ? 'حذف الصورة' : 'Delete Photo'}</span>
+          </button>
 
- <p className="text-gray-400 text-[10px] font-black">
- {lang === 'ar' ? ' اضغط في أي مكان بالخلفية للعودة للملف الشخصي' : ' Click background outside to return to profile'}
- </p>
- </motion.div>
- </div>
- )}
- </AnimatePresence>
+          <button
+            type="button"
+            onClick={() => {
+              setTempCaption(portfolioCaptions[lightboxUrl] || '');
+              setIsEditingCaption(true);
+            }}
+            className="flex-1 bg-sky-50 hover:bg-sky-100 dark:bg-[#4FC3F7]/15 dark:hover:bg-[#4FC3F7] text-sky-700 dark:text-[#4FC3F7] dark:hover:text-white border border-sky-200 dark:border-[#4FC3F7]/30 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
+          >
+            <Edit2 className="w-3.5 h-3.5" />
+            <span>{lang === 'ar' ? 'تعديل الكابشن' : 'Edit Caption'}</span>
+          </button>
+        </div>
+      )}
+    </div>
+  </motion.div>
+  </div>
+  )}
+  </AnimatePresence>
 
- {/* Cryptographic Authority Confirmation Popup modal for review deletion */}
+  {/* Cryptographic Authority Confirmation Popup modal for review deletion */}
  <AnimatePresence>
  {reviewToDelete && (
  <div className="fixed inset-0 bg-[#1F2A44]/75 backdrop-blur-md flex items-center justify-center p-4 z-50">
@@ -5038,18 +5068,30 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/refill-manual`, {
                       className="bg-white dark:bg-[#1C283F] border border-gray-150 dark:border-slate-700/80 rounded-2xl overflow-hidden shadow-xs relative flex flex-col justify-between group transition-all"
                     >
                       {review.completedTaskImage && (
-                        <div className="h-32 w-full overflow-hidden relative cursor-pointer" onClick={() => setLightboxUrl(review.completedTaskImage)}>
+                        <div 
+                          className="aspect-[3/4] max-h-72 w-full overflow-hidden relative cursor-pointer rounded-xl bg-slate-900 group" 
+                          onClick={() => {
+                            
+                            setReviewImagePreview({
+                              imageUrl: review.completedTaskImage,
+                              reviewerName: review.godfatherName,
+                              reviewerAvatar: review.godfatherAvatar,
+                              rating: review.rating,
+                              comment: review.comment,
+                              createdAt: review.createdAt,
+                              roleType: 'godfather'
+                            });
+                          }}
+                        >
                           <img 
                             src={review.completedTaskImage} 
                             alt="Completed Task" 
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                           />
                           <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
-                          <div className="absolute bottom-2 left-2 bg-[#FFD34D] text-[#1F2A44] px-2 py-0.5 rounded-lg text-[10px] font-black flex items-center gap-0.5 shadow-sm">
-                            {Array.from({ length: review.rating }).map((_, i) => (
-                              <Star key={i} className="w-2.5 h-2.5 fill-[#1F2A44] text-[#1F2A44]" />
-                            ))}
-                            <span className="ml-1 font-mono font-bold">{review.rating}.0</span>
+                          <div className="absolute bottom-2.5 left-2.5 bg-[#FFD34D] text-[#1F2A44] px-2.5 py-1 rounded-xl text-xs font-black flex items-center gap-1 shadow-md">
+                            <Star className="w-3.5 h-3.5 fill-[#1F2A44] text-[#1F2A44]" />
+                            <span className="font-mono font-bold">{review.rating}.0</span>
                           </div>
                         </div>
                       )}
@@ -5103,18 +5145,30 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/refill-manual`, {
                       className="bg-white dark:bg-[#1C283F] border border-gray-150 dark:border-slate-700/80 rounded-2xl overflow-hidden shadow-xs relative flex flex-col justify-between group transition-all"
                     >
                       {review.completedTaskImage && (
-                        <div className="h-32 w-full overflow-hidden relative cursor-pointer" onClick={() => setLightboxUrl(review.completedTaskImage)}>
+                        <div 
+                          className="aspect-[3/4] max-h-72 w-full overflow-hidden relative cursor-pointer rounded-xl bg-slate-900 group" 
+                          onClick={() => {
+                            
+                            setReviewImagePreview({
+                              imageUrl: review.completedTaskImage,
+                              reviewerName: review.hunterName,
+                              reviewerAvatar: review.hunterAvatar,
+                              rating: review.rating,
+                              comment: review.comment,
+                              createdAt: review.createdAt,
+                              roleType: 'hunter'
+                            });
+                          }}
+                        >
                           <img 
                             src={review.completedTaskImage} 
                             alt="Completed Task" 
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                           />
                           <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
-                          <div className="absolute bottom-2 left-2 bg-amber-400 text-slate-900 px-2 py-0.5 rounded-lg text-[10px] font-black flex items-center gap-0.5 shadow-sm">
-                            {Array.from({ length: review.rating }).map((_, i) => (
-                              <Star key={i} className="w-2.5 h-2.5 fill-slate-900 text-slate-900" />
-                            ))}
-                            <span className="ml-1 font-mono font-bold">{review.rating}.0</span>
+                          <div className="absolute bottom-2.5 left-2.5 bg-amber-400 text-slate-900 px-2.5 py-1 rounded-xl text-xs font-black flex items-center gap-1 shadow-md">
+                            <Star className="w-3.5 h-3.5 fill-slate-900 text-slate-900" />
+                            <span className="font-mono font-bold">{review.rating}.0</span>
                           </div>
                         </div>
                       )}
@@ -5162,7 +5216,119 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/refill-manual`, {
     )}
   </AnimatePresence>
 
- </div>
+  {/* Dedicated Review Image Preview Modal - Connected Instagram-style post card */}
+  <AnimatePresence>
+    {reviewImagePreview && (
+      <div 
+        className="fixed inset-0 bg-black/85 dark:bg-black/95 backdrop-blur-md z-[100000] flex flex-col items-center justify-center p-3 sm:p-4 overscroll-contain select-none animate-fadeIn"
+        style={{ touchAction: 'none' }}
+        onClick={() => { setReviewImagePreview(null);  }}
+        onTouchMove={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}
+      >
+        <motion.div 
+          initial={{ scale: 0.94, opacity: 0, y: 15 }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
+          exit={{ scale: 0.94, opacity: 0, y: 15 }}
+          className="max-w-sm sm:max-w-md w-full bg-white dark:bg-[#151F32] rounded-3xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col"
+          style={{ touchAction: 'pan-y' }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* 1. Connected Instagram-style Header */}
+          <div className="px-4 py-3 flex items-center justify-between border-b border-gray-100 dark:border-slate-800/80 bg-white dark:bg-[#151F32]">
+            {/* Left: Close Button + Rating Badge (Star + Number) */}
+            <div className="flex items-center gap-2">
+              <button 
+                type="button"
+                onClick={() => { setReviewImagePreview(null);  }}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center transition-all cursor-pointer shadow-xs active:scale-90"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+              <div className="flex items-center gap-1 bg-amber-400 text-slate-900 px-2.5 py-1 rounded-xl text-xs font-black shadow-xs">
+                <Star className="w-3.5 h-3.5 fill-slate-900 text-slate-900" />
+                <span className="font-mono">{reviewImagePreview.rating}.0</span>
+              </div>
+            </div>
+
+            {/* Right: Reviewer Details */}
+            <div className="flex items-center gap-2.5 text-right">
+              <div>
+                <div className="flex items-center gap-1.5 justify-end">
+                  <span className="text-[9px] px-1.5 py-0.5 rounded font-black tracking-wide bg-sky-100 text-sky-700 dark:bg-sky-950/60 dark:text-sky-400">
+                    {reviewImagePreview.roleType === 'godfather'
+                      ? (lang === 'ar' ? 'صاحب العمل' : 'Employer')
+                      : (lang === 'ar' ? 'منفذ المهمة' : 'Worker')}
+                  </span>
+                  <span className="text-xs sm:text-sm font-black text-slate-900 dark:text-white">
+                    {reviewImagePreview.reviewerName}
+                  </span>
+                </div>
+                {reviewImagePreview.createdAt && (
+                  <span className="text-[10px] text-gray-400 dark:text-slate-400 block font-medium">
+                    {formatReviewDate(reviewImagePreview.createdAt, lang)}
+                  </span>
+                )}
+              </div>
+              <img 
+                src={reviewImagePreview.reviewerAvatar || (reviewImagePreview.roleType === 'godfather' 
+                  ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=60' 
+                  : 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=60')} 
+                alt={reviewImagePreview.reviewerName} 
+                className="w-9 h-9 rounded-full object-cover ring-1 ring-slate-200 dark:ring-slate-700 shadow-xs"
+              />
+            </div>
+          </div>
+
+          {/* 2. Connected 3:4 Aspect Ratio Photo - Standard Pinch to zoom & Pan (Strictly bounded) */}
+          <div className="w-full aspect-[3/4] relative bg-black overflow-hidden flex items-center justify-center select-none touch-none">
+            <TransformWrapper
+              initialScale={1}
+              minScale={1}
+              maxScale={4}
+              centerOnInit={true}
+              centerZoomedOut={true}
+              limitToBounds={true}
+              doubleClick={{ disabled: false, mode: 'toggle', step: 1.5 }}
+              panning={{ disabled: false }}
+              pinch={{ disabled: false }}
+            >
+              <TransformComponent
+                wrapperClass="!w-full !h-full flex items-center justify-center overflow-hidden"
+                contentClass="!w-full !h-full flex items-center justify-center"
+              >
+                <img 
+                  src={reviewImagePreview.imageUrl} 
+                  alt="Review proof document" 
+                  className="w-full h-full object-contain pointer-events-auto select-none"
+                  referrerPolicy="no-referrer"
+                />
+              </TransformComponent>
+            </TransformWrapper>
+          </div>
+
+            {/* 3. Connected Instagram-style Caption Footer */}
+            <div className="px-4 py-3.5 bg-white dark:bg-[#151F32] border-t border-gray-100 dark:border-slate-800/80 text-right space-y-1.5">
+              <div className="text-xs sm:text-sm leading-relaxed">
+                <span className="font-black text-slate-900 dark:text-white ml-1.5">
+                  {reviewImagePreview.reviewerName}
+                </span>
+                <span className="font-medium text-slate-700 dark:text-slate-200 italic">
+                  “{reviewImagePreview.comment}”
+                </span>
+              </div>
+              {reviewImagePreview.createdAt && (
+                <div className="flex items-center justify-end pt-1 text-[10px] text-gray-400 dark:text-slate-500">
+                  <span>{formatReviewDate(reviewImagePreview.createdAt, lang)}</span>
+                </div>
+              )}
+            </div>
+        </motion.div>
+      </div>
+    )}
+  </AnimatePresence>
+
+  </div>
  </PullToRefresh>
  );
 }

@@ -19,6 +19,7 @@ import { onSnapshot, doc, setDoc, updateDoc, deleteDoc, collection, getDoc, quer
 import { auth, db, handleFirestoreError, OperationType, cleanData } from './utils/firebase';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
+import { SplashScreen } from '@capacitor/splash-screen';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { triggerPhoneDeviceNotification } from './utils/phoneNotifications';
@@ -29,23 +30,47 @@ import HomeView from './components/HomeView';
 import type { NotificationDoc } from './components/NotificationScreen';
 import UnifiedQuestCard from './components/UnifiedQuestCard';
 
-// Optimized Lazy-Loaded Secondary Views & Modals for Lightweight Instant Boot
-const MapView = React.lazy(() => import('./components/MapView'));
-const MyQuestsView = React.lazy(() => import('./components/MyQuestsView'));
-const ProfileView = React.lazy(() => import('./components/ProfileView'));
-const PublicProfileView = React.lazy(() => import('./components/PublicProfileView'));
-const ReciprocalRatingModal = React.lazy(() => import('./components/ReciprocalRatingModal'));
-const NotificationScreen = React.lazy(() => import('./components/NotificationScreen'));
-const InboxScreen = React.lazy(() => import('./components/InboxScreen'));
-const QuestDetailScreen = React.lazy(() => import('./components/QuestDetailScreen'));
-const GlobalCreateQuestModal = React.lazy(() => import('./components/GlobalCreateQuestModal'));
-const TermsConsentModal = React.lazy(() => import('./components/TermsConsentModal'));
-const OnboardingModal = React.lazy(() => import('./components/OnboardingModal'));
+// Resilient Lazy Loader with Automatic Retry to prevent "Failed to fetch dynamically imported module" errors
+const lazyWithRetry = <T extends React.ComponentType<any>>(
+  componentImport: () => Promise<{ default: T }>
+): React.LazyExoticComponent<T> => {
+  return React.lazy(() =>
+    new Promise<{ default: T }>((resolve, reject) => {
+      let attempts = 0;
+      const execute = () => {
+        attempts++;
+        componentImport()
+          .then(resolve)
+          .catch((error) => {
+            if (attempts <= 2) {
+              setTimeout(execute, 1000);
+            } else {
+              reject(error);
+            }
+          });
+      };
+      execute();
+    })
+  );
+};
+
+const MapView = lazyWithRetry(() => import('./components/MapView'));
+const MyQuestsView = lazyWithRetry(() => import('./components/MyQuestsView'));
+const ProfileView = lazyWithRetry(() => import('./components/ProfileView'));
+const AdminView = lazyWithRetry(() => import('./components/AdminView'));
+const PublicProfileView = lazyWithRetry(() => import('./components/PublicProfileView'));
+const ReciprocalRatingModal = lazyWithRetry(() => import('./components/ReciprocalRatingModal'));
+const NotificationScreen = lazyWithRetry(() => import('./components/NotificationScreen'));
+const InboxScreen = lazyWithRetry(() => import('./components/InboxScreen'));
+const QuestDetailScreen = lazyWithRetry(() => import('./components/QuestDetailScreen'));
+const GlobalCreateQuestModal = lazyWithRetry(() => import('./components/GlobalCreateQuestModal'));
+const TermsConsentModal = lazyWithRetry(() => import('./components/TermsConsentModal'));
+const OnboardingModal = lazyWithRetry(() => import('./components/OnboardingModal'));
 
 const ViewLoadingFallback = () => (
   <div className="flex-1 min-h-[40vh] flex flex-col items-center justify-center p-8 space-y-3 select-none pointer-events-none">
     <div className="flex items-center gap-1.5">
-      <div className="w-2.5 h-2.5 rounded-full bg-[#1F2A44] animate-bounce [animation-delay:-0.3s]"></div>
+      <div className="w-2.5 h-2.5 rounded-full bg-[#1F2A44] dark:bg-slate-300 animate-bounce [animation-delay:-0.3s]"></div>
       <div className="w-2.5 h-2.5 rounded-full bg-[#FF3B7C] animate-bounce [animation-delay:-0.15s]"></div>
       <div className="w-2.5 h-2.5 rounded-full bg-[#FFD34D] animate-bounce"></div>
     </div>
@@ -85,14 +110,14 @@ const hashString = (str: string): string => {
 export default function App() {
  const [currentView, setCurrentView] = useState<ViewState>('home');
 
-  // Idle background prefetch of common secondary views after initial launch
+  // Idle background prefetch of common secondary views with safety catch
   useEffect(() => {
     const idlePrefetch = setTimeout(() => {
-      import('./components/MyQuestsView');
-      import('./components/InboxScreen');
-      import('./components/ProfileView');
-      import('./components/MapView');
-    }, 2500);
+      import('./components/MyQuestsView').catch(() => {});
+      import('./components/InboxScreen').catch(() => {});
+      import('./components/ProfileView').catch(() => {});
+      import('./components/MapView').catch(() => {});
+    }, 3000);
     return () => clearTimeout(idlePrefetch);
   }, []);
  const [isInsideChat, setIsInsideChat] = useState<boolean>(false);
@@ -140,7 +165,6 @@ export default function App() {
  
  // State variables for GPS Permission Guardrails
  const [isGpsEnabled, setIsGpsEnabled] = useState<boolean>(true);
- const [gpsAlertOpen, setGpsAlertOpen] = useState<boolean>(false);
 
  // Pre-flight balance check and KYC prompt state
  const [showKycRefillPromptModal, setShowKycRefillPromptModal] = useState<boolean>(false);
@@ -185,11 +209,20 @@ export default function App() {
 
  // Synchronize Dark Mode Class (stored in userProfile.privacyEnabled)
  useEffect(() => {
- if (userProfile?.privacyEnabled) {
- document.documentElement.classList.add('dark');
- } else {
- document.documentElement.classList.remove('dark');
- }
+   if (userProfile) {
+     const isDark = !!userProfile.privacyEnabled;
+     if (isDark) {
+       document.documentElement.classList.add('dark');
+       try { localStorage.setItem('quest_app_dark_mode', 'true'); } catch (e) {}
+       const meta = document.querySelector('meta[name="theme-color"]');
+       if (meta) meta.setAttribute('content', '#0B132B');
+     } else {
+       document.documentElement.classList.remove('dark');
+       try { localStorage.setItem('quest_app_dark_mode', 'false'); } catch (e) {}
+       const meta = document.querySelector('meta[name="theme-color"]');
+       if (meta) meta.setAttribute('content', '#F8FAFC');
+     }
+   }
  }, [userProfile?.privacyEnabled]);
 
  // Synchronize Low Performance Class (stored in userProfile.lowPerformanceModeEnabled)
@@ -426,10 +459,6 @@ export default function App() {
  setActiveRatingQuestId(null);
  return true;
  }
- if (gpsAlertOpen) {
- setGpsAlertOpen(false);
- return true;
- }
  if (showKycRefillPromptModal) {
  setShowKycRefillPromptModal(false);
  return true;
@@ -517,7 +546,6 @@ export default function App() {
  }, [
  lightboxBlockedImageUrl,
  activeRatingQuestId,
- gpsAlertOpen,
  showKycRefillPromptModal,
  showGlobalCreateQuest,
  showNotifications,
@@ -985,6 +1013,18 @@ export default function App() {
 
  // A. Setup local storage caching fallback loaders
  try {
+ const storedQuests = localStorage.getItem('quest_app_quests');
+ if (storedQuests) {
+   try {
+     const parsedQuests = JSON.parse(storedQuests);
+     if (Array.isArray(parsedQuests) && parsedQuests.length > 0) {
+       setQuests(parsedQuests.filter(q => !isQuestExpired(q)));
+     }
+   } catch (qErr) {
+     console.warn('Failed parsing cached quests:', qErr);
+   }
+ }
+
  const storedFlags = localStorage.getItem('quest_app_user_flags');
  if (storedFlags) setUserFlags(JSON.parse(storedFlags));
 
@@ -1234,22 +1274,19 @@ export default function App() {
  });
 
  snap.forEach((docSnap) => {
- const id = docSnap.id;
- const data = docSnap.data();
- const q = { ...data, id } as Quest;
+   const id = docSnap.id;
+   const data = docSnap.data();
+   const q = { ...data, id } as Quest;
 
- // Immediate Expiration Filter: If an open quest exceeded 8 hours or fixed contract ended, never load it
- if (isQuestExpired(q)) {
-   if (auth.currentUser) {
-     deleteDoc(doc(db, 'quests', id)).catch(() => {});
+   // Immediate Expiration Filter: If an open quest exceeded 24 hours or fixed contract ended, skip it
+   if (isQuestExpired(q)) {
+     return;
    }
-   return;
- }
 
- // Automatically purge legacy mock/trial quests from Firestore to keep DB pure
- if (!id.startsWith('q-') || id.startsWith('q-user-')) {
-   loadedQuestsData.push(q);
- }
+   // Automatically purge legacy mock/trial quests from Firestore to keep DB pure
+   if (!id.startsWith('q-') || id.startsWith('q-user-')) {
+     loadedQuestsData.push(q);
+   }
  });
  loadedQuestsData.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
  
@@ -1360,7 +1397,7 @@ export default function App() {
  questId: latestArrival.questId
  });
  }
- }, (e) => console.error("Notifications subscription error:", e));
+ }, (e) => handleFirestoreError(e, OperationType.LIST, "notifications"));
 
  // Sub 5: Chats collections subscription
  const qOwnerChats = query(collection(db, 'chats'), where('ownerId', '==', firebaseUser.uid));
@@ -1396,7 +1433,7 @@ export default function App() {
  allChatsMap[doc.id] = { ...doc.data(), id: doc.id };
  });
  updateChatsState();
- }, (e) => console.error("Chats owner subscription error:", e));
+ }, (e) => handleFirestoreError(e, OperationType.LIST, "chats_owner"));
 
  unsubChatsApplicant = onSnapshot(qApplicantChats, (snap) => {
  snap.docChanges().forEach((change) => {
@@ -1416,7 +1453,7 @@ export default function App() {
  allChatsMap[doc.id] = { ...doc.data(), id: doc.id };
  });
  updateChatsState();
- }, (e) => console.error("Chats applicant subscription error:", e));
+ }, (e) => handleFirestoreError(e, OperationType.LIST, "chats_applicant"));
 
  // Sub 6: Users collection snapshot for real-time Leaderboard sync - Optimized for >1 Million users with sorting and limit
  const qUsers = query(collection(db, 'users'), orderBy('totalPoints', 'desc'), limit(100));
@@ -1455,7 +1492,7 @@ export default function App() {
  setLeaders(mappedLeaders);
  localStorage.setItem('quest_app_leaders', JSON.stringify(mappedLeaders));
  }, (e) => {
- console.error("Users subscription failed: ", e);
+ handleFirestoreError(e, OperationType.LIST, "users_leaderboard");
  });
 
  } else {
@@ -1847,38 +1884,42 @@ export default function App() {
  }
  }, [authInitialized, userProfile]);
 
- // Premium entry splash animations and timing controls
+ // Premium entry splash animations and timing controls (unified with splash screen)
  useEffect(() => {
- const minTimer = setTimeout(() => {
- setMinTimeElapsed(true);
- }, 2500);
+   try {
+     SplashScreen.hide().catch(() => {});
+   } catch (e) {}
 
- const shrinkTimer = setTimeout(() => {
- setAnimationPhase('shrink');
- }, 900);
+   const shrinkTimer = setTimeout(() => {
+     setAnimationPhase('shrink');
+   }, 350);
 
- const textTimer = setTimeout(() => {
- setAnimationPhase('text-fade');
- }, 1200);
+   const textTimer = setTimeout(() => {
+     setAnimationPhase('text-fade');
+   }, 500);
 
- return () => {
- clearTimeout(minTimer);
- clearTimeout(shrinkTimer);
- clearTimeout(textTimer);
- };
+   const minTimer = setTimeout(() => {
+     setMinTimeElapsed(true);
+   }, 1100);
+
+   return () => {
+     clearTimeout(minTimer);
+     clearTimeout(shrinkTimer);
+     clearTimeout(textTimer);
+   };
  }, []);
 
- // Sync splashActive and splashFadeOut turning off
+ // Sync splashActive and splashFadeOut turning off smoothly
  useEffect(() => {
- if (minTimeElapsed && authInitialized) {
- if (!userProfile || !isLoadingRating) {
- setSplashFadeOut(true);
- const timer = setTimeout(() => {
- setSplashActive(false);
- }, 700);
- return () => clearTimeout(timer);
- }
- }
+   if (minTimeElapsed && authInitialized) {
+     if (!userProfile || !isLoadingRating) {
+       setSplashFadeOut(true);
+       const timer = setTimeout(() => {
+         setSplashActive(false);
+       }, 500);
+       return () => clearTimeout(timer);
+     }
+   }
  }, [minTimeElapsed, authInitialized, userProfile, isLoadingRating]);
 
  // Global listener for manage-quest to auto-navigate to my-quests (created tab)
@@ -2042,52 +2083,83 @@ export default function App() {
  }, [currentView, matchingQuestsCount, totalMyQuestsUpdates, unreadChatsCount, totalProfileUpdates]);
 
  const renderSplashContent = () => (
- <div className={`fixed -inset-2 bg-[#0B132B] flex items-center justify-center font-sans px-6 select-none overflow-hidden z-[99999] transition-all duration-700 cubic-bezier(0.16, 1, 0.3, 1) ${
- splashFadeOut ? 'opacity-0 scale-105 pointer-events-none' : 'opacity-100 scale-100'
- }`}>
- {/* Subtle, luxurious Ambient Glow in the background */}
- <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full bg-[#FC0D82]/5 blur-[120px] pointer-events-none"></div>
+  <div className={`fixed -inset-2 bg-[#F8FAFC] dark:bg-[#0B132B] flex flex-col items-center justify-center font-sans px-6 select-none overflow-hidden z-[99999] transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1) ${
+    splashFadeOut ? 'opacity-0 scale-105 pointer-events-none' : 'opacity-100 scale-100'
+  }`}>
+    {/* Subtle Ambient Glow matching dark and light mode */}
+    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full bg-[#FC0D82]/10 dark:bg-[#FC0D82]/5 blur-[120px] pointer-events-none"></div>
 
- <div className="relative flex items-center justify-center w-[320px] h-[120px] z-10 select-none pointer-events-none">
- {/* Logo element with Zoom & Shrink/Move animation */}
- <motion.div
- animate={{
- scale: animationPhase === 'zoom' ? 1.6 : 1.0,
- x: animationPhase === 'zoom' ? 0 : -64,
- }}
- transition={{
- type: "spring",
- stiffness: 100,
- damping: 18,
- }}
- className="absolute flex items-center justify-center shrink-0 select-none pointer-events-none"
- >
- <QuestLogo size="xl" iconOnly={true} />
- </motion.div>
+    <div className="relative flex flex-col items-center justify-center z-10 select-none pointer-events-none">
+      {/* Logo element with Zoom & Settle animation */}
+      <motion.div
+        animate={{
+          scale: animationPhase === 'zoom' ? 1.2 : 1.0,
+        }}
+        transition={{
+          type: "spring",
+          stiffness: 120,
+          damping: 14,
+        }}
+        className="flex items-center justify-center shrink-0 select-none pointer-events-none"
+      >
+        <QuestLogo size="xl" iconOnly={true} />
+      </motion.div>
 
- {/* Staggered Text "Quest" appearing next to the logo on the right */}
- <motion.div
- initial={{ opacity: 0, x: 20 }}
- animate={{ 
- opacity: animationPhase === 'text-fade' ? 1 : 0,
- x: animationPhase === 'text-fade' ? 56 : 20
- }}
- transition={{
- duration: 0.6,
- ease: [0.16, 1, 0.3, 1] // professional cubic-bezier ease out
- }}
- className="absolute flex items-center justify-center"
- >
- <span 
- style={{ letterSpacing: '-0.04em' }}
- className="font-sans font-black italic tracking-tighter uppercase select-none text-white text-5xl sm:text-6xl"
- >
- Quest
- </span>
- </motion.div>
- </div>
- </div>
- );
+      {/* Staggered Text "Quest" appearing cleanly below logo with dark & light theme styling */}
+      <motion.div
+        initial={{ opacity: 0, y: 14 }}
+        animate={{ 
+          opacity: animationPhase === 'text-fade' ? 1 : 0,
+          y: animationPhase === 'text-fade' ? 0 : 10,
+        }}
+        transition={{
+          duration: 0.5,
+          ease: [0.16, 1, 0.3, 1]
+        }}
+        className="mt-5 flex items-center justify-center"
+      >
+        <span 
+          style={{ letterSpacing: '0.04em' }}
+          className="font-sans font-black italic tracking-wider uppercase select-none text-slate-900 dark:text-white text-4xl sm:text-5xl drop-shadow-[0_4px_24px_rgba(252,13,130,0.25)] dark:drop-shadow-[0_4px_24px_rgba(252,13,130,0.35)]"
+        >
+          Quest
+        </span>
+      </motion.div>
+    </div>
+
+    {/* Footer Attribution: from Gen Z inc (Minimal Pure Monogram & Typography, Dark/Light adaptive) */}
+    <div dir="ltr" className="absolute bottom-8 sm:bottom-10 flex flex-col items-center justify-center gap-1.5 select-none pointer-events-none z-20">
+      <span className="text-[10px] uppercase font-semibold tracking-[0.25em] text-slate-400 dark:text-white/50">
+        from
+      </span>
+      <div className="flex items-center gap-2.5">
+        {/* Left: Pure Minimalist Vector Monogram fusing 'G' & 'Z' (Adaptive stroke: #0F172A in light, #FFFFFF in dark) */}
+        <div className="flex items-center justify-center shrink-0">
+          <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path
+              d="M 12 12 H 20.5 V 20.5 H 3.5 V 3.5 H 20.5 L 3.5 20.5"
+              className="stroke-slate-900 dark:stroke-white"
+              strokeWidth="2.3"
+              strokeLinecap="round"
+              strokeLinejoin="miter"
+              strokeMiterlimit="6"
+            />
+          </svg>
+        </div>
+
+        {/* Center & Right: Gen Z inc (Adaptive typography: dark slate in light mode, pure white in dark mode) */}
+        <div className="flex items-baseline gap-1.5 font-sans">
+          <span className="text-[13px] font-black tracking-tight text-slate-900 dark:text-white">
+            Gen Z
+          </span>
+          <span className="text-[11px] font-medium tracking-wide text-slate-500 dark:text-white/70">
+            inc
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+);
 
  if (splashActive) {
  return renderSplashContent();
@@ -2438,7 +2510,25 @@ export default function App() {
  helperName: (selectedApplicant as any)?.name || (selectedApplicant as any)?.applicantName || 'موظف',
  helperPhone: (selectedApplicant as any)?.phone || '',
  contractId: contractId,
- assignedAt: new Date().toISOString()
+ assignedAt: new Date().toISOString(),
+ applicants: (q.applicants || []).filter(a => a.userId !== applicantId),
+ jobApplicants: (q.jobApplicants || []).filter(a => a.applicantId !== applicantId)
+ };
+ }
+
+ // Cancel all other booking requests across public/general quests and employers
+ const hadApplicant = q.applicants?.some(a => a.userId === applicantId);
+ const hadJobApplicant = q.jobApplicants?.some(a => a.applicantId === applicantId);
+ if (hadApplicant || hadJobApplicant) {
+ const remainingApps = (q.applicants || []).filter(a => a.userId !== applicantId);
+ const remainingJobApps = (q.jobApplicants || []).filter(a => a.applicantId !== applicantId);
+ const hasOtherApps = remainingApps.length > 0 || remainingJobApps.length > 0;
+ const isStillClaimed = !!(q.helperId || q.assignedRunnerId || q.employeeId || (q.assignedRunnerIds && q.assignedRunnerIds.length > 0));
+ return {
+ ...q,
+ applicants: remainingApps,
+ jobApplicants: remainingJobApps,
+ status: (q.status === 'applications' && !hasOtherApps && !isStillClaimed) ? 'open' : q.status
  };
  }
  return q;
@@ -2505,7 +2595,25 @@ export default function App() {
  helperPhone: (selectedApplicant as any)?.phone || (selectedApplicant as any)?.applicantPhone || '',
  assignedRunnerId: applicantId, // fallback
  assignedRunnerIds: updatedAssigned,
- assignedAt: new Date().toISOString()
+ assignedAt: new Date().toISOString(),
+ applicants: (q.applicants || []).filter(a => a.userId !== applicantId),
+ jobApplicants: (q.jobApplicants || []).filter(a => a.applicantId !== applicantId)
+ };
+ }
+
+ // Cancel all other booking requests sent by this accepted runner across public/general quests and employers
+ const hadApplicant = q.applicants?.some(a => a.userId === applicantId);
+ const hadJobApplicant = q.jobApplicants?.some(a => a.applicantId === applicantId);
+ if (hadApplicant || hadJobApplicant) {
+ const remainingApps = (q.applicants || []).filter(a => a.userId !== applicantId);
+ const remainingJobApps = (q.jobApplicants || []).filter(a => a.applicantId !== applicantId);
+ const hasOtherApps = remainingApps.length > 0 || remainingJobApps.length > 0;
+ const isStillClaimed = !!(q.helperId || q.assignedRunnerId || q.employeeId || (q.assignedRunnerIds && q.assignedRunnerIds.length > 0));
+ return {
+ ...q,
+ applicants: remainingApps,
+ jobApplicants: remainingJobApps,
+ status: (q.status === 'applications' && !hasOtherApps && !isStillClaimed) ? 'open' : q.status
  };
  }
  return q;
@@ -3138,61 +3246,89 @@ export default function App() {
 
  // Callback 3: Post a brand new local quest - NOW PROTECTED BY HARDWARE GPS
  const handlePostNewQuest = (newQuestData: Partial<Quest>) => {
- verifyGpsHardwareAndExecute('publish', newQuestData, (coords) => {
- const finalLat = newQuestData.lat || coords.lat;
- const finalLng = newQuestData.lng || coords.lng;
+   const proceedWithPublish = async (coords: { lat: number; lng: number }) => {
+     const finalLat = newQuestData.lat || coords.lat;
+     const finalLng = newQuestData.lng || coords.lng;
 
- const newQuest: Quest = {
- id: `q-user-${Date.now()}`,
- title: newQuestData.title || '',
- description: newQuestData.description || '',
- location: newQuestData.location || '',
- lat: finalLat,
- lng: finalLng,
- locationCoords: { lat: finalLat, lng: finalLng },
- gpsCoords: { lat: finalLat, lng: finalLng } as any,
- category: newQuestData.category || 'أخرى',
- cashReward: newQuestData.cashReward || 50,
- pointsReward: newQuestData.pointsReward || 150,
- bookingFeeDA: calculateBookingFee(newQuestData.cashReward || 1000, newQuestData.questType),
- urgency: newQuestData.urgency || 'normal',
- createdAt: new Date().toISOString(),
- status: 'open',
- flagsCount: 0,
- flaggers: [],
- creatorId: userProfile.id,
- creatorName: userProfile.name,
- creatorPhone: userProfile.phone,
- creatorAvatar: userProfile.avatar,
- imageUrls: newQuestData.imageUrls,
- images: newQuestData.images,
- imageUrl: newQuestData.imageUrl,
- questType: newQuestData.questType || 'quick',
- salaryPeriod: newQuestData.salaryPeriod,
- employmentType: newQuestData.employmentType,
- durationType: newQuestData.durationType,
- startDate: newQuestData.startDate,
- endDate: newQuestData.endDate,
- requiredSkills: newQuestData.requiredSkills,
- };
+     const effectiveUserId = auth.currentUser?.uid || userProfile?.id || 'user-unknown';
+     const effectiveUserName = userProfile?.name || auth.currentUser?.displayName || 'مستخدم كويست';
+     const effectiveUserPhone = userProfile?.phone || '';
+     const effectiveUserAvatar = userProfile?.avatar || auth.currentUser?.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150';
 
- const updatedQuests = [newQuest, ...quests];
- syncQuests(updatedQuests);
- setMyQuestsActiveTab('created');
+     const newQuest: Quest = {
+       id: `q-user-${Date.now()}`,
+       title: newQuestData.title || '',
+       description: newQuestData.description || '',
+       location: newQuestData.location || '',
+       lat: finalLat,
+       lng: finalLng,
+       locationCoords: { lat: finalLat, lng: finalLng },
+       gpsCoords: { lat: finalLat, lng: finalLng } as any,
+       category: newQuestData.category || 'أخرى',
+       cashReward: newQuestData.cashReward || 50,
+       pointsReward: newQuestData.pointsReward || 150,
+       bookingFeeDA: calculateBookingFee(newQuestData.cashReward || 1000, newQuestData.questType),
+       urgency: newQuestData.urgency || 'normal',
+       createdAt: new Date().toISOString(),
+       status: 'open',
+       flagsCount: 0,
+       flaggers: [],
+       creatorId: effectiveUserId,
+       creatorName: effectiveUserName,
+       creatorPhone: effectiveUserPhone,
+       creatorAvatar: effectiveUserAvatar,
+       imageUrls: newQuestData.imageUrls,
+       images: newQuestData.images,
+       imageUrl: newQuestData.imageUrl,
+       questType: newQuestData.questType || 'quick',
+       salaryPeriod: newQuestData.salaryPeriod,
+       employmentType: newQuestData.employmentType,
+       durationType: newQuestData.durationType,
+       startDate: newQuestData.startDate,
+       endDate: newQuestData.endDate,
+       requiredSkills: newQuestData.requiredSkills,
+     };
 
- // Update Profile statistics for created list
- const updatedCreatedList = [...userProfile.createdQuestsIds, newQuest.id];
- syncProfile({
- ...userProfile,
- questsCreated: userProfile.questsCreated + 1,
- createdQuestsIds: updatedCreatedList,
- });
+     // 1. Explicitly persist to Firestore first and await confirmation
+     if (auth.currentUser) {
+       try {
+         await setDoc(doc(db, 'quests', newQuest.id), cleanData(newQuest));
+         console.log(`Quest ${newQuest.id} successfully written to Firestore.`);
+       } catch (err: any) {
+         console.error("Failed to write new quest to Firestore:", err);
+         handleFirestoreError(err, OperationType.WRITE, `quests/${newQuest.id}`);
+         showToast(userProfile?.language === 'ar' ? 'تعذر حفظ المهمة في السحابة. تحقق من الاتصال.' : 'Failed to save quest to cloud. Check connection.');
+         return;
+       }
+     }
 
- showToast(userProfile?.language === 'ar'
- ? ' كويست منشور بنجاح! تم التقاط موقع GPS الخاص بك وتعميم المهمة على الرانرز المحيطين بك.'
- : ' Quest published successfully! Your validated hardware GPS coordinates have been broadcast to runners around you.'
- );
- });
+     // 2. Synchronize local states
+     const updatedQuests = [newQuest, ...quests];
+     syncQuests(updatedQuests);
+     setMyQuestsActiveTab('created');
+
+     // 3. Update Profile statistics and activeQuest flag
+     if (userProfile) {
+       const updatedCreatedList = [...(userProfile.createdQuestsIds || []), newQuest.id];
+       syncProfile({
+         ...userProfile,
+         hasActiveQuest: true,
+         questsCreated: (userProfile.questsCreated || 0) + 1,
+         createdQuestsIds: updatedCreatedList,
+       });
+     }
+
+     showToast(userProfile?.language === 'ar'
+       ? ' كويست منشور بنجاح! تم التقاط موقع GPS الخاص بك وتعميم المهمة على الرانرز المحيطين بك.'
+       : ' Quest published successfully! Your validated hardware GPS coordinates have been broadcast to runners around you.'
+     );
+   };
+
+   if (newQuestData.lat && newQuestData.lng) {
+     proceedWithPublish({ lat: newQuestData.lat, lng: newQuestData.lng });
+   } else {
+     verifyGpsHardwareAndExecute('publish', newQuestData, proceedWithPublish);
+   }
  };
 
  // Callback 4: Delete a created Quest (if still available)
@@ -4574,7 +4710,34 @@ export default function App() {
  />
  )}
 
- 
+ {currentView === 'admin' && (
+ isAdminUser ? (
+ <AdminView 
+ userProfile={userProfile}
+ quests={quests}
+ leaders={leaders}
+ lang={userProfile.language}
+ onApproveKYC={handleApproveKYC}
+ onRejectKYC={handleRejectKYC}
+ onBanUser={handleBanUser}
+ onDeleteQuest={handleDeleteQuest}
+ onBroadcastMessage={handleBroadcastMessage}
+ showToast={showToast}
+ onInspectQuest={(questId) => setGlobalQuestDetailId(questId)}
+ onUpdateProfile={handleUpdateProfile}
+ />
+ ) : (
+ <div className="bg-white border-2 border-red-500 rounded-3xl p-8 text-center space-y-4 shadow-md max-w-md mx-auto my-12 font-sans" style={{ direction: userProfile.language === 'ar' ? 'rtl' : 'ltr' }}>
+ <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto">
+ <span className="text-red-600 text-3xl"></span>
+ </div>
+ <h3 className="text-lg font-black text-red-600">غير مصرح بالدخول | Access Denied</h3>
+ <p className="text-xs text-slate-500 font-semibold leading-relaxed">
+ هذه الصفحة مخصصة للمشرفين فقط. يرجى تسجيل الدخول بحساب مشرف معتمد للوصول للميزات الإدارية.
+ </p>
+ </div>
+ )
+ )}
  </>
  )}
   </React.Suspense>
@@ -4654,56 +4817,6 @@ export default function App() {
  )}
  </AnimatePresence>
 
- <AnimatePresence>
- {gpsAlertOpen && (
- <div className="fixed inset-0 bg-[#1F2A44]/60 backdrop-blur-md flex items-center justify-center p-4 z-[10000]">
- <motion.div
- initial={{ opacity: 0, scale: 0.95 }}
- animate={{ opacity: 1, scale: 1 }}
- exit={{ opacity: 0, scale: 0.95 }}
- className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-gray-150 text-center space-y-4 font-sans"
- style={{ direction: userProfile?.language === 'ar' ? 'rtl' : 'ltr' }}
- >
- <div className="w-16 h-16 bg-red-50 text-rose-500 rounded-full flex items-center justify-center mx-auto shadow-inner">
- <span className="text-3xl"></span>
- </div>
- 
- <h3 className="text-base font-black text-gray-900 leading-tight">
- {userProfile?.language === 'ar' ? 'تحديد الموقع معطل' : 'Location Services Disabled'}
- </h3>
- 
- <p className="text-xs text-slate-500 font-bold leading-relaxed font-sans">
- {userProfile?.language === 'ar'
- ? 'الرجاء تفعيل خدمة تحديد المواقع (GPS) في جهازك لتتمكن من تصفح خريطة الكويستات والمهام المتاحة '
- : 'Please enable location services (GPS) on your device to start tracking quests and exploring nearby tasks '}
- </p>
-
- <div className="flex flex-col gap-2 pt-2">
- <button
- onClick={async () => {
- await Geolocator.openLocationSettings();
- setGpsAlertOpen(false);
- setCurrentView('map');
- showToast(userProfile?.language === 'ar'
- ? ' تم تفعيل خدمات GPS بنجاح! جاري تحميل الخريطة الميدانية...'
- : ' GPS enabled successfully! Direct Map initialized!'
- );
- }}
- className="w-full py-3 bg-[#1F2A44] hover:bg-[#1F2A44]/90 text-[#FFD34D] rounded-2xl text-xs font-black shadow-md cursor-pointer select-none transition-all"
- >
- {userProfile?.language === 'ar' ? 'تفعيل الآن' : 'Enable Now'}
- </button>
- <button
- onClick={() => setGpsAlertOpen(false)}
- className="w-full py-2.5 bg-gray-100 hover:bg-gray-150 text-gray-600 rounded-2xl text-[11px] font-black cursor-pointer select-none transition-all"
- >
- {userProfile?.language === 'ar' ? 'إلغاء' : 'Cancel'}
- </button>
- </div>
- </motion.div>
- </div>
- )}
- </AnimatePresence>
 
  {/* Real-time Interactive Captain Arrival Alert Overlay */}
  <AnimatePresence>

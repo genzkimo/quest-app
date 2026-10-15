@@ -970,14 +970,14 @@ function InboxScreen({
  </div>
 
  {/* List Section */}
- <div className="flex-1 overflow-hidden bg-white select-none relative h-full">
+ <div className="flex-1 overflow-hidden bg-white dark:bg-[#151F32] select-none relative h-full">
  <PullToRefresh
  onRefresh={handleRefresh}
  lang={lang}
  audioEffectsEnabled={userProfile?.audioEffectsEnabled !== false}
  hapticFeedbackEnabled={userProfile?.hapticFeedbackEnabled !== false}
  >
- <div className="p-3 bg-white space-y-2 scrollbar-thin">
+ <div className="p-3 bg-white dark:bg-[#151F32] space-y-2 scrollbar-thin">
  {filteredChats.length === 0 ? (
  <div className="py-12 px-4 text-center space-y-3">
  <div className="mx-auto flex justify-center">
@@ -1035,10 +1035,10 @@ function InboxScreen({
  }}
  className={`p-3.5 rounded-2xl border transition-all cursor-pointer relative flex items-center gap-3 group ${
  isSelected
- ? 'bg-slate-50 border-slate-200 shadow-xs ring-1 ring-slate-200'
+ ? 'bg-slate-50 dark:bg-slate-800/90 border-slate-200 dark:border-slate-700 shadow-xs ring-1 ring-slate-200 dark:ring-slate-700'
  : isUnread
  ? 'bg-blue-50/40 border-blue-150 hover:border-slate-200'
- : 'bg-white border-slate-100 hover:bg-slate-50/50'
+ : 'bg-white dark:bg-[#1A263D] border-slate-100 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-800/50'
  }`}
  >
  {isUnread && (
@@ -1130,19 +1130,19 @@ function InboxScreen({
  {/* MAIN PANEL: Chat View Area */}
  <div 
    id="inbox_chat_window"
-   className={`flex-1 bg-slate-50 flex flex-col h-full ${
+   className={`flex-1 bg-slate-50 dark:bg-[#0B1120] flex flex-col h-full ${
      !selectedChat ? 'hidden md:flex' : 'flex'
    }`}
  >
    {selectedChat ? (
      <div className="flex-1 flex flex-col h-full">
        {/* Active Chat Header */}
-       <div className="p-4 pt-[max(1.25rem,calc(env(safe-area-inset-top,0px)+0.75rem))] pb-3 bg-white text-slate-850 flex justify-between items-center shrink-0 border-b border-slate-100">
+       <div className="p-4 pt-[max(1.25rem,calc(env(safe-area-inset-top,0px)+0.75rem))] pb-3 bg-white dark:bg-[#151F32] text-slate-850 dark:text-slate-100 flex justify-between items-center shrink-0 border-b border-slate-100 dark:border-slate-800">
          <div className="flex items-center gap-3 min-w-0">
            {/* Mobile Back Button */}
            <button 
              onClick={() => setSelectedChat(null)}
-             className="md:hidden p-1 rounded-full hover:bg-slate-100 text-slate-600 shrink-0"
+             className="md:hidden p-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 shrink-0"
              title={t.back}
            >
              <ArrowRight className={`w-5 h-5 ${isRtl ? '' : 'rotate-180'}`} />
@@ -1156,7 +1156,7 @@ function InboxScreen({
                  onInspectUser(details.recipientId);
                }
              }}
-             className="w-10 h-10 rounded-full overflow-hidden border border-slate-100 bg-slate-100 shrink-0 cursor-pointer hover:opacity-85 transition-opacity"
+             className="w-10 h-10 rounded-full overflow-hidden border border-slate-100 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 shrink-0 cursor-pointer hover:opacity-85 transition-opacity"
            >
              <img 
                src={getInboxItemDetails(selectedChat).recipientAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'} 
@@ -1178,7 +1178,7 @@ function InboxScreen({
                    onInspectUser(details.recipientId);
                  }
                }}
-               className="font-extrabold text-xs text-slate-800 truncate cursor-pointer hover:text-blue-600 hover:underline transition-all"
+               className="font-extrabold text-xs text-slate-800 dark:text-slate-100 truncate cursor-pointer hover:text-blue-600 dark:hover:text-sky-400 hover:underline transition-all"
              >
                {getInboxItemDetails(selectedChat).recipientName}
              </h4>
@@ -1198,7 +1198,7 @@ function InboxScreen({
                    <div className="flex items-center gap-1.5">
                      <span className={`w-2 h-2 rounded-full ${status.dotColor} shrink-0`}></span>
                      {status.text ? (
-                       <span className="text-[9.5px] font-bold text-slate-500 tracking-tight">
+                       <span className="text-[9.5px] font-bold text-slate-500 dark:text-slate-400 tracking-tight">
                          {status.text}
                        </span>
                      ) : null}
@@ -1219,19 +1219,19 @@ function InboxScreen({
                     onOpenChat(selectedChat.id);
                   }
                 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-rose-50 to-pink-50 hover:from-rose-100 hover:to-pink-100 text-[#FF3B7C] border border-[#FF3B7C]/30 text-xs font-black shadow-xs hover:shadow-sm active:scale-95 transition-all cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-rose-50 to-pink-50 hover:from-rose-100 hover:to-pink-100 dark:from-rose-950/60 dark:to-pink-950/40 dark:hover:from-rose-900/70 dark:hover:to-pink-900/60 text-[#FF3B7C] dark:text-[#FF6596] border border-[#FF3B7C]/30 dark:border-[#FF3B7C]/40 text-xs font-black shadow-xs hover:shadow-sm active:scale-95 transition-all cursor-pointer"
                 title={lang === "ar" ? "عرض تفاصيل المهمة المرتبطة بالمحادثة" : "View Associated Quest Details"}
               >
-                <Briefcase className="w-4 h-4 text-[#FF3B7C] shrink-0" />
+                <Briefcase className="w-4 h-4 text-[#FF3B7C] dark:text-[#FF6596] shrink-0" />
                 <span className="inline font-black">{lang === "ar" ? "عرض المهمة" : "View Quest"}</span>
-                <ExternalLink className="w-3.5 h-3.5 text-[#FF3B7C] opacity-80 shrink-0" />
+                <ExternalLink className="w-3.5 h-3.5 text-[#FF3B7C] dark:text-[#FF6596] opacity-80 shrink-0" />
               </button>
             )}
           </div>
         </div>
 
   {/* Chat Messages List Container */}
- <div className="flex-1 overflow-y-auto p-4 md:p-5 bg-slate-50 space-y-3.5 flex flex-col scrollbar-thin select-text">
+ <div className="flex-1 overflow-y-auto p-4 md:p-5 bg-slate-50 dark:bg-[#0B1120] space-y-3.5 flex flex-col scrollbar-thin select-text">
  {activeChatLoading ? (
  <div className="flex-1 flex flex-col items-center justify-center text-center p-8 space-y-3">
  <div className="flex justify-center items-center gap-1.5">
@@ -1245,8 +1245,8 @@ function InboxScreen({
  </div>
  ) : activeChatMessages.length === 0 ? (
  <div className="flex-1 flex flex-col items-center justify-center text-center p-8 space-y-2">
- <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center border border-slate-100 shadow-sm">
- <MessageSquare className="w-5 h-5 text-slate-300 animate-pulse" />
+ <div className="w-12 h-12 rounded-full bg-white dark:bg-[#151F32] flex items-center justify-center border border-slate-100 dark:border-slate-800 shadow-sm">
+ <MessageSquare className="w-5 h-5 text-slate-300 dark:text-slate-600 animate-pulse" />
  </div>
  <span className="text-xs text-slate-400 font-bold leading-normal">
  {lang === 'ar' ? 'أرسل أول رسالة للاتفاق على شروط الكويست!' : 'Send the first message to sync on Quest requirements!'}
@@ -1267,7 +1267,7 @@ function InboxScreen({
  className={`flex flex-col max-w-[80%] ${
  isMe 
  ? 'self-end bg-[#1F2A44] text-white rounded-2xl rounded-tr-none p-3 shadow-xs' 
- : 'self-start bg-white border border-slate-200 text-slate-800 rounded-2xl rounded-tl-none p-3 shadow-xs'
+ : 'self-start bg-white dark:bg-[#151F32] border border-slate-200 dark:border-slate-700/80 text-slate-800 dark:text-slate-100 rounded-2xl rounded-tl-none p-3 shadow-xs'
  }`}
  >
  <span 
@@ -1310,7 +1310,7 @@ function InboxScreen({
       <span>{lang === "ar" ? " التواصل بالدردشة مغلق حالياً، وسيتم تفعيله فور قبول صاحب المهمة لطلب الحجز " : " Chat is locked until the creator accepts the booking request "}</span>
     </div>
   ) : (
-    <div className={`p-3 bg-white/95 backdrop-blur-md flex items-center gap-2 shrink-0 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] ${isNavVisible ? "mb-16 md:mb-0" : "mb-0"}`}>
+    <div className={`p-3 bg-white/95 dark:bg-[#151F32]/95 backdrop-blur-md flex items-center gap-2 shrink-0 border-t border-slate-100 dark:border-slate-800 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] ${isNavVisible ? "mb-16 md:mb-0" : "mb-0"}`}>
       <input
         type="text"
         placeholder={t.typeMessage}
@@ -1319,12 +1319,12 @@ function InboxScreen({
  onKeyDown={(e) => {
  if (e.key === 'Enter') handleSendChatMessage();
  }}
- className="flex-1 bg-slate-50 border border-slate-200 outline-none rounded-2xl px-4 py-2.5 text-xs font-semibold focus:border-[#1F2A44] text-slate-800 transition-colors"
+ className="flex-1 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 outline-none rounded-2xl px-4 py-2.5 text-xs font-semibold focus:border-[#1F2A44] dark:focus:border-sky-400 text-slate-800 dark:text-slate-100 transition-colors placeholder:text-slate-400 dark:placeholder:text-slate-500"
  />
  <button
  type="button"
  onClick={handleSendChatMessage}
- className="bg-[#1F2A44] hover:bg-[#1E2E4E] text-white p-2.5 rounded-xl transition-all active:scale-90 cursor-pointer shrink-0"
+ className="bg-[#1F2A44] dark:bg-sky-600 hover:bg-[#1E2E4E] dark:hover:bg-sky-500 text-white p-2.5 rounded-xl transition-all active:scale-90 cursor-pointer shrink-0"
  >
  <Send className="w-4 h-4" />
  </button>
@@ -1333,11 +1333,11 @@ function InboxScreen({
  </div>
  ) : (
  /* Blank state when no chat selected */
- <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-slate-400 bg-slate-50">
- <div className="w-16 h-16 rounded-full bg-white flex items-center justify-center mb-4 border border-slate-150 shadow-xs">
+ <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-[#0B1120]">
+ <div className="w-16 h-16 rounded-full bg-white dark:bg-[#151F32] flex items-center justify-center mb-4 border border-slate-150 dark:border-slate-800 shadow-xs">
  <MessageSquare className="w-8 h-8 text-slate-300" />
  </div>
- <h3 className="text-sm font-black text-slate-700 mb-1">
+ <h3 className="text-sm font-black text-slate-700 dark:text-slate-200 mb-1">
  {t.placeholderTitle}
  </h3>
  <p className="text-xs text-slate-400 max-w-sm leading-relaxed">

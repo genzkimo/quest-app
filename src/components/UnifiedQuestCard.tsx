@@ -178,9 +178,9 @@ function UnifiedQuestCard({
  // Determine user state milestone
  const isCreator = quest.creatorId === userProfile.id;
   const hasHiredWorker = !!(quest.employeeId || quest.helperId || quest.assignedRunnerId || (quest.assignedRunnerIds && quest.assignedRunnerIds.length > 0));
- const isPendingApplicant = quest.applicants?.some(a => a.userId === userProfile.id) ||
- quest.jobApplicants?.some(a => a.applicantId === userProfile.id);
  const isApprovedAndActive = (quest.helperId === userProfile.id || quest.assignedRunnerId === userProfile.id || quest.assignedRunnerIds?.includes(userProfile.id) || quest.employeeId === userProfile.id) && quest.status !== 'completed' && quest.status !== 'terminated' && quest.status !== 'expired' && quest.status !== 'archived';
+ const isPendingApplicant = !isApprovedAndActive && ((quest.applicants?.some(a => a.userId === userProfile.id)) ||
+ quest.jobApplicants?.some(a => a.applicantId === userProfile.id));
  const isCompleted = quest.status === 'completed';
 
  const handleApplyJob = async () => {
@@ -238,20 +238,29 @@ function UnifiedQuestCard({
  }
  };
 
- let currentTrayState: 'A' | 'B' | 'C' | 'D' | 'E' | 'BUSY' = 'B';
+ const isBookedByOther = (quest.status === 'booked' || quest.status === 'active' || quest.status === 'active_employment') &&
+   !isCreator &&
+   quest.helperId !== userProfile.id &&
+   quest.assignedRunnerId !== userProfile.id &&
+   quest.employeeId !== userProfile.id &&
+   (!quest.assignedRunnerIds || !quest.assignedRunnerIds.includes(userProfile.id));
+
+ let currentTrayState: 'A' | 'B' | 'C' | 'D' | 'E' | 'BUSY' | 'BOOKED_OTHER' = 'B';
 
  if (isCompleted) {
- currentTrayState = 'E';
+   currentTrayState = 'E';
  } else if (isApprovedAndActive) {
- currentTrayState = 'D';
+   currentTrayState = 'D';
+ } else if (isBookedByOther) {
+   currentTrayState = 'BOOKED_OTHER';
  } else if (isPendingApplicant) {
- currentTrayState = 'C';
+   currentTrayState = 'C';
  } else if (userProfile.isAvailable === false && !isCreator) {
- currentTrayState = 'BUSY';
+   currentTrayState = 'BUSY';
  } else if (distance !== -1 && distance > 50) {
- currentTrayState = 'A';
+   currentTrayState = 'A';
  } else {
- currentTrayState = 'B';
+   currentTrayState = 'B';
  }
 
  // Gather Images
@@ -1071,6 +1080,18 @@ function UnifiedQuestCard({
  </button>
  </div>
  )
+ )}
+
+ {/* STATE BOOKED_OTHER: Task has been claimed by someone else */}
+ {currentTrayState === 'BOOKED_OTHER' && (
+ <div className="w-full bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-200 py-3 px-3.5 rounded-2xl font-bold text-xs flex items-center justify-center gap-2">
+   <XCircle className="w-4 h-4 text-rose-500 shrink-0" />
+   <span className="text-center">
+     {lang === 'ar'
+     ? 'تم حجز هذه المهمة من شخص آخر وستختفي تلقائياً'
+     : 'This quest has been booked by another runner and will disappear'}
+   </span>
+ </div>
  )}
 
  {/* STATE C: Pending Selection */}

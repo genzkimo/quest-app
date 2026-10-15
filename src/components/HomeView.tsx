@@ -621,7 +621,8 @@ function HomeView({
 
  const { inRangeQuests, outOfRangeQuests } = useMemo(() => {
  if (!userLoc) {
- return { inRangeQuests: [], outOfRangeQuests: [] };
+ // When GPS location is pending or not yet resolved on refresh, show all filtered quests rather than an empty feed
+ return { inRangeQuests: questsWithDistance, outOfRangeQuests: [] };
  }
  const inRange = questsWithDistance.filter(q => q.distanceKm !== -1 && q.distanceKm <= 50);
  const outOfRange = questsWithDistance.filter(q => q.distanceKm !== -1 && q.distanceKm > 50);
@@ -741,11 +742,11 @@ function HomeView({
  onClick={() => setSelectedQuestTypeFilter('quick')}
  className={`w-full py-2 px-1 sm:px-2 rounded-xl text-[11px] sm:text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1 sm:gap-1.5 ${
  selectedQuestTypeFilter === 'quick'
- ? 'bg-[#FF3B7C] text-white shadow-sm'
+ ? 'bg-[#FF3B7C] text-white shadow-md'
  : 'bg-white dark:bg-[#151F32] text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#1C273E] border border-slate-200 dark:border-slate-800'
  }`}
  >
- <Zap className="w-3.5 h-3.5 shrink-0 text-[#FF3B7C]" />
+ <Zap className={`w-3.5 h-3.5 shrink-0 ${selectedQuestTypeFilter === 'quick' ? 'text-white' : 'text-[#FF3B7C]'}`} />
  <span className="truncate">{lang === 'ar' ? 'مهام سريعة' : 'Quick Tasks'}</span>
  </button>
 
@@ -754,11 +755,11 @@ function HomeView({
  onClick={() => setSelectedQuestTypeFilter('long_term')}
  className={`w-full py-2 px-1 sm:px-2 rounded-xl text-[11px] sm:text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1 sm:gap-1.5 ${
  selectedQuestTypeFilter === 'long_term'
- ? 'bg-sky-600 text-white shadow-sm'
+ ? 'bg-[#0EA5E9] text-white shadow-md shadow-sky-400/30'
  : 'bg-white dark:bg-[#151F32] text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#1C273E] border border-slate-200 dark:border-slate-800'
  }`}
  >
- <Briefcase className="w-3.5 h-3.5 shrink-0 text-sky-500" />
+ <Briefcase className={`w-3.5 h-3.5 shrink-0 ${selectedQuestTypeFilter === 'long_term' ? 'text-white' : 'text-[#0EA5E9]'}`} />
  <span className="truncate">{lang === 'ar' ? 'عقود عمل' : 'Job Contracts'}</span>
  </button>
  </div>
@@ -1091,7 +1092,14 @@ function HomeView({
  </div>
 
  {/* Hot Pink central action button or Applicant standby state */}
- {quest.applicants?.some(a => a.userId === userProfile.id) ? (
+ {quest.helperId === userProfile.id || quest.assignedRunnerId === userProfile.id || (quest.assignedRunnerIds && quest.assignedRunnerIds.includes(userProfile.id)) ? (
+ <button
+ disabled
+ className="w-full bg-emerald-900/60 border border-emerald-600/60 text-emerald-300 py-3 rounded-2xl font-bold text-[10px] sm:text-xs flex items-center justify-center p-2.5 gap-2"
+ >
+ <span className="text-center">{lang === 'ar' ? 'أنت معين لهذه المهمة بالفعل' : 'You are assigned to this quest'}</span>
+ </button>
+ ) : quest.applicants?.some(a => a.userId === userProfile.id) ? (
  <button
  disabled
  className="w-full bg-slate-800 border border-slate-700 text-slate-400 py-3 rounded-2xl font-bold text-[10px] sm:text-xs flex items-center justify-center p-2.5 gap-2"

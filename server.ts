@@ -16,13 +16,29 @@ import {
   runTransaction,
   deleteField,
   deleteDoc,
-  limit 
+  limit,
+  setLogLevel
   
 } from "firebase/firestore";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 
 dotenv.config();
+
+// Suppress internal Firestore gRPC idle stream disconnect warnings
+try {
+  setLogLevel('error');
+} catch (e) {
+  // ignore
+}
+
+process.on('unhandledRejection', (reason: any) => {
+  const msg = reason?.message || String(reason || '');
+  if (msg.includes('idle stream') || msg.includes('CANCELLED') || msg.includes('Disconnecting idle stream')) {
+    return;
+  }
+  console.warn('[Server Process] Unhandled rejection:', msg);
+});
 
 const BACKEND_SECRET_KEY = "bk_sec_f76a45bc-f8ec-46e2-bb9e-2e336d40ae5f";
 
@@ -1094,8 +1110,8 @@ Provide your output in strict JSON format. Do not combine or nest it in any mark
 
   
   // Automated Background Expiration & Stale Quest Expunging Engine
-  const PENDING_QUEST_TIMEOUT = 8 * 60 * 60 * 1000; // 8 hours publication window
-  const ACTIVE_CONTRACT_TIMEOUT = 24 * 60 * 60 * 1000; // 24 hours work window
+  const PENDING_QUEST_TIMEOUT = 24 * 60 * 60 * 1000; // 24 hours publication window
+  const ACTIVE_CONTRACT_TIMEOUT = 72 * 60 * 60 * 1000; // 72 hours work window
 
   async function cleanupExpiredQuests() {
     try {
@@ -1112,13 +1128,29 @@ Provide your output in strict JSON format. Do not combine or nest it in any mark
         const createdAt = data.createdAt ? new Date(data.createdAt).getTime() : 0;
         const questType = data.questType || "quick";
 
-        // 1. Open / Pending quests older than 8 hours -> Permanently delete from Firestore!
+        // 1. Open / Pending quests older than 24 hours -> Permanently delete from Firestore!
         if (status === "open" || status === "pending") {
-          if (!createdAt || isNaN(createdAt) || (now - createdAt) >= PENDING_QUEST_TIMEOUT) {
+          // Only delete if createdAt is a genuine historical timestamp older than 24 hours
+          if (createdAt && !isNaN(createdAt) && (now - createdAt) >= PENDING_QUEST_TIMEOUT) {
             console.log(`[Auto-Cleanup] Deleting expired open quest ${d.id} (created at ${data.createdAt})`);
-            await deleteDoc(d.ref);
-            deletedCount++;
-
+            try {
+              await deleteDoc(d.ref);
+              deletedCount++;
+            } catch (delErr) {
+              console.warn(`[Auto-Cleanup] Direct deleteDoc failed for ${d.id}, marking expired instead:`, delErr);
+              try {
+                await updateDoc(d.ref, {
+                  status: "expired",
+                  archived: true,
+                  terminatedAt: new Date().toISOString(),
+                  terminatedBy: "system",
+                  secretKey: BACKEND_SECRET_KEY
+                });
+                deletedCount++;
+              } catch (updErr) {
+                console.error(`[Auto-Cleanup] Could not expire quest ${d.id}:`, updErr);
+              }
+            }
             // If creator exists, adjust creator's quest count
             if (data.creatorId) {
               try {
@@ -1132,7 +1164,8 @@ Provide your output in strict JSON format. Do not combine or nest it in any mark
                     : [];
                   await updateDoc(userRef, {
                     questsCreated: Math.max(0, currentCreated - 1),
-                    createdQuestsIds
+                    createdQuestsIds,
+                    secretKey: BACKEND_SECRET_KEY
                   });
                 }
               } catch (userErr) {
@@ -1148,57 +1181,75 @@ Provide your output in strict JSON format. Do not combine or nest it in any mark
           const endMs = new Date(data.endDate).getTime();
           if (!isNaN(endMs) && now >= endMs) {
             console.log(`[Auto-Cleanup] Expiring fixed-term contract ${d.id}`);
-            await updateDoc(d.ref, {
-              status: "expired",
-              archived: true,
-              terminatedAt: new Date().toISOString(),
-              terminatedBy: "system"
-            });
-            const workerId = data.employeeId || data.helperId || data.assignedRunnerId;
-            if (workerId) {
-              try {
-                await updateDoc(doc(db, "users", workerId), { isAvailable: true });
-              } catch (e) {
-                // ignore
+            try {
+              await updateDoc(d.ref, {
+                status: "expired",
+                archived: true,
+                terminatedAt: new Date().toISOString(),
+                terminatedBy: "system",
+                secretKey: BACKEND_SECRET_KEY
+              });
+              const workerId = data.employeeId || data.helperId || data.assignedRunnerId;
+              if (workerId) {
+                try {
+                  await updateDoc(doc(db, "users", workerId), { 
+                    isAvailable: true,
+                    secretKey: BACKEND_SECRET_KEY 
+                  });
+                } catch (e) {
+                  // ignore
+                }
               }
+            } catch (err) {
+              console.error(`[Auto-Cleanup] Failed to expire contract ${d.id}:`, err);
             }
             continue;
           }
-        }
 
         // 3. Active / Booked contracts older than 24 hours -> transition to cancelled_by_timeout
         if (status === "active" || status === "booked") {
           const assignTime = data.assignedAt ? new Date(data.assignedAt).getTime() : createdAt;
           if (!isNaN(assignTime) && (now - assignTime) >= ACTIVE_CONTRACT_TIMEOUT) {
             console.log(`[Auto-Cleanup] Cancelling timed-out contract ${d.id}`);
-            await updateDoc(d.ref, {
-              status: "cancelled_by_timeout",
-              terminatedAt: new Date().toISOString(),
-              terminatedBy: "system"
-            });
-            timedOutCount++;
+            try {
+              await updateDoc(d.ref, {
+                status: "cancelled_by_timeout",
+                terminatedAt: new Date().toISOString(),
+                terminatedBy: "system",
+                secretKey: BACKEND_SECRET_KEY
+              });
+              timedOutCount++;
 
             const assignedRunners = Array.isArray(data.assignedRunnerIds) && data.assignedRunnerIds.length > 0
               ? data.assignedRunnerIds
               : [data.helperId, data.assignedRunnerId].filter(Boolean);
 
             for (const rId of assignedRunners) {
-              try {
-                await updateDoc(doc(db, "users", rId), { isAvailable: true });
-              } catch (err) {
-                // ignore
+                try {
+                  await updateDoc(doc(db, "users", rId), { 
+                    isAvailable: true,
+                    secretKey: BACKEND_SECRET_KEY 
+                  });
+                } catch (err) {
+                  // ignore
+                }
               }
+            } catch (err) {
+              console.error(`[Auto-Cleanup] Failed to cancel timed-out contract ${d.id}:`, err);
             }
           }
         }
-      }
 
       if (deletedCount > 0 || timedOutCount > 0) {
         console.log(`[Auto-Cleanup] Completed: ${deletedCount} expired quests deleted, ${timedOutCount} contracts timed out.`);
       }
       return { deletedCount, timedOutCount };
-    } catch (err) {
-      console.error("[Auto-Cleanup] Error during background quest cleanup:", err);
+    } catch (err: any) {
+      if (err?.code === 'resource-exhausted' || err?.message?.includes('Quota limit exceeded')) {
+        console.warn("[Auto-Cleanup] Firestore quota limit reached. Pausing cleanup until quota resets.");
+      } else {
+        console.warn("[Auto-Cleanup] Background quest cleanup notice:", err?.message || err);
+      }
       return { error: String(err) };
     }
   }
@@ -1209,13 +1260,13 @@ Provide your output in strict JSON format. Do not combine or nest it in any mark
     return res.json({ success: true, ...result });
   });
 
-  // Start background cleaner interval (every 2 minutes) & initial boot run (after 3s)
+  // Background cleaner interval (every 1 hour) & deferred boot run (after 30s)
   setTimeout(() => {
-    cleanupExpiredQuests().catch(e => console.error("Initial cleanup error:", e));
-  }, 3000);
+    cleanupExpiredQuests().catch(e => console.warn("Initial cleanup notice:", e?.message || e));
+  }, 30000);
   setInterval(() => {
-    cleanupExpiredQuests().catch(e => console.error("Periodic cleanup error:", e));
-  }, 2 * 60 * 1000);
+    cleanupExpiredQuests().catch(e => console.warn("Periodic cleanup notice:", e?.message || e));
+  }, 60 * 60 * 1000);
   
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

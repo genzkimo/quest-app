@@ -41,6 +41,7 @@ import { translations } from '../data/translations';
 import { formatArabicDate } from '../utils/dateFormatter';
 import { resolveNeighborhoodFromCoords, cleanLocationName } from '../utils/locationFormatter';
 import { compressImage } from '../utils/imageCompressor';
+import StandardImageLightbox from './StandardImageLightbox';
 import { Geolocator } from '../utils/geolocator';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { storage, db, auth, handleFirestoreError, OperationType } from '../utils/firebase';
@@ -128,7 +129,7 @@ function MyQuestsView({
  );
 
  const activeBooked = quests.filter(q => 
- (q.helperId === currentUserId || q.assignedRunnerId === currentUserId || q.assignedRunnerIds?.includes(currentUserId) || q.employeeId === currentUserId || q.applicants?.some(a => a.userId === currentUserId) || q.jobApplicants?.some(a => a.applicantId === currentUserId)) &&
+ (q.helperId === currentUserId || q.assignedRunnerId === currentUserId || q.assignedRunnerIds?.includes(currentUserId) || q.employeeId === currentUserId) &&
  !['completed', 'cancelled', 'cancelled_by_timeout', 'stale_cleared', 'expired', 'terminated', 'archived'].includes(q.status) &&
  !q.archived &&
  !isQuestExpired(q)
@@ -138,20 +139,13 @@ function MyQuestsView({
  if (activeBooked.length > 0 && activeCreated.length === 0) return 'obligations';
  if (activeCreated.length > 0 && activeBooked.length > 0) {
  const latestCreatedTime = Math.max(...activeCreated.map(q => new Date(q.createdAt || 0).getTime()), 0);
- const latestBookedTime = Math.max(...activeBooked.map(q => {
- const myApp = q.applicants?.find(a => a.userId === currentUserId);
- const myJobApp = q.jobApplicants?.find(a => a.applicantId === currentUserId);
- const appliedTime = myApp ? new Date((myApp as any).appliedAt || 0).getTime() : 0;
- const jobAppliedTime = myJobApp ? new Date((myJobApp as any).appliedAt || 0).getTime() : 0;
- const questTime = new Date((q as any).updatedAt || q.createdAt || 0).getTime();
- return Math.max(appliedTime, jobAppliedTime, questTime);
- }), 0);
+ const latestBookedTime = Math.max(...activeBooked.map(q => new Date((q as any).updatedAt || q.assignedAt || q.createdAt || 0).getTime()), 0);
 
  return latestBookedTime > latestCreatedTime ? 'obligations' : 'created';
  }
 
  const allCreated = quests.filter(q => q.creatorId === currentUserId);
- const allBooked = quests.filter(q => q.helperId === currentUserId || q.assignedRunnerId === currentUserId || q.applicants?.some(a => a.userId === currentUserId) || q.jobApplicants?.some(a => a.applicantId === currentUserId));
+ const allBooked = quests.filter(q => q.helperId === currentUserId || q.assignedRunnerId === currentUserId || q.assignedRunnerIds?.includes(currentUserId) || q.employeeId === currentUserId);
 
  if (allCreated.length > 0 && allBooked.length === 0) return 'created';
  if (allBooked.length > 0 && allCreated.length === 0) return 'obligations';
@@ -215,6 +209,8 @@ function MyQuestsView({
  }, [autoOpenCreate, onClearAutoOpenCreate, activeQuestCount, lang]);
  const [selectedProofQuest, setSelectedProofQuest] = useState<Quest | null>(null);
  const [selectedProofFile, setSelectedProofFile] = useState<string>('');
+ const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+ const [lightboxMeta, setLightboxMeta] = useState<{ title?: string; subtitle?: string; caption?: string } | null>(null);
 
  // Applicant & Profile Modal states
  const [selectedApplicantData, setSelectedApplicantData] = useState<{ quest: Quest; applicant: Applicant } | null>(null);
@@ -552,8 +548,8 @@ function MyQuestsView({
  };
 
  const obligations = quests.filter(q => 
- (q.helperId === currentUserId || q.assignedRunnerId === currentUserId || q.assignedRunnerIds?.includes(currentUserId) || q.employeeId === currentUserId || (q.jobApplicants?.some(a => a.applicantId === currentUserId) || q.applicants?.some(a => a.userId === currentUserId))) && 
- (showHistory ? (isHistoryStatus(q.status) || q.archived) : (isActiveStatus(q.status) && !q.archived))
+ (q.helperId === currentUserId || q.assignedRunnerId === currentUserId || q.assignedRunnerIds?.includes(currentUserId) || q.employeeId === currentUserId) && 
+ (showHistory ? (isHistoryStatus(q.status) || q.archived) : (isActiveStatus(q.status) && !q.archived && !isQuestExpired(q)))
  );
 
  const createdQuests = quests.filter(q => 
@@ -1081,8 +1077,17 @@ function MyQuestsView({
  {quest.description}
  </p>
  {quest.imageUrl && (
- <div className="relative group overflow-hidden rounded-[1.5rem] border border-slate-150 max-h-56 bg-slate-50 flex items-center justify-center shadow-xs transition duration-300">
- <img src={quest.imageUrl} alt={quest.title} className="w-full h-full object-cover max-h-56 group-hover:scale-[1.01] transition duration-500" />
+ <div 
+   onClick={() => {
+     setLightboxImage(quest.imageUrl!);
+     setLightboxMeta({ title: quest.title, subtitle: quest.creatorName, caption: quest.description });
+   }}
+   className="relative group overflow-hidden rounded-[1.5rem] border border-slate-150 max-h-56 bg-slate-50 flex items-center justify-center shadow-xs transition duration-300 cursor-zoom-in"
+ >
+   <img src={quest.imageUrl} alt={quest.title} className="w-full h-full object-cover max-h-56 group-hover:scale-[1.01] transition duration-500" />
+   <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/60 backdrop-blur-xs rounded-lg text-white text-[10px] font-bold flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+     <span>{lang === 'ar' ? 'تكبير' : 'Zoom'}</span>
+   </div>
  </div>
  )}
  </div>
@@ -1109,7 +1114,7 @@ function MyQuestsView({
  </div>
  </div>
  
- {isOngoing && (
+ {(isOngoing || isArrived || isUnderReview || isDisputed || isFinished) && (
  <div className="flex items-center gap-2 pt-2 border-t border-slate-200/60 w-full">
  <button
  type="button"
@@ -1232,61 +1237,104 @@ function MyQuestsView({
 
  {/* Applied Pending Quests */}
  {!showHistory && (() => {
- const appliedQuests = quests.filter(q => (q.applicants?.some(a => a.userId === currentUserId) || q.jobApplicants?.some(a => a.applicantId === currentUserId)) && (q.status === 'open' || q.status === 'applications' || (q.status as string) === 'pending'));
+ const hasActiveAcceptedAssignment = quests.some(q => 
+   !isQuestExpired(q) &&
+   !q.archived &&
+   (q.status === 'booked' || q.status === 'active' || q.status === 'arrived' || q.status === 'active_employment') &&
+   (q.helperId === currentUserId || q.assignedRunnerId === currentUserId || q.employeeId === currentUserId || q.assignedRunnerIds?.includes(currentUserId))
+ );
+
+ // If a runner was accepted for any quest, all their other requests across general and employers are cancelled by code algorithm
+ if (hasActiveAcceptedAssignment) return null;
+
+ const appliedQuests = quests.filter(q => {
+   // 1. Strict Expiry Check: Remove expired tasks from booking strips
+   if (isQuestExpired(q) || q.status === 'expired' || q.status === 'stale_cleared' || q.status === 'cancelled_by_timeout') return false;
+   if (q.archived) return false;
+   if (['completed', 'cancelled', 'cancelled_by_timeout', 'stale_cleared', 'expired', 'terminated'].includes(q.status)) return false;
+
+   // 2. Prevent Double Booking Appearance: Never show as booking request if already booked/assigned for this user
+   const isAlreadyAssigned = q.helperId === currentUserId || 
+     q.assignedRunnerId === currentUserId || 
+     q.employeeId === currentUserId || 
+     (q.assignedRunnerIds && q.assignedRunnerIds.includes(currentUserId));
+   if (isAlreadyAssigned) return false;
+
+   // 3. User must have applied to this quest
+   const isApplicant = (q.applicants?.some(a => a.userId === currentUserId)) || 
+     (q.jobApplicants?.some(a => a.applicantId === currentUserId));
+   if (!isApplicant) return false;
+
+   return true;
+ });
+
  if (appliedQuests.length === 0) return null;
+
  return (
- <div className="space-y-4 pt-6 border-t border-slate-200">
- <h3 className="text-xs font-black text-slate-500 uppercase flex items-center gap-2 tracking-wider">
- <span className="flex h-2 w-2 relative">
- <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-500 opacity-75"></span>
- <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
- </span>
- <span>{lang === 'ar' ? 'طلبات توظيف قيد الانتظار' : 'Applied Quests (Pending Approval)'}</span>
- </h3>
- <div className="grid gap-4">
- {appliedQuests.map((quest) => (
- <div key={quest.id} className="bg-slate-50/60 border border-slate-200 p-6 rounded-3xl space-y-4 shadow-xs">
- <div className="flex justify-between items-start gap-4">
- <div className="space-y-1 text-start">
- <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-amber-100/70 text-amber-800 uppercase">
- {quest.category}
- </span>
- <h4 className="font-black text-lg text-sky-500 dark:text-sky-400 mt-1 leading-tight">{quest.title}</h4>
- <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
- <Lock className="w-3 h-3 text-amber-500" />
- <span className="text-slate-400">
- {lang === 'ar' ? ' الموقع مخفي حتى قبول الحجز' : ' Hidden until booked'}
- </span>
- </p>
- </div>
- <div className="text-right shrink-0">
- <span className="text-[#FF3B7C] font-black text-xs md:text-sm font-mono block bg-rose-50/50 px-2.5 py-1 rounded-xl border border-rose-100/50">
- {quest.cashReward} DA
- </span>
- </div>
+ <div className="space-y-3 pt-4 border-t border-slate-200">
+ <div className="flex items-center justify-between px-1">
+   <h3 className="text-xs font-black text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+     <Clock className="w-3.5 h-3.5 text-amber-500" />
+     <span>{lang === 'ar' ? 'شريط طلبات الحجز' : 'Booking Requests Strip'}</span>
+     <span className="text-[10px] font-mono bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full font-bold">
+       {appliedQuests.length}
+     </span>
+   </h3>
  </div>
 
- <div className="flex justify-between items-center bg-white px-4 py-3 rounded-2xl border border-slate-150/70 shadow-2xs">
- <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1.5">
- <Clock className="w-4 h-4 text-amber-500 animate-pulse" />
- {lang === 'ar' ? 'طلبك قيد الانتظار لموافقة صاحب العمل' : 'Awaiting employer selection'}
- </span>
- <span className="text-[10px] font-extrabold text-slate-400 flex items-center gap-1 bg-slate-50 px-2 py-0.5 rounded-lg">
- <Lock className="w-3 h-3 text-slate-400" />
- {lang === 'ar' ? 'الدردشة مغلقة' : 'Chat Locked'}
- </span>
- </div>
+ <div className="grid gap-2.5">
+ {appliedQuests.map((quest) => {
+   const isBookedByOther = (quest.status === 'booked' || quest.status === 'active' || quest.status === 'active_employment') &&
+     quest.helperId !== currentUserId &&
+     quest.assignedRunnerId !== currentUserId &&
+     quest.employeeId !== currentUserId &&
+     (!quest.assignedRunnerIds || !quest.assignedRunnerIds.includes(currentUserId));
 
- {onViewQuestDetail && (
- <button
- onClick={() => onViewQuestDetail(quest.id)}
- className="w-full bg-[#1F2A44]/5 hover:bg-[#1F2A44]/10 text-[#1F2A44] border border-[#1F2A44]/10 font-bold text-xs py-2.5 rounded-2xl transition duration-200 cursor-pointer flex items-center justify-center gap-1.5"
- >
- <span>{lang === 'ar' ? 'تفاصيل كاملة ' : 'Full Details '}</span>
- </button>
- )}
- </div>
- ))}
+   return (
+   <div key={quest.id} className="bg-white border border-slate-200/90 p-3.5 rounded-2xl shadow-xs space-y-2.5 transition-all">
+     <div className="flex justify-between items-center gap-2">
+       <div className="space-y-0.5 text-start min-w-0 flex-1">
+         <span className="text-[9px] font-black px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 uppercase">
+           {quest.category}
+         </span>
+         <h4 className="font-extrabold text-sm text-slate-800 dark:text-white truncate mt-1">{quest.title}</h4>
+       </div>
+       <div className="text-right shrink-0">
+         <span className="text-[#FF3B7C] font-black text-xs font-mono bg-rose-50 px-2.5 py-1 rounded-xl border border-rose-100 block">
+           {quest.cashReward} DA
+         </span>
+       </div>
+     </div>
+
+     {isBookedByOther ? (
+       <div className="bg-rose-50 border border-rose-200/70 p-2.5 rounded-xl text-start flex items-center justify-between gap-2">
+         <div className="flex items-center gap-1.5 text-xs font-bold text-rose-700">
+           <XCircle className="w-4 h-4 text-rose-500 shrink-0" />
+           <span className="text-[11px] leading-snug">
+             {lang === 'ar' ? 'تم حجزها من شخص آخر وستختفي تلقائياً' : 'Booked by another runner - will disappear'}
+           </span>
+         </div>
+       </div>
+     ) : (
+       <div className="bg-amber-50/70 border border-amber-200/60 p-2.5 rounded-xl flex items-center justify-between text-start gap-2">
+         <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-800">
+           <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0 animate-pulse" />
+           <span>{lang === 'ar' ? 'طلب الحجز قيد المراجعة' : 'Booking pending approval'}</span>
+         </div>
+         {onViewQuestDetail && (
+           <button
+             type="button"
+             onClick={() => onViewQuestDetail(quest.id)}
+             className="text-[10px] font-black text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-lg cursor-pointer transition-all shrink-0"
+           >
+             {lang === 'ar' ? 'عرض' : 'View'}
+           </button>
+         )}
+       </div>
+     )}
+   </div>
+   );
+ })}
  </div>
  </div>
  );
@@ -1503,8 +1551,17 @@ function MyQuestsView({
  {quest.description}
  </p>
  {quest.imageUrl && (
- <div className="relative group overflow-hidden rounded-[1.5rem] border border-slate-150 max-h-56 bg-slate-50 flex items-center justify-center shadow-xs transition duration-300">
- <img src={quest.imageUrl} alt={quest.title} className="w-full h-full object-cover max-h-56 group-hover:scale-[1.01] transition duration-500" />
+ <div 
+   onClick={() => {
+     setLightboxImage(quest.imageUrl!);
+     setLightboxMeta({ title: quest.title, subtitle: quest.creatorName, caption: quest.description });
+   }}
+   className="relative group overflow-hidden rounded-[1.5rem] border border-slate-150 max-h-56 bg-slate-50 flex items-center justify-center shadow-xs transition duration-300 cursor-zoom-in"
+ >
+   <img src={quest.imageUrl} alt={quest.title} className="w-full h-full object-cover max-h-56 group-hover:scale-[1.01] transition duration-500" />
+   <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/60 backdrop-blur-xs rounded-lg text-white text-[10px] font-bold flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+     <span>{lang === 'ar' ? 'تكبير' : 'Zoom'}</span>
+   </div>
  </div>
  )}
  </div>
@@ -1516,24 +1573,24 @@ function MyQuestsView({
  const name = quest.helperName || (lang === 'ar' ? 'المساعد الميداني' : 'Assistant');
  const avatar = `https://api.dicebear.com/7.x/initials/svg?seed=${name}&backgroundColor=f43f5e`;
  return (
- <div className="flex items-center justify-between p-3.5 bg-slate-50/80 rounded-2xl border border-slate-100/80 hover:bg-slate-50 transition-colors duration-200 gap-2">
+ <div className="flex flex-col gap-2.5 p-3.5 bg-slate-50/80 rounded-2xl border border-slate-100/80 hover:bg-slate-50 transition-colors duration-200 w-full">
  <div 
  onClick={() => onViewPublicProfile && onViewPublicProfile(runnerId!)}
- className="flex items-center gap-2.5 cursor-pointer hover:opacity-85 transition-opacity min-w-0"
+ className="flex items-center gap-2.5 cursor-pointer hover:opacity-85 transition-opacity w-full"
  >
  <img src={avatar} alt={name} className="w-9 h-9 rounded-full object-cover border border-slate-200 shadow-xs shrink-0" />
- <div className="text-start min-w-0">
+ <div className="text-start flex-1 min-w-0">
  <span className="text-[9px] text-slate-400 block font-black uppercase tracking-wider whitespace-nowrap">
  {lang === 'ar' ? 'المساعد المعيّن' : 'Hired Assistant'}
  </span>
- <span className="text-xs font-extrabold text-slate-800 leading-none flex items-center gap-1 mt-0.5 truncate">
- {name}
- <span className="text-amber-500 font-mono font-bold text-[10px] shrink-0">4.9</span>
+ <span className="text-xs font-extrabold text-slate-800 leading-none flex items-center gap-1 mt-0.5">
+ <span className="truncate">{name}</span>
+ <span className="text-amber-500 font-mono font-bold text-[10px] shrink-0">★ 4.9</span>
  </span>
  </div>
  </div>
  
- <div className="flex items-center gap-1.5 shrink-0">
+ <div className="flex items-center gap-2 pt-2 border-t border-slate-200/60 w-full">
  <button
  type="button"
  onClick={() => {
@@ -1546,19 +1603,19 @@ function MyQuestsView({
  }
  }));
  }}
- className="bg-slate-900 hover:bg-slate-800 active:scale-95 text-white font-extrabold text-[10px] px-3 py-2 rounded-xl flex items-center gap-1.5 transition-all shadow-sm cursor-pointer whitespace-nowrap shrink-0"
+ className="flex-1 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white font-extrabold text-xs py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer"
  >
  <MessageSquare className="w-3.5 h-3.5 text-sky-400 shrink-0" />
- <span className="whitespace-nowrap">{lang === 'ar' ? 'دردشة' : 'Chat'}</span>
+ <span>{lang === 'ar' ? 'دردشة' : 'Chat'}</span>
  </button>
 
  {quest.helperPhone ? (
  <a
  href={`tel:${quest.helperPhone}`}
- className="bg-sky-600 hover:bg-sky-700 active:scale-95 text-white font-extrabold text-[10px] px-3 py-2 rounded-xl flex items-center gap-1.5 transition-all shadow-sm whitespace-nowrap shrink-0"
+ className="flex-1 bg-sky-600 hover:bg-sky-700 active:scale-95 text-white font-extrabold text-xs py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-sm text-center"
  >
- <Phone className="w-3.5 h-3.5 text-white animate-bounce shrink-0" />
- <span className="whitespace-nowrap">{lang === 'ar' ? 'اتصال' : 'Direct Call'}</span>
+ <Phone className="w-3.5 h-3.5 text-white shrink-0" />
+ <span>{lang === 'ar' ? 'اتصال' : 'Direct Call'}</span>
  </a>
  ) : (
  <button
@@ -1570,10 +1627,10 @@ function MyQuestsView({
  : 'Worker phone number is not available'
  );
  }}
- className="bg-sky-600/20 text-sky-800 active:scale-95 font-extrabold text-[10px] px-3 py-2 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0"
+ className="flex-1 bg-sky-600/20 text-sky-800 active:scale-95 font-extrabold text-xs py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer text-center"
  >
  <Phone className="w-3.5 h-3.5 text-sky-700 shrink-0" />
- <span className="whitespace-nowrap">{lang === 'ar' ? 'اتصال' : 'Call'}</span>
+ <span>{lang === 'ar' ? 'اتصال' : 'Call'}</span>
  </button>
  )}
  </div>
@@ -1655,12 +1712,21 @@ function MyQuestsView({
  <Sparkles className="w-4 h-4 text-amber-600 fill-amber-500" />
  <span>{lang === 'ar' ? 'صورة إثبات الإنجاز المرفوعة بواسطة المساعد:' : 'Visual completion proof uploaded:'}</span>
  </div>
- <div className="overflow-hidden rounded-xl border border-amber-200 shadow-2xs max-h-56 bg-white flex items-center justify-center">
- <img 
- src={quest.proofImageUrl} 
- alt="Proof of completion"
- className="w-full object-cover max-h-56"
- />
+ <div 
+   onClick={() => {
+     setLightboxImage(quest.proofImageUrl!);
+     setLightboxMeta({ title: lang === 'ar' ? 'إثبات إنجاز المهمة' : 'Completion Proof', subtitle: quest.title, caption: quest.description });
+   }}
+   className="overflow-hidden rounded-xl border border-amber-200 shadow-2xs max-h-56 bg-white flex items-center justify-center cursor-zoom-in group relative"
+ >
+   <img 
+     src={quest.proofImageUrl} 
+     alt="Proof of completion"
+     className="w-full object-cover max-h-56 group-hover:scale-[1.01] transition duration-300"
+   />
+   <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/60 backdrop-blur-xs rounded-lg text-white text-[10px] font-bold flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+     <span>{lang === 'ar' ? 'تكبير' : 'Zoom'}</span>
+   </div>
  </div>
  </div>
  )}
@@ -2773,6 +2839,15 @@ function MyQuestsView({
           </div>
         );
       })()}
+  {/* Standard Lightbox Overlay with Pinch-to-zoom & Pan (Strictly bounded) */}
+  <StandardImageLightbox
+    imageUrl={lightboxImage}
+    onClose={() => { setLightboxImage(null); setLightboxMeta(null); }}
+    title={lightboxMeta?.title}
+    subtitle={lightboxMeta?.subtitle}
+    caption={lightboxMeta?.caption}
+    lang={lang}
+  />
 </div>
  </PullToRefresh>
  );

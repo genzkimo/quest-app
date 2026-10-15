@@ -13,9 +13,11 @@ const config: CapacitorConfig = {
       providers: ['google.com']
     },
     SplashScreen: {
+      // ✅ 0 = لا تعرض شاشة native منفصلة → تختفي الداكنة المربعة
       launchShowDuration: 0,
       launchAutoHide: true,
-      backgroundColor: '#0B132B',
+      // لون احتياطي إن ظهرت لحظة، مطابق للـ HTML splash الفاتح
+      backgroundColor: '#F8FAFC',
       androidScaleType: 'CENTER_CROP',
       showSpinner: false,
       splashFullScreen: true,

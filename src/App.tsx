@@ -57,7 +57,6 @@ const lazyWithRetry = <T extends React.ComponentType<any>>(
 const MapView = lazyWithRetry(() => import('./components/MapView'));
 const MyQuestsView = lazyWithRetry(() => import('./components/MyQuestsView'));
 const ProfileView = lazyWithRetry(() => import('./components/ProfileView'));
-const AdminView = lazyWithRetry(() => import('./components/AdminView'));
 const PublicProfileView = lazyWithRetry(() => import('./components/PublicProfileView'));
 const ReciprocalRatingModal = lazyWithRetry(() => import('./components/ReciprocalRatingModal'));
 const NotificationScreen = lazyWithRetry(() => import('./components/NotificationScreen'));
@@ -4710,34 +4709,7 @@ export default function App() {
  />
  )}
 
- {currentView === 'admin' && (
- isAdminUser ? (
- <AdminView 
- userProfile={userProfile}
- quests={quests}
- leaders={leaders}
- lang={userProfile.language}
- onApproveKYC={handleApproveKYC}
- onRejectKYC={handleRejectKYC}
- onBanUser={handleBanUser}
- onDeleteQuest={handleDeleteQuest}
- onBroadcastMessage={handleBroadcastMessage}
- showToast={showToast}
- onInspectQuest={(questId) => setGlobalQuestDetailId(questId)}
- onUpdateProfile={handleUpdateProfile}
- />
- ) : (
- <div className="bg-white border-2 border-red-500 rounded-3xl p-8 text-center space-y-4 shadow-md max-w-md mx-auto my-12 font-sans" style={{ direction: userProfile.language === 'ar' ? 'rtl' : 'ltr' }}>
- <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto">
- <span className="text-red-600 text-3xl"></span>
- </div>
- <h3 className="text-lg font-black text-red-600">غير مصرح بالدخول | Access Denied</h3>
- <p className="text-xs text-slate-500 font-semibold leading-relaxed">
- هذه الصفحة مخصصة للمشرفين فقط. يرجى تسجيل الدخول بحساب مشرف معتمد للوصول للميزات الإدارية.
- </p>
- </div>
- )
- )}
+ 
  </>
  )}
   </React.Suspense>

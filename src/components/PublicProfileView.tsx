@@ -37,6 +37,8 @@ import InfoButton from './InfoButton';
 import { lockBodyScroll } from '../utils/scrollLock';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 
+
+
 interface PublicProfileViewProps {
  userId: string;
  currentUser: UserProfile | null;

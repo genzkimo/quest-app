@@ -15,7 +15,10 @@ import {
  Award,
  MessageSquare,
  Lock,
- RefreshCw
+  Eye,
+  EyeOff,
+ RefreshCw,
+  Navigation
 } from 'lucide-react';
 import { Quest, UserProfile } from '../types';
 import { calculateBookingFee } from '../utils/fee';
@@ -254,7 +257,8 @@ function MapView({
 
  const isLocationAuthorized = useCallback((quest: Quest) => {
  const isApprovedAndActive = (quest.helperId === userProfile.id || quest.assignedRunnerId === userProfile.id || quest.assignedRunnerIds?.includes(userProfile.id)) && quest.status !== 'completed';
- return quest.creatorId === userProfile.id || isApprovedAndActive;
+ const isBooked = quest.status === 'booked' || quest.status === 'active' || quest.status === 'arrived' || quest.status === 'pending_verification' || quest.status === 'active_employment' || quest.status === 'hired' || quest.status === 'disputed';
+    return quest.creatorId === userProfile.id || isApprovedAndActive || isBooked;
  }, [userProfile.id]);
 
  const getQuestCoords = useCallback((quest: Quest) => {
@@ -349,12 +353,14 @@ function MapView({
  };
 
  const handleZoomIn = () => {
+ userHasMovedCameraRef.current = true;
  if (mapInstanceRef.current) {
  mapInstanceRef.current.zoomIn();
  }
  };
 
  const handleZoomOut = () => {
+ userHasMovedCameraRef.current = true;
  if (mapInstanceRef.current) {
  mapInstanceRef.current.zoomOut();
  }
@@ -525,32 +531,53 @@ function MapView({
  }
  }, [isFullScreen]);
 
- const dict = translations[lang];
+ 
+  const getQuestStatusColor = (quest: Quest, isNav: boolean) => {
+    if (isNav) return { bg: "#FF3B7C", shadow: "rgba(255,59,124,0.7)" };
+    switch (quest.status) {
+      case "arrived":
+        return { bg: "#F59E0B", shadow: "rgba(245,158,11,0.5)" };
+      case "pending_verification":
+        return { bg: "#10B981", shadow: "rgba(16,185,129,0.5)" };
+      case "active_employment":
+        return { bg: "#6366F1", shadow: "rgba(99,102,241,0.5)" };
+      case "disputed":
+        return { bg: "#E11D48", shadow: "rgba(225,29,72,0.5)" };
+      case "booked":
+      case "active":
+      default:
+        return { bg: "#0284C7", shadow: "rgba(2,132,199,0.5)" };
+    }
+  };
+
+  const dict = translations[lang];
  const isRtl = lang === 'ar';
 
- // Visible quests: include open & pending quests for public discovery + booked/active quests for involved users
- const visibleQuests = useMemo(() => {
- return quests.filter(q => {
- if (q.status === 'completed' || q.status === 'cancelled' || q.status === 'cancelled_by_timeout' || q.status === 'stale_cleared' || q.status === 'terminated' || q.status === 'expired' || q.status === 'archived' || q.archived || isQuestExpired(q)) return false;
+  // Visible quests: STRICT RULE -> ONLY show booked / active tasks on the map as requested by the user
+  const visibleQuests = useMemo(() => {
+    return quests.filter(q => {
+      // 1. Exclude terminal, cancelled, expired, or archived quests
+      if (q.status === 'completed' || q.status === 'cancelled' || q.status === 'cancelled_by_timeout' || q.status === 'stale_cleared' || q.status === 'terminated' || q.status === 'expired' || q.status === 'archived' || q.archived || isQuestExpired(q)) return false;
 
- // Requirement 2: Hide tasks that workers have arrived at from everyone EXCEPT the worker who arrived
- if (q.status === 'arrived') {
- const isArrivedWorker = q.helperId === userProfile.id || 
- q.assignedRunnerId === userProfile.id || 
- q.assignedRunnerIds?.includes(userProfile.id);
- if (!isArrivedWorker) return false;
- if (hiddenArrivedQuestIds.includes(q.id)) return false;
- return true;
- }
+      // 2. STRICT REQUIREMENT: Do not show ANY unbooked quest on the map!
+      const isBooked = q.status === 'booked' || q.status === 'active' || q.status === 'arrived' || q.status === 'active_employment' || q.status === 'pending_verification';
+      if (!isBooked) {
+        return false;
+      }
 
- if (q.status === 'open' || q.status === 'applications' || q.status === 'pending_verification') return true;
- const isUserInvolved = q.creatorId === userProfile.id || 
- q.helperId === userProfile.id || 
- q.assignedRunnerId === userProfile.id || 
- q.assignedRunnerIds?.includes(userProfile.id);
- return isUserInvolved;
- });
- }, [quests, userProfile.id, hiddenArrivedQuestIds]);
+      // 3. Hide tasks that workers have arrived at from everyone EXCEPT the worker who arrived
+      if (q.status === 'arrived') {
+        const isArrivedWorker = q.helperId === userProfile.id || 
+          q.assignedRunnerId === userProfile.id || 
+          q.assignedRunnerIds?.includes(userProfile.id);
+        if (!isArrivedWorker) return false;
+        if (hiddenArrivedQuestIds.includes(q.id)) return false;
+        return true;
+      }
+
+      return true;
+    });
+  }, [quests, userProfile.id, hiddenArrivedQuestIds]);
 
  const watchCleanupRef = useRef<(() => void) | null>(null);
 
@@ -593,9 +620,8 @@ function MapView({
 
  const isPrecise = accuracy <= 100;
 
- if (mapInstanceRef.current && !hasFlownToUserLocRef.current && !navigatingQuest) {
+ if (mapInstanceRef.current && !hasFlownToUserLocRef.current && !navigatingQuest && !userHasMovedCameraRef.current) {
    hasFlownToUserLocRef.current = true;
-   userHasMovedCameraRef.current = false;
    if (isPrecise) {
      mapInstanceRef.current.flyTo([fetchedLoc.lat, fetchedLoc.lng], 15, { animate: true, duration: 1.8 });
    } else {
@@ -621,6 +647,8 @@ function MapView({
     if (isManualReset) {
       updateCountRef.current = 0;
       lastLocUpdateTimeRef.current = Date.now();
+      userHasMovedCameraRef.current = false;
+      hasFlownToUserLocRef.current = false;
     }
 
     const applyLocationSuccess = (latitude: number, longitude: number, acc?: number) => {
@@ -645,8 +673,13 @@ function MapView({
       } catch {}
 
       const isPrecise = accuracy <= 100;
+      const shouldCenter = isManualReset || (!hasFlownToUserLocRef.current && !userHasMovedCameraRef.current);
 
-      if (mapInstanceRef.current) {
+      if (mapInstanceRef.current && shouldCenter) {
+        hasFlownToUserLocRef.current = true;
+        if (isManualReset) {
+          userHasMovedCameraRef.current = false;
+        }
         if (navigatingQuest) {
           const dest = getQuestCoords(navigatingQuest);
           mapInstanceRef.current.fitBounds([
@@ -662,11 +695,13 @@ function MapView({
         }
       }
 
-      if (isPrecise) {
-        showToast(lang === 'ar' ? ' تم تأكيد موقعك الفعلي بدقة وتوسيط الخريطة!' : ' Location verified & centered!');
-      } else {
-        const city = resolveCityFromCoords(fetchedLoc.lat, fetchedLoc.lng, lang);
-        showToast(lang === 'ar' ? ` تم عرض نطاق المدينة: ${city}` : ` City level view: ${city}`);
+      if (isManualReset) {
+        if (isPrecise) {
+          showToast(lang === 'ar' ? ' تم تأكيد موقعك الفعلي بدقة وتوسيط الخريطة!' : ' Location verified & centered!');
+        } else {
+          const city = resolveCityFromCoords(fetchedLoc.lat, fetchedLoc.lng, lang);
+          showToast(lang === 'ar' ? ` تم عرض نطاق المدينة: ${city}` : ` City level view: ${city}`);
+        }
       }
       startGpsWatch();
     };
@@ -830,15 +865,7 @@ function MapView({
  useEffect(() => {
  setIsGpsServiceEnabled(true);
  setGpsDenied(false);
- triggerGPSGet(true);
-
- const gpsIntervalId = setInterval(() => {
- Geolocator.getPermissionState().then((perm) => {
- if (perm === 'granted') {
  triggerGPSGet(false);
- }
- });
- }, 10000);
 
  const handleOffline = () => {
  setIsGpsLost(true);
@@ -848,7 +875,6 @@ function MapView({
  const handleOnline = () => {
  setIsGpsLost(false);
  startGpsWatch();
- triggerGPSGet(false);
  showToast(lang === 'ar' ? ' تم استعادة اتصال الـ GPS بنجاح!' : ' GPS signal recovered successfully!');
  };
 
@@ -860,7 +886,6 @@ function MapView({
  watchCleanupRef.current();
  watchCleanupRef.current = null;
  }
- clearInterval(gpsIntervalId);
  window.removeEventListener('offline', handleOffline);
  window.removeEventListener('online', handleOnline);
  };
@@ -993,8 +1018,8 @@ function MapView({
  if (mapInstanceRef.current) {
  const currentZoom = mapInstanceRef.current.getZoom();
  if (navigatingQuest) {
- // Only run automatic fitBounds if the user isn't interacting right now and GPS is verified
- if (!isUserInteractingRef.current) {
+ // Only run automatic fitBounds if the user isn't interacting right now and hasn't moved the camera
+ if (!isUserInteractingRef.current && !userHasMovedCameraRef.current) {
  const navCoords = getQuestCoords(navigatingQuest);
  if (gpsActive && userLoc) {
  const bounds = L.latLngBounds([
@@ -1008,21 +1033,18 @@ function MapView({
  }
  }
  } else if (userLoc) {
- // When location is captured, fly to user location (street if accurate, city if not)!
- if (!hasFlownToUserLocRef.current) {
+ // When location is captured, fly to user location once if the user hasn't moved the camera
+ if (!hasFlownToUserLocRef.current && !userHasMovedCameraRef.current) {
    hasFlownToUserLocRef.current = true;
-   userHasMovedCameraRef.current = false;
    if (isAccurateGps) {
      mapInstanceRef.current.flyTo([userLoc.lat, userLoc.lng], 15, { animate: true, duration: 1.5 });
    } else {
      mapInstanceRef.current.flyTo([userLoc.lat, userLoc.lng], 11, { animate: true, duration: 1.5 });
    }
- } else if (hasCenteredGPS && gpsActive && !isUserInteractingRef.current && !userHasMovedCameraRef.current) {
-   mapInstanceRef.current.setView([userLoc.lat, userLoc.lng], mapInstanceRef.current.getZoom());
  }
  }
  }
- }, [userLoc, navigatingQuest, hasCenteredGPS, gpsActive, getQuestCoords]);
+ }, [userLoc, navigatingQuest, gpsActive, getQuestCoords, isAccurateGps]);
 
  // Sync markers for Active quests on database change
  useEffect(() => {
@@ -1030,7 +1052,18 @@ function MapView({
  if (!map) return;
 
  // A map of desired markers to place on the map
- const desiredMarkers = new Map<string, { latlng: L.LatLngExpression; icon: L.DivIcon; onClick?: () => void }>();
+ 
+  // Dynamic status color indicator: Pink in tracking/navigation, Sky for booked, Emerald for active, Purple for arrived, Amber for pending
+  const getMarkerStatusColor = (q: Quest, isNav: boolean) => {
+    if (isNav || (navigatingQuest && navigatingQuest.id === q.id)) return "#FF3B7C"; // Pink in tracking/navigation
+    if (q.status === "active" || q.status === "active_employment") return "#10B981"; // Active: Emerald
+    if (q.status === "arrived") return "#8B5CF6"; // Arrived: Violet
+    if (q.status === "booked") return "#38BDF8"; // Booked: Sky Blue
+    if (q.status === "pending_verification" || q.status === "disputed") return "#F59E0B"; // Pending: Amber
+    return "#FF3B7C";
+  };
+
+    const desiredMarkers = new Map<string, { latlng: L.LatLngExpression; icon: L.DivIcon; onClick?: () => void }>();
 
  // Add User Current Location pulsing radar icon (ONLY when GPS is ACCURATE <= 100m)
  if (isAccurateGps && userLoc) {
@@ -1064,22 +1097,18 @@ function MapView({
  if (navigatingQuest) {
  const navCoords = getQuestCoords(navigatingQuest);
  const destinationIcon = L.divIcon({
- className: 'destination-marker-glow',
- html: `
- <div class="relative flex flex-col items-center justify-center cursor-pointer">
- <div class="absolute -inset-1 bg-[#FF3B7C]/30 rounded-full"></div>
- <div class="absolute -inset-2 bg-[#FF3B7C]/15 rounded-full"></div>
- <div class="w-10 h-10 bg-slate-950 border-2 border-[#FF3B7C] rounded-full shadow-[0_0_15px_rgba(255,59,124,0.9)] flex items-center justify-center z-20 text-md hover:scale-110 transition duration-200">
- 
- </div>
- <span class="bg-[#FF3B7C] text-white text-[8px] font-black px-1.5 py-0.5 rounded shadow-lg whitespace-nowrap mt-1 font-mono uppercase tracking-wider z-25">
- ${lang === 'ar' ? 'الوجهة النشطة' : 'ACTIVE TARGET'}
- </span>
- </div>
- `,
- iconSize: [60, 60],
- iconAnchor: [30, 30]
- });
+      className: "destination-marker-simple",
+      html: `
+        <div class="relative flex items-center justify-center" style="width: 24px; height: 24px;">
+          <div class="absolute w-6 h-6 rounded-full bg-[#FF3B7C]/30 animate-ping"></div>
+          <div class="w-4.5 h-4.5 rounded-full bg-[#FF3B7C] border-2 border-white shadow-md flex items-center justify-center z-20">
+            <div class="w-1.5 h-1.5 rounded-full bg-white"></div>
+          </div>
+        </div>
+      `,
+      iconSize: [24, 24],
+      iconAnchor: [12, 12]
+    });
  desiredMarkers.set('nav_dest', {
  latlng: [navCoords.lat, navCoords.lng],
  icon: destinationIcon,
@@ -1095,22 +1124,20 @@ function MapView({
  const targetQuest = selectedQuest || pinnedQuest;
  if (targetQuest && (!navigatingQuest || targetQuest.id !== navigatingQuest.id)) {
  const selCoords = getQuestCoords(targetQuest);
- const selectedIcon = L.divIcon({
- className: `custom-selected-pin-${targetQuest.id}`,
- html: `
- <div class="relative flex flex-col items-center">
- <div class="absolute -inset-1 bg-gradient-to-r from-[#FFD34D] to-[#FF3B7C] opacity-50 rounded-full"></div>
- <div class="p-2 rounded-full shadow-2xl border border-white bg-slate-950 text-white hover:scale-110 transition-all">
- <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FFD34D" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>
- </div>
- <span class="bg-[#FFD34D] text-slate-950 text-[9px] font-black px-2 py-0.5 rounded-full mt-1 shadow-lg whitespace-nowrap border border-white">
- ${targetQuest.cashReward} DA
- </span>
- </div>
- `,
- iconSize: [38, 48],
- iconAnchor: [19, 44]
- });
+ const selColor = getMarkerStatusColor(targetQuest, false);
+    const selectedIcon = L.divIcon({
+      className: `custom-selected-pin-${targetQuest.id}`,
+      html: `
+        <div class="relative flex items-center justify-center" style="width: 24px; height: 24px;">
+          <div class="absolute w-6 h-6 rounded-full opacity-40 animate-pulse" style="background-color: ${selColor}"></div>
+          <div class="w-5 h-5 rounded-full border-2 border-white shadow-lg flex items-center justify-center z-20" style="background-color: ${selColor}">
+            <div class="w-2 h-2 rounded-full bg-white"></div>
+          </div>
+        </div>
+      `,
+      iconSize: [24, 24],
+      iconAnchor: [12, 12]
+    });
 
  desiredMarkers.set(`selected_quest_${targetQuest.id}`, {
  latlng: [selCoords.lat, selCoords.lng],
@@ -1204,24 +1231,19 @@ function MapView({
  const quest = cluster.quests[0];
  const isUrgent = quest.urgency === 'urgent';
  
- const pinIcon = L.divIcon({
- className: `custom-leaf-pin-${quest.id}`,
- html: `
- <div class="relative flex flex-col items-center">
- ${isUrgent ? '<div class="absolute -inset-1 bg-[#FF3B7C]/30 rounded-full"></div>' : ''}
- <div class="p-2 rounded-full shadow-lg border-2 border-white transition-all text-white ${
- isUrgent ? 'bg-[#FF3B7C]' : 'bg-[#FFD34D] text-[#1F2A44]'
- }">
- <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>
- </div>
- <span class="bg-slate-950/90 border border-slate-700 text-[8px] font-black text-white px-1.5 py-0.5 rounded mt-0.5 shadow-md whitespace-nowrap">
- ${quest.cashReward} DA
- </span>
- </div>
- `,
- iconSize: [36, 48],
- iconAnchor: [18, 44]
- });
+ const questColor = getMarkerStatusColor(quest, false);
+      const pinIcon = L.divIcon({
+        className: `custom-simple-pin-${quest.id}`,
+        html: `
+          <div class="relative flex items-center justify-center" style="width: 20px; height: 20px;">
+            <div class="w-4.5 h-4.5 rounded-full border-2 border-white shadow-md flex items-center justify-center cursor-pointer transition-transform hover:scale-125" style="background-color: ${questColor}">
+              <div class="w-1.5 h-1.5 rounded-full bg-white/90"></div>
+            </div>
+          </div>
+        `,
+        iconSize: [20, 20],
+        iconAnchor: [10, 10]
+      });
 
  desiredMarkers.set(`quest_${quest.id}`, {
  latlng: [cluster.lat, cluster.lng],
@@ -1234,32 +1256,19 @@ function MapView({
  });
  } else {
  const count = cluster.quests.length;
- let size = 40;
- let colorClass = 'bg-slate-900 border-[#FFD34D] text-[#FFD34D]';
- if (count > 50) {
- size = 56;
- colorClass = 'bg-red-950 border-red-500 text-red-200 shadow-[0_0_15px_rgba(239,68,68,0.5)]';
- } else if (count > 10) {
- size = 48;
- colorClass = 'bg-amber-950 border-amber-500 text-amber-200 shadow-[0_0_12px_rgba(245,158,11,0.4)]';
- } else {
- size = 40;
- colorClass = 'bg-slate-900 border-[#FFD34D] text-white shadow-[0_0_8px_rgba(255,211,77,0.3)]';
- }
-
- const clusterIcon = L.divIcon({
- className: `custom-cluster-${cluster.id}`,
- html: `
- <div class="relative flex items-center justify-center" style="width: ${size}px; height: ${size}px;">
- <div class="absolute inset-0 rounded-full animate-pulse opacity-20 bg-current"></div>
- <div class="w-full h-full rounded-full border-2 flex items-center justify-center font-mono font-black text-xs ${colorClass}">
- ${count}
- </div>
- </div>
- `,
- iconSize: [size, size],
- iconAnchor: [size / 2, size / 2]
- });
+      const size = count > 10 ? 26 : 22;
+      const clusterIcon = L.divIcon({
+        className: `custom-cluster-${cluster.id}`,
+        html: `
+          <div class="relative flex items-center justify-center" style="width: ${size}px; height: ${size}px;">
+            <div class="w-full h-full rounded-full border-2 border-white flex items-center justify-center font-mono font-black text-[9px] text-white bg-slate-900/95 shadow-md">
+              ${count}
+            </div>
+          </div>
+        `,
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size / 2]
+      });
 
  desiredMarkers.set(cluster.id, {
  latlng: [cluster.lat, cluster.lng],
@@ -1564,102 +1573,6 @@ function MapView({
 
  
 
- {/* GPS Calibration Waiting Banner during Navigation */}
- <AnimatePresence>
- {navigatingQuest && (!isGpsConfirmed || !userLoc) && (
-   <motion.div
-     initial={{ y: -50, opacity: 0 }}
-     animate={{ y: 0, opacity: 1 }}
-     exit={{ y: -50, opacity: 0 }}
-     className="absolute top-16 sm:top-20 left-4 right-4 max-w-md mx-auto bg-slate-950/95 text-white p-4 rounded-2xl border border-sky-400/50 shadow-2xl z-[10006] backdrop-blur-md flex items-center justify-between gap-3 text-start select-none"
-     style={{ direction: isRtl ? 'rtl' : 'ltr' }}
-   >
-     <div className="flex items-center gap-3">
-       <div className="relative w-10 h-10 rounded-xl bg-sky-500/20 border border-sky-400/40 flex items-center justify-center shrink-0">
-         <Compass className="w-5 h-5 text-sky-400 animate-spin" />
-         <span className="absolute -top-1 -right-1 w-3 h-3 bg-sky-400 rounded-full animate-ping" />
-       </div>
-       <div>
-         <h4 className="text-xs font-black text-white flex items-center gap-1.5">
-           <span>{isRtl ? 'جاري تحديد موقعك الدقيق لتفعيل الملاحة...' : 'Acquiring precise GPS fix...'}</span>
-         </h4>
-         <p className="text-[10px] text-slate-300 font-bold mt-0.5">
-           {isRtl ? 'الملاحة المباشرة تتطلب إشارة GPS دقيقة ومؤكدة لضمان استقرار المسار' : 'Navigation requires a verified GPS lock for line stability'}
-         </p>
-       </div>
-     </div>
-     <button
-       onClick={handleExitNavigation}
-       className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white text-[10px] font-extrabold rounded-xl transition cursor-pointer border border-white/10 shrink-0"
-     >
-       {isRtl ? 'إلغاء' : 'Cancel'}
-     </button>
-   </motion.div>
- )}
- </AnimatePresence>
-
- {/* Top Live Navigation Turn / Direction HUD */}
- <AnimatePresence>
- {navigatingQuest && isGpsConfirmed && userLoc && (
-   <motion.div
-     initial={{ y: -80, opacity: 0 }}
-     animate={{ y: 0, opacity: 1 }}
-     exit={{ y: -80, opacity: 0 }}
-     className="absolute top-16 sm:top-20 left-4 right-4 max-w-lg mx-auto z-[10006] bg-slate-950/95 backdrop-blur-md rounded-2xl border border-rose-500/50 shadow-2xl p-3 flex items-center justify-between gap-3 text-white"
-     style={{ direction: isRtl ? 'rtl' : 'ltr' }}
-   >
-     <div className="flex items-center gap-3 min-w-0">
-       <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#FFD34D] to-[#FF3B7C] flex items-center justify-center shrink-0 shadow-md">
-         <Compass 
-           className="w-5 h-5 text-white transition-transform duration-300"
-           style={{ transform: `rotate(${currentHeading}deg)` }}
-         />
-       </div>
-       <div className="min-w-0 text-start">
-         <div className="flex items-center gap-1.5">
-           <span className="text-[10px] font-black text-rose-400 uppercase tracking-wider">
-             {isRtl ? 'الملاحة المباشرة' : 'Live Route'}
-           </span>
-           <span className="text-gray-400 text-[10px]">•</span>
-           <span className="text-[10px] font-extrabold text-[#FFD34D]">
-             {remainingDistance < 1 ? `${Math.round(remainingDistance * 1000)} م` : `${remainingDistance} كم`}
-           </span>
-           <span className="text-gray-400 text-[10px]">•</span>
-           <span className="text-[10px] font-extrabold text-white">
-             ~{etaMinutes} {isRtl ? 'د' : 'min'}
-           </span>
-         </div>
-         <p className="text-xs font-black text-white truncate max-w-[200px] sm:max-w-xs mt-0.5">
-           {navigatingQuest.title}
-         </p>
-       </div>
-     </div>
-
-     <div className="flex items-center gap-1.5 shrink-0">
-       <button
-         onClick={() => {
-           if (mapInstanceRef.current && userLoc) {
-             userHasMovedCameraRef.current = false;
-             mapInstanceRef.current.flyTo([userLoc.lat, userLoc.lng], 16, { animate: true, duration: 1 });
-           }
-         }}
-         className="p-2 bg-white/10 hover:bg-white/20 text-white rounded-xl transition cursor-pointer"
-         title={isRtl ? 'توسيط موقعي' : 'Recenter GPS'}
-       >
-         <Target className="w-4 h-4 text-sky-400" />
-       </button>
-       <button
-         onClick={handleExitNavigation}
-         className="p-2 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 rounded-xl transition cursor-pointer"
-         title={isRtl ? 'إنهاء الملاحة' : 'Exit Navigation'}
-       >
-         <X className="w-4 h-4" />
-       </button>
-     </div>
-   </motion.div>
- )}
- </AnimatePresence>
-
  {/* Floating Assistant Controls (أزرار المساعدة العائمة) */}
  <motion.div 
  animate={isMobile ? {
@@ -1679,6 +1592,8 @@ function MapView({
  {/* Recenter GPS */}
  <button
  onClick={() => {
+ userHasMovedCameraRef.current = false;
+ hasFlownToUserLocRef.current = false;
  triggerGPSGet(true);
  const hapticEnabled = userProfile.hapticFeedbackEnabled !== false;
  triggerHaptic('soft', hapticEnabled);
@@ -2032,56 +1947,94 @@ function MapView({
  </div>
  </div>
 
- <div className="flex gap-2 shrink-0 items-center">
- {selectedQuest.status === 'arrived' && 
- (selectedQuest.helperId === userProfile.id || selectedQuest.assignedRunnerId === userProfile.id || selectedQuest.assignedRunnerIds?.includes(userProfile.id)) && (
- <button
- onClick={(e) => {
- e.stopPropagation();
- handleHideArrivedQuest(selectedQuest.id);
- setSelectedQuest(null);
- }}
- className="bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[9px] font-black uppercase px-2.5 py-1.5 rounded-xl hover:bg-amber-500 hover:text-slate-950 transition duration-200 select-none cursor-pointer flex items-center gap-1"
- >
- {lang === 'ar' ? 'اخفاء' : 'Hide'}
- </button>
- )}
- <span 
- onClick={(e) => {
- e.stopPropagation();
- if (onViewQuestDetail) {
- onViewQuestDetail(selectedQuest.id);
- } else {
- setShowDetailedSheet(selectedQuest);
- }
- const hapticEnabled = userProfile.hapticFeedbackEnabled !== false;
- triggerHaptic('sharp', hapticEnabled);
- }}
- className="bg-[#FF3B7C]/15 border border-[#FF3B7C]/25 text-[#FF3B7C] text-[9px] font-black uppercase px-2.5 py-1.5 rounded-xl hover:bg-[#FF3B7C] hover:text-white transition duration-200 select-none cursor-pointer"
- >
- {lang === 'ar' ? 'فتح التفاصيل ' : 'Inspect '}
- </span>
- <button
- onClick={(e) => {
- e.stopPropagation();
- setIsInfoPanelMinimized(true);
- }}
- className="bg-white/10 hover:bg-white/20 text-slate-300 p-2 rounded-xl transition cursor-pointer flex items-center gap-1 text-xs font-bold"
- title={lang === 'ar' ? 'تصغير' : 'Minimize'}
- >
- <Minimize2 className="w-4 h-4 text-rose-400" />
- </button>
- <button
- onClick={(e) => {
- e.stopPropagation();
- setSelectedQuest(null);
- }}
- className="bg-white/5 hover:bg-white/15 text-slate-350 p-2 rounded-full transition cursor-pointer"
- >
- <X className="w-4 h-4" />
- </button>
- </div>
- </div>
+  <div className="flex gap-2 shrink-0 items-center">
+  {/* Live Navigation Trigger - Icon Only */}
+  {(selectedQuest.status === 'booked' || selectedQuest.status === 'active' || selectedQuest.status === 'arrived' || selectedQuest.status === 'active_employment' || isLocationAuthorized(selectedQuest)) && (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        setNavigatingQuest(selectedQuest);
+        setSelectedQuest(null);
+        const hapticEnabled = userProfile.hapticFeedbackEnabled !== false;
+        triggerHaptic('sharp', hapticEnabled);
+        showToast(lang === 'ar' ? '🚀 تم تفعيل الملاحة المباشرة نحو موقع المهمة المحجوزة!' : '🚀 Live navigation activated for booked quest!');
+      }}
+      title={lang === 'ar' ? 'تفعيل الملاحة المباشرة' : 'Start Navigation'}
+      aria-label={lang === 'ar' ? 'تفعيل الملاحة' : 'Start Navigation'}
+      className="w-9 h-9 rounded-xl bg-[#FF3B7C] hover:bg-[#e0346c] text-white flex items-center justify-center transition-all cursor-pointer active:scale-90 shrink-0 shadow-md shadow-[#FF3B7C]/25"
+    >
+      <Navigation className="w-4 h-4 text-white" />
+    </button>
+  )}
+
+  {/* Inspect Details - Icon Only */}
+  <button
+    type="button"
+    onClick={(e) => {
+      e.stopPropagation();
+      if (onViewQuestDetail) {
+        onViewQuestDetail(selectedQuest.id);
+      } else {
+        setShowDetailedSheet(selectedQuest);
+      }
+      const hapticEnabled = userProfile.hapticFeedbackEnabled !== false;
+      triggerHaptic('sharp', hapticEnabled);
+    }}
+    title={lang === 'ar' ? 'فتح تفاصيل المهمة' : 'Inspect Quest Details'}
+    aria-label={lang === 'ar' ? 'فتح التفاصيل' : 'Inspect Details'}
+    className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/15 flex items-center justify-center transition-all cursor-pointer active:scale-90 shrink-0 shadow-xs"
+  >
+    <Eye className="w-4 h-4 text-white" />
+  </button>
+
+  {/* Hide Arrived Quest - Icon Only */}
+  {selectedQuest.status === 'arrived' &&
+    (selectedQuest.helperId === userProfile.id || selectedQuest.assignedRunnerId === userProfile.id || selectedQuest.assignedRunnerIds?.includes(userProfile.id)) && (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        handleHideArrivedQuest(selectedQuest.id);
+        setSelectedQuest(null);
+      }}
+      title={lang === 'ar' ? 'إخفاء المهمة' : 'Hide Quest'}
+      aria-label={lang === 'ar' ? 'إخفاء' : 'Hide'}
+      className="w-9 h-9 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 flex items-center justify-center transition-all cursor-pointer active:scale-90 shrink-0 shadow-xs"
+    >
+      <EyeOff className="w-4 h-4 text-amber-400" />
+    </button>
+  )}
+
+  {/* Minimize Card */}
+  <button
+    type="button"
+    onClick={(e) => {
+      e.stopPropagation();
+      setIsInfoPanelMinimized(true);
+    }}
+    title={lang === 'ar' ? 'تصغير' : 'Minimize'}
+    aria-label={lang === 'ar' ? 'تصغير' : 'Minimize'}
+    className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 border border-white/10 flex items-center justify-center transition-all cursor-pointer active:scale-90 shrink-0"
+  >
+    <Minimize2 className="w-4 h-4 text-slate-300" />
+  </button>
+
+  {/* Close Card */}
+  <button
+    type="button"
+    onClick={(e) => {
+      e.stopPropagation();
+      setSelectedQuest(null);
+    }}
+    title={lang === 'ar' ? 'إغلاق' : 'Close'}
+    aria-label={lang === 'ar' ? 'إغلاق' : 'Close'}
+    className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white border border-white/15 flex items-center justify-center transition-all cursor-pointer active:scale-90 shrink-0"
+  >
+    <X className="w-4 h-4" />
+  </button>
+  </div>
+  </div>
  </motion.div>
  );
  })()

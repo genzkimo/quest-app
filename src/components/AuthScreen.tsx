@@ -45,6 +45,12 @@ const generateShortId = () => {
 type AuthMode = 'onboarding' | 'login' | 'register' | 'forgot-password';
 
 export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) {
+  React.useEffect(() => {
+    // Enforce light mode on authentication & login screen
+    document.documentElement.classList.remove('dark');
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', '#FC0D82');
+  }, []);
   const [mode, setMode] = useState<AuthMode>('onboarding');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -308,7 +314,7 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
   };
 
   return (
-    <div className="min-h-screen bg-[#FC0D82] text-white flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans select-none">
+     <div className="min-h-screen bg-[#FC0D82] text-white flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans select-none [color-scheme:light]">
       {/* Glow Spotlights */}
       <div className="absolute top-[-10%] left-[-10%] w-96 h-96 rounded-full bg-white/10 blur-3xl animate-pulse"></div>
       <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 rounded-full bg-slate-900/40 blur-3xl animate-pulse" style={{ animationDelay: '2s' }}></div>

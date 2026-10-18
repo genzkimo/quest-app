@@ -29,7 +29,7 @@ interface NavbarProps {
  unreadTasksCount: number;
  tokenBalance: number;
  lang: 'ar' | 'fr' | 'en';
-
+ 
  audioEnabled?: boolean;
  unreadNotificationsCount: number;
  unreadChatsCount: number;
@@ -56,7 +56,7 @@ function Navbar({
  unreadTasksCount,
  tokenBalance,
  lang,
-
+ 
  audioEnabled = true,
  unreadNotificationsCount,
  unreadChatsCount,
@@ -259,7 +259,7 @@ function Navbar({
  },
  ];
 
-
+ 
 
  const isRtl = lang === 'ar';
 

@@ -100,18 +100,23 @@ export default function NotificationScreen({ notifications, onClose, lang = 'ar'
  };
 
  return (
- <div className="fixed inset-0 z-50 bg-[#1F2A44]/60 backdrop-blur-xs flex justify-end">
- {/* Click outside to close */}
- <div className="absolute inset-0" onClick={onClose}></div>
+  <motion.div
+    initial={{ opacity: 0 }}
+    animate={{ opacity: 1 }}
+    exit={{ opacity: 0 }}
+    transition={{ duration: 0.15 }}
+    className="fixed inset-0 z-50 flex justify-end overflow-hidden"
+  >
+    {/* Crisp dark backdrop with zero blur lag */}
+    <div className="absolute inset-0 bg-slate-950/70" onClick={onClose} />
 
- <motion.div 
- initial={{ x: isRtl ? -400 : 400, opacity: 0 }}
- animate={{ x: 0, opacity: 1 }}
- exit={{ x: isRtl ? -400 : 400, opacity: 0 }}
- transition={{ type: 'spring', damping: 25, stiffness: 220 }}
- className="relative bg-white dark:bg-[#151F32] w-full max-w-md h-full shadow-2xl flex flex-col z-10 border-l border-slate-100 dark:border-slate-800 font-sans"
- style={{ direction: isRtl ? 'rtl' : 'ltr' }}
- >
+    <motion.div
+      initial={{ x: isRtl ? -360 : 360 }}
+      animate={{ x: 0 }}
+      exit={{ x: isRtl ? -360 : 360 }}
+      transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+      className="relative bg-white dark:bg-[#151F32] w-full max-w-md h-full shadow-2xl flex flex-col z-10 border-l border-slate-100 dark:border-slate-800 font-sans"
+      style={{ direction: isRtl ? 'rtl' : 'ltr' }}>
  {/* Header */}
  <div className="px-5 pt-[max(1.5rem,calc(env(safe-area-inset-top,0px)+1rem))] pb-5 bg-[#1F2A44] dark:bg-[#0B1120] text-white flex justify-between items-center border-b border-slate-700/50 dark:border-slate-800 shrink-0">
  <div className="flex items-center gap-2.5">
@@ -211,6 +216,6 @@ export default function NotificationScreen({ notifications, onClose, lang = 'ar'
  )}
  </div>
  </motion.div>
- </div>
- );
+  </motion.div>
+  );
 }

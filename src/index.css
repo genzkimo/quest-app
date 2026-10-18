@@ -24,14 +24,43 @@ html, body {
   color: #0f172a; /* Deep charcoal/black for text */
 }
 
-/* Hide scrollbars for a cleaner look */
+/* Hide scrollbars globally across all elements for a clean mobile-native look */
+*::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+* {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+html, body {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
 .no-scrollbar::-webkit-scrollbar {
-  display: none;
+  display: none !important;
 }
 .no-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
 }
+
+/* Force AuthScreen to always remain strictly in pristine Light Mode */
+.auth-light-enforced {
+  color-scheme: light !important;
+}
+html.dark .auth-light-enforced .bg-white,
+html.dark .auth-light-enforced button.bg-white {
+  background-color: #FFFFFF !important;
+  color: #0F172A !important;
+}
+html.dark .auth-light-enforced input {
+  background-color: #F8FAFC !important;
+  color: #0F172A !important;
+  border-color: #E2E8F0 !important;
+}
+
 
 /* ---------------------------------------------------
    STRICT 6-COLOR PALETTE SYSTEM & CONTRAST PROTECTION
@@ -272,15 +301,110 @@ html.dark nav {
   border: none !important;
 }
 
-/* Typography for legibility - Salvage text-[#1F2A44] from becoming invisible */
-html.dark .text-\[\#1F2A44\],
-html.dark [class*="text-[#1F2A44]"] {
+/* -------------------------------------------------------------------------
+   GLOBAL DARK MODE TEXT ENFORCEMENT - NEVER WRITE IN DARK TEXT IN DARK MODE
+   ------------------------------------------------------------------------- */
+html.dark:not(.auth-light-enforced),
+html.dark:not(.auth-light-enforced) body {
+  color: #FFFFFF !important;
+}
+
+/* 1. All variations of dark text classes must be white in dark mode */
+html.dark:not(.auth-light-enforced) .text-black,
+html.dark:not(.auth-light-enforced) [class*="text-black"],
+html.dark:not(.auth-light-enforced) .text-slate-950,
+html.dark:not(.auth-light-enforced) .text-slate-900,
+html.dark:not(.auth-light-enforced) .text-slate-850,
+html.dark:not(.auth-light-enforced) .text-slate-800,
+html.dark:not(.auth-light-enforced) .text-slate-750,
+html.dark:not(.auth-light-enforced) .text-slate-700,
+html.dark:not(.auth-light-enforced) .text-gray-950,
+html.dark:not(.auth-light-enforced) .text-gray-900,
+html.dark:not(.auth-light-enforced) .text-gray-850,
+html.dark:not(.auth-light-enforced) .text-gray-800,
+html.dark:not(.auth-light-enforced) .text-gray-750,
+html.dark:not(.auth-light-enforced) .text-gray-700,
+html.dark:not(.auth-light-enforced) .text-zinc-950,
+html.dark:not(.auth-light-enforced) .text-zinc-900,
+html.dark:not(.auth-light-enforced) .text-zinc-850,
+html.dark:not(.auth-light-enforced) .text-zinc-800,
+html.dark:not(.auth-light-enforced) .text-neutral-950,
+html.dark:not(.auth-light-enforced) .text-neutral-900,
+html.dark:not(.auth-light-enforced) .text-neutral-850,
+html.dark:not(.auth-light-enforced) .text-neutral-800,
+html.dark:not(.auth-light-enforced) [class*="text-[#0F172A]"],
+html.dark:not(.auth-light-enforced) [class*="text-[#1F2A44]"],
+html.dark:not(.auth-light-enforced) [class*="text-[#111827]"],
+html.dark:not(.auth-light-enforced) [class*="text-[#1E293B]"],
+html.dark:not(.auth-light-enforced) [class*="text-[#0B132B]"],
+html.dark:not(.auth-light-enforced) [class*="text-[#000000]"],
+html.dark:not(.auth-light-enforced) [class*="text-[#1E1E1E]"],
+html.dark:not(.auth-light-enforced) [class*="text-[#2B2D42]"],
+html.dark:not(.auth-light-enforced) [class*="text-[#1E2022]"] {
+  color: #FFFFFF !important;
+}
+
+/* 2. Soft/secondary text: high-contrast bright silver/slate, never dark */
+html.dark:not(.auth-light-enforced) .text-slate-600,
+html.dark:not(.auth-light-enforced) .text-gray-600,
+html.dark:not(.auth-light-enforced) .text-zinc-600,
+html.dark:not(.auth-light-enforced) .text-neutral-600 {
+  color: #E2E8F0 !important;
+}
+
+html.dark:not(.auth-light-enforced) .text-slate-500,
+html.dark:not(.auth-light-enforced) .text-gray-500,
+html.dark:not(.auth-light-enforced) .text-zinc-500,
+html.dark:not(.auth-light-enforced) .text-neutral-500 {
+  color: #CBD5E1 !important;
+}
+
+html.dark:not(.auth-light-enforced) .text-slate-400,
+html.dark:not(.auth-light-enforced) .text-gray-400,
+html.dark:not(.auth-light-enforced) .text-zinc-400 {
+  color: #94A3B8 !important;
+}
+
+/* 3. Common semantic text tags */
+html.dark:not(.auth-light-enforced) h1,
+html.dark:not(.auth-light-enforced) h2,
+html.dark:not(.auth-light-enforced) h3,
+html.dark:not(.auth-light-enforced) h4,
+html.dark:not(.auth-light-enforced) h5,
+html.dark:not(.auth-light-enforced) h6,
+html.dark:not(.auth-light-enforced) th {
+  color: #FFFFFF !important;
+}
+
+html.dark:not(.auth-light-enforced) p,
+html.dark:not(.auth-light-enforced) label,
+html.dark:not(.auth-light-enforced) td,
+html.dark:not(.auth-light-enforced) li,
+html.dark:not(.auth-light-enforced) strong,
+html.dark:not(.auth-light-enforced) b {
   color: #F8FAFC !important;
 }
 
-/* Enhanced colored texts inside badges in dark mode */
+/* 4. Fix yellow/amber badges in dark mode so their text/icons are NEVER dark #0F172A */
+html.dark:not(.auth-light-enforced) .bg-amber-400,
+html.dark:not(.auth-light-enforced) .bg-amber-500,
+html.dark:not(.auth-light-enforced) .bg-yellow-400,
+html.dark:not(.auth-light-enforced) .bg-yellow-500 {
+  color: #FFFFFF !important;
+}
+html.dark:not(.auth-light-enforced) .bg-amber-400 *,
+html.dark:not(.auth-light-enforced) .bg-amber-500 *,
+html.dark:not(.auth-light-enforced) .bg-yellow-400 *,
+html.dark:not(.auth-light-enforced) .bg-yellow-500 * {
+  color: #FFFFFF !important;
+  fill: #FFFFFF !important;
+  stroke: #FFFFFF !important;
+}
+
+/* 5. Colored text highlights inside dark mode */
 html.dark .text-amber-700,
-html.dark .text-amber-800 {
+html.dark .text-amber-800,
+html.dark .text-yellow-700 {
   color: #FCD34D !important;
 }
 
@@ -295,31 +419,6 @@ html.dark .text-rose-700,
 html.dark .text-rose-800,
 html.dark .text-red-700 {
   color: #FDA4AF !important;
-}
-
-html.dark .text-slate-900,
-html.dark .text-gray-900,
-html.dark .text-slate-850,
-html.dark .text-slate-800,
-html.dark .text-gray-800,
-html.dark h1, html.dark h2, html.dark h3, html.dark h4, html.dark h5, html.dark h6 {
-  color: #F8FAFC !important;
-}
-
-html.dark .text-slate-700,
-html.dark .text-gray-700,
-html.dark .text-slate-650,
-html.dark .text-slate-600,
-html.dark .text-gray-600 {
-  color: #CBD5E1 !important;
-}
-
-html.dark .text-slate-500,
-html.dark .text-gray-500,
-html.dark .text-slate-450,
-html.dark .text-slate-400,
-html.dark .text-gray-400 {
-  color: #94A3B8 !important;
 }
 
 /* Button & Action overrides */

@@ -1165,8 +1165,8 @@ export default function PublicProfileView({
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                         />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/55 to-transparent"></div>
-                        <div className="absolute bottom-2.5 left-2.5 bg-amber-400 text-slate-900 px-2.5 py-1 rounded-xl text-xs font-black flex items-center gap-1 shadow-md">
-                          <Star className="w-3.5 h-3.5 fill-slate-900 text-slate-900" />
+                        <div className="absolute bottom-2.5 left-2.5 bg-amber-400 text-slate-900 dark:text-white px-2.5 py-1 rounded-xl text-xs font-black flex items-center gap-1 shadow-md">
+                          <Star className="w-3.5 h-3.5 fill-slate-900 text-slate-900 dark:fill-white dark:text-white" />
                           <span className="font-mono font-bold">{review.rating}.0</span>
                         </div>
                       </div>
@@ -1226,8 +1226,8 @@ export default function PublicProfileView({
               >
                 <X className="w-4 h-4" />
               </button>
-              <div className="flex items-center gap-1 bg-amber-400 text-slate-900 px-2.5 py-1 rounded-xl text-xs font-black shadow-xs">
-                <Star className="w-3.5 h-3.5 fill-slate-900 text-slate-900" />
+              <div className="flex items-center gap-1 bg-amber-400 text-slate-900 dark:text-white px-2.5 py-1 rounded-xl text-xs font-black shadow-xs">
+                <Star className="w-3.5 h-3.5 fill-slate-900 text-slate-900 dark:fill-white dark:text-white" />
                 <span className="font-mono">{reviewImagePreview.rating}.0</span>
               </div>
             </div>

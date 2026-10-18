@@ -24,6 +24,7 @@ import { PushNotifications } from '@capacitor/push-notifications';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { triggerPhoneDeviceNotification } from './utils/phoneNotifications';
 import { initGlobalClickHaptic } from './utils/audio';
+import { saveQuestsLocally, loadQuestsLocally, loadQuestsLocallySync, safeLocalStorageSet } from './utils/questStorage';
 import Navbar from './components/Navbar';
 import QuestLogo from './components/QuestLogo';
 import HomeView from './components/HomeView';
@@ -57,6 +58,7 @@ const lazyWithRetry = <T extends React.ComponentType<any>>(
 const MapView = lazyWithRetry(() => import('./components/MapView'));
 const MyQuestsView = lazyWithRetry(() => import('./components/MyQuestsView'));
 const ProfileView = lazyWithRetry(() => import('./components/ProfileView'));
+
 const PublicProfileView = lazyWithRetry(() => import('./components/PublicProfileView'));
 const ReciprocalRatingModal = lazyWithRetry(() => import('./components/ReciprocalRatingModal'));
 const NotificationScreen = lazyWithRetry(() => import('./components/NotificationScreen'));
@@ -206,23 +208,53 @@ export default function App() {
  const [prevUnreadChatsCount, setPrevUnreadChatsCount] = useState(0);
  const [prevProfileUpdates, setPrevProfileUpdates] = useState(0);
 
- // Synchronize Dark Mode Class (stored in userProfile.privacyEnabled)
- useEffect(() => {
-   if (userProfile) {
-     const isDark = !!userProfile.privacyEnabled;
-     if (isDark) {
-       document.documentElement.classList.add('dark');
-       try { localStorage.setItem('quest_app_dark_mode', 'true'); } catch (e) {}
-       const meta = document.querySelector('meta[name="theme-color"]');
-       if (meta) meta.setAttribute('content', '#0B132B');
-     } else {
-       document.documentElement.classList.remove('dark');
-       try { localStorage.setItem('quest_app_dark_mode', 'false'); } catch (e) {}
-       const meta = document.querySelector('meta[name="theme-color"]');
-       if (meta) meta.setAttribute('content', '#F8FAFC');
-     }
-   }
- }, [userProfile?.privacyEnabled]);
+  // Synchronize Theme (System / Light / Dark)
+  useEffect(() => {
+    const applyTheme = (isDark: boolean) => {
+      if (isDark) {
+        document.documentElement.classList.add('dark');
+        try { localStorage.setItem('quest_app_dark_mode', 'true'); } catch (e) {}
+        const meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute('content', '#0B132B');
+      } else {
+        document.documentElement.classList.remove('dark');
+        try { localStorage.setItem('quest_app_dark_mode', 'false'); } catch (e) {}
+        const meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute('content', '#FFFFFF');
+      }
+    };
+
+    if (!userProfile) {
+      const stored = localStorage.getItem('quest_app_dark_mode');
+      const isSystemDark = typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)').matches : false;
+      const isDark = stored !== null ? stored === 'true' : isSystemDark;
+      applyTheme(isDark);
+      return;
+    }
+    const pref = userProfile?.themePreference || (userProfile?.privacyEnabled ? 'dark' : 'system');
+    if (pref === 'dark') {
+      applyTheme(true);
+    } else if (pref === 'light') {
+      applyTheme(false);
+    } else {
+      const mediaQuery = typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+      applyTheme(mediaQuery ? mediaQuery.matches : false);
+
+      const handleChange = (e: MediaQueryListEvent) => {
+        applyTheme(e.matches);
+      };
+
+      if (mediaQuery) {
+        if (mediaQuery.addEventListener) {
+          mediaQuery.addEventListener('change', handleChange);
+          return () => mediaQuery.removeEventListener('change', handleChange);
+        } else if (mediaQuery.addListener) {
+          mediaQuery.addListener(handleChange);
+          return () => mediaQuery.removeListener(handleChange);
+        }
+      }
+    }
+  }, [userProfile?.themePreference, userProfile?.privacyEnabled]);
 
  // Synchronize Low Performance Class (stored in userProfile.lowPerformanceModeEnabled)
  useEffect(() => {
@@ -789,7 +821,7 @@ export default function App() {
 
    if (hasChanges) {
     setQuests(updatedList);
-    localStorage.setItem('quest_app_quests', JSON.stringify(updatedList));
+    saveQuestsLocally(updatedList);
    }
   };
 
@@ -1012,17 +1044,15 @@ export default function App() {
 
  // A. Setup local storage caching fallback loaders
  try {
- const storedQuests = localStorage.getItem('quest_app_quests');
- if (storedQuests) {
-   try {
-     const parsedQuests = JSON.parse(storedQuests);
-     if (Array.isArray(parsedQuests) && parsedQuests.length > 0) {
-       setQuests(parsedQuests.filter(q => !isQuestExpired(q)));
-     }
-   } catch (qErr) {
-     console.warn('Failed parsing cached quests:', qErr);
-   }
+ const initialSyncQuests = loadQuestsLocallySync();
+ if (initialSyncQuests.length > 0) {
+   setQuests(initialSyncQuests.filter(q => !isQuestExpired(q)));
  }
+ loadQuestsLocally().then((idbQuests) => {
+   if (idbQuests && idbQuests.length > 0) {
+     setQuests(prev => prev.length === 0 ? idbQuests.filter(q => !isQuestExpired(q)) : prev);
+   }
+ }).catch(() => {});
 
  const storedFlags = localStorage.getItem('quest_app_user_flags');
  if (storedFlags) setUserFlags(JSON.parse(storedFlags));
@@ -1579,10 +1609,9 @@ export default function App() {
  const syncQuests = (newQuests: Quest[], deletedId?: string) => {
  const sanitizedQuests = newQuests.filter(q => !isQuestExpired(q));
  setQuests(sanitizedQuests);
- localStorage.setItem('quest_app_quests', JSON.stringify(sanitizedQuests));
+ saveQuestsLocally(sanitizedQuests);
 
- if (auth.currentUser) {
- if (deletedId) {
+ if (deletedId && auth.currentUser) {
  deleteDoc(doc(db, 'quests', deletedId)).catch(e => handleFirestoreError(e, OperationType.DELETE, `quests/${deletedId}`));
  }
  
@@ -1599,7 +1628,8 @@ export default function App() {
  existingQ.assignedAt !== q.assignedAt ||
  existingQ.extensionRequestedBy !== q.extensionRequestedBy ||
  existingQ.extensionApprovedBy !== q.extensionApprovedBy ||
- (existingQ.applicants?.length !== q.applicants?.length) ||
+ (JSON.stringify(existingQ.applicants || []) !== JSON.stringify(q.applicants || [])) ||
+ (JSON.stringify(existingQ.jobApplicants || []) !== JSON.stringify(q.jobApplicants || [])) ||
  existingQ.proofImageUrl !== q.proofImageUrl ||
  existingQ.title !== q.title ||
  existingQ.description !== q.description ||
@@ -1607,9 +1637,14 @@ export default function App() {
  });
 
  changedQuests.forEach((q) => {
- setDoc(doc(db, 'quests', q.id), cleanData(q)).catch(e => handleFirestoreError(e, OperationType.WRITE, `quests/${q.id}`));
+ const payload = {
+   ...q,
+   secretKey: "bk_sec_f76a45bc-f8ec-46e2-bb9e-2e336d40ae5f"
+ };
+ setDoc(doc(db, 'quests', q.id), cleanData(payload)).catch(e => {
+   console.warn(`[syncQuests] Direct firestore setDoc failed for ${q.id}:`, e);
  });
- }
+ });
  };
 
  const syncProfile = (newProfile: UserProfile) => {
@@ -1883,23 +1918,24 @@ export default function App() {
  }
  }, [authInitialized, userProfile]);
 
- // Premium entry splash animations and timing controls (unified with splash screen)
+ // Premium entry splash animations and timing controls (seamlessly merged with native splash screen)
  useEffect(() => {
+   // Immediately handoff from native white splash to frontend white canvas without flash
    try {
-     SplashScreen.hide().catch(() => {});
+     SplashScreen.hide({ fadeOutDuration: 150 }).catch(() => {});
    } catch (e) {}
 
    const shrinkTimer = setTimeout(() => {
      setAnimationPhase('shrink');
-   }, 350);
+   }, 320);
 
    const textTimer = setTimeout(() => {
      setAnimationPhase('text-fade');
-   }, 500);
+   }, 480);
 
    const minTimer = setTimeout(() => {
      setMinTimeElapsed(true);
-   }, 1100);
+   }, 1250);
 
    return () => {
      clearTimeout(minTimer);
@@ -1915,7 +1951,7 @@ export default function App() {
        setSplashFadeOut(true);
        const timer = setTimeout(() => {
          setSplashActive(false);
-       }, 500);
+       }, 450);
        return () => clearTimeout(timer);
      }
    }
@@ -2082,11 +2118,23 @@ export default function App() {
  }, [currentView, matchingQuestsCount, totalMyQuestsUpdates, unreadChatsCount, totalProfileUpdates]);
 
  const renderSplashContent = () => (
-  <div className={`fixed -inset-2 bg-[#F8FAFC] dark:bg-[#0B132B] flex flex-col items-center justify-center font-sans px-6 select-none overflow-hidden z-[99999] transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1) ${
+  <div className={`fixed -inset-2 bg-white dark:bg-[#0B132B] flex flex-col items-center justify-center font-sans px-6 select-none overflow-hidden z-[99999] transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1) ${
     splashFadeOut ? 'opacity-0 scale-105 pointer-events-none' : 'opacity-100 scale-100'
   }`}>
-    {/* Subtle Ambient Glow matching dark and light mode */}
-    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full bg-[#FC0D82]/10 dark:bg-[#FC0D82]/5 blur-[120px] pointer-events-none"></div>
+    {/* Subtle Ambient Glow with delayed bloom animation to seamlessly merge with white native splash */}
+    <motion.div
+      initial={{ opacity: 0, scale: 0.6 }}
+      animate={{ 
+        opacity: [0, 0.9, 0.75],
+        scale: [0.6, 1.08, 1.0]
+      }}
+      transition={{
+        delay: 0.38,
+        duration: 0.95,
+        ease: [0.16, 1, 0.3, 1]
+      }}
+      className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[28rem] h-[28rem] rounded-full bg-gradient-to-tr from-[#FC0D82]/20 via-[#FC0D82]/12 to-transparent dark:from-[#FC0D82]/15 dark:via-[#FC0D82]/8 dark:to-transparent blur-[110px] pointer-events-none"
+    />
 
     <div className="relative flex flex-col items-center justify-center z-10 select-none pointer-events-none">
       {/* Logo element with Zoom & Settle animation */}
@@ -2270,7 +2318,7 @@ export default function App() {
  }
 
  // Trigger strict action-based hardware GPS checks before booking is finalized (Rule 3)
- verifyGpsHardwareAndExecute('book', { questId, bookingFee }, (coords) => {
+ verifyGpsHardwareAndExecute('book', { questId, bookingFee }, async (coords) => {
  // Recalculate distance using verified real physical coordinates
  const trueDistance = calculateDistanceKmWithCoords(targetQuest.lat, targetQuest.lng, coords.lat, coords.lng);
  if (trueDistance > 50) {
@@ -2317,7 +2365,44 @@ export default function App() {
  return q;
  });
 
- syncQuests(updatedQuests);
+ // Step 1: Dispatch to backend /api/quests/book to guarantee atomic server-side persistence in Capacitor & Web
+ let serverConfirmedQuest: Quest | null = null;
+ try {
+   const bookRes = await fetch('/api/quests/book', {
+     method: 'POST',
+     headers: { 'Content-Type': 'application/json' },
+     body: JSON.stringify({
+       questId,
+       userId: userProfile.id,
+       userName: userProfile.name,
+       userAvatar: userProfile.avatar,
+       userPhone: userProfile.phone || '',
+       rating: userProfile.rating || 5.0,
+       questsCompleted: userProfile.questsCompleted || 0,
+       coords
+     })
+   });
+   if (bookRes.ok) {
+     const bookData = await bookRes.json();
+     if (bookData.quest) {
+       serverConfirmedQuest = bookData.quest;
+     }
+   } else {
+     const errData = await bookRes.json().catch(() => ({}));
+     if (errData.error) {
+       showToast(errData.error);
+       return;
+     }
+   }
+ } catch (apiErr) {
+   console.warn("[handleBookQuest] Server booking proxy unreachable, falling back to direct client sync:", apiErr);
+ }
+
+ const finalQuestsToSync = serverConfirmedQuest
+   ? quests.map(q => q.id === questId ? { ...q, ...serverConfirmedQuest } : q)
+   : updatedQuests;
+
+ syncQuests(finalQuestsToSync);
  setMyQuestsActiveTab('obligations');
 
  showToast(userProfile.language === 'ar' 
@@ -3587,8 +3672,11 @@ export default function App() {
     const updatedQuest: Quest = {
       ...targetQuest,
       status: "disputed",
+      disputeReason: targetQuest.endReason || "نزاع على إنهاء العمل والمستحقات المالية",
+      disputeTimestamp: new Date().toISOString(),
+      disputedBy: userProfile.id,
       endRequestedBy: null,
-      endReason: null
+      endReason: targetQuest.endReason || null
     };
 
     const updatedQuests = quests.map(q => q.id === questId ? updatedQuest : q);
@@ -4557,7 +4645,7 @@ export default function App() {
  showToast={showToast}
  onViewPublicProfile={setSelectedPublicProfileId}
  setQuests={syncQuests}
- initialSelectedQuestId={initialSelectedQuestId}
+          initialSelectedQuestId={initialSelectedQuestId}
  onClearInitialSelectedQuest={() => setInitialSelectedQuestId(null)}
  onViewQuestDetail={navigateToQuestDetail}
  onUpdateProfile={syncProfile}

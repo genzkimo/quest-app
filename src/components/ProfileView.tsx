@@ -32,6 +32,8 @@ import {
  Volume2,
  Smartphone,
  Moon,
+  Sun,
+  Monitor,
  Trash2,
  Camera,
  MessageSquare,
@@ -491,6 +493,9 @@ function ProfileView({
  const [language, setLanguage] = useState<'ar' | 'fr' | 'en'>(lang);
  const [enableNotifications, setEnableNotifications] = useState(userProfile.enableNotifications);
  const [privacyEnabled, setPrivacyEnabled] = useState(userProfile.privacyEnabled);
+  const [themePreference, setThemePreference] = useState<'system' | 'light' | 'dark'>(
+    userProfile.themePreference || (userProfile.privacyEnabled ? 'dark' : 'system')
+  );
  const [audioEffectsEnabled, setAudioEffectsEnabled] = useState(!!userProfile.audioEffectsEnabled);
  const [hapticFeedbackEnabled, setHapticFeedbackEnabled] = useState(!!userProfile.hapticFeedbackEnabled);
  const [lowPerformanceModeEnabled, setLowPerformanceModeEnabled] = useState(!!userProfile.lowPerformanceModeEnabled);
@@ -502,6 +507,7 @@ function ProfileView({
  useEffect(() => {
  setEnableNotifications(userProfile.enableNotifications);
  setPrivacyEnabled(userProfile.privacyEnabled);
+    setThemePreference(userProfile.themePreference || (userProfile.privacyEnabled ? 'dark' : 'system'));
  setAudioEffectsEnabled(!!userProfile.audioEffectsEnabled);
  setHapticFeedbackEnabled(!!userProfile.hapticFeedbackEnabled);
  setLowPerformanceModeEnabled(!!userProfile.lowPerformanceModeEnabled);
@@ -647,6 +653,16 @@ function ProfileView({
  setEnableNotifications(newVal);
  onUpdateProfile({ enableNotifications: newVal });
  };
+
+  const handleSetTheme = (theme: 'system' | 'light' | 'dark') => {
+    setThemePreference(theme);
+    const isDark = theme === 'dark' || (theme === 'system' && typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    setPrivacyEnabled(isDark);
+    onUpdateProfile({ themePreference: theme, privacyEnabled: isDark });
+    try {
+      localStorage.setItem('quest_app_theme_mode', theme);
+    } catch (e) {}
+  };
 
  const handleTogglePrivacy = () => {
  const newVal = !privacyEnabled;
@@ -1290,7 +1306,7 @@ function ProfileView({
  setRefillLoading(true);
 
  try {
-const response = await fetch(`${API_BASE_URL}/api/wallet/initiate-paypal-refill`, {
+ const response = await fetch(`${API_BASE_URL}/api/wallet/initiate-paypal-refill`, {
  method: 'POST',
  headers: { 'Content-Type': 'application/json' },
  body: JSON.stringify({
@@ -1744,8 +1760,8 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/initiate-paypal-refill`
  className="w-full bg-white hover:bg-gray-50 border border-gray-150 p-4 rounded-2xl flex items-center justify-between shadow-xs transition-all cursor-pointer text-right group"
  >
  <div className="flex items-center gap-3">
- <div className="p-3 bg-sky-50 text-[#4FC3F7] rounded-xl group-hover:scale-105 transition-transform">
- <User className="w-5 h-5 text-[#4FC3F7]" />
+ <div className="p-3 bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 rounded-xl group-hover:scale-105 transition-transform border border-indigo-100 dark:border-indigo-500/20">
+ <User className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
  </div>
  <div className="text-right">
  <h4 className="text-xs font-black text-[#1F2A44]">
@@ -1766,8 +1782,8 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/initiate-paypal-refill`
  className="w-full bg-white hover:bg-gray-50 border border-gray-150 p-4 rounded-2xl flex items-center justify-between shadow-xs transition-all cursor-pointer text-right group"
  >
  <div className="flex items-center gap-3">
- <div className="p-3 bg-amber-50 text-amber-500 rounded-xl group-hover:scale-105 transition-transform">
- <ShieldCheck className="w-5 h-5 text-amber-500" />
+ <div className="p-3 bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 rounded-xl group-hover:scale-105 transition-transform border border-emerald-100 dark:border-emerald-500/20">
+ <ShieldCheck className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
  </div>
  <div className="text-right">
  <h4 className="text-xs font-black text-[#1F2A44]">
@@ -1830,8 +1846,8 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/initiate-paypal-refill`
  className="w-full bg-white hover:bg-gray-50 border border-gray-150 p-4 rounded-2xl flex items-center justify-between shadow-xs transition-all cursor-pointer text-right group"
  >
  <div className="flex items-center gap-3">
- <div className="p-3 bg-amber-50 text-amber-500 rounded-xl group-hover:scale-105 transition-transform">
- <Settings className="w-5 h-5 text-amber-500" />
+ <div className="p-3 bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400 rounded-xl group-hover:scale-105 transition-transform border border-blue-100 dark:border-blue-500/20">
+ <Settings className="w-5 h-5 text-blue-600 dark:text-blue-400" />
  </div>
  <div className="text-right">
  <h4 className="text-xs font-black text-[#1F2A44]">
@@ -1852,8 +1868,8 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/initiate-paypal-refill`
  className="w-full bg-white hover:bg-gray-50 border border-gray-150 p-4 rounded-2xl flex items-center justify-between shadow-xs transition-all cursor-pointer text-right group"
  >
  <div className="flex items-center gap-3">
- <div className="p-3 bg-amber-50 text-amber-500 rounded-xl group-hover:scale-105 transition-transform">
- <Gift className="w-5 h-5 text-amber-500 fill-amber-500/20" />
+ <div className="p-3 bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400 rounded-xl group-hover:scale-105 transition-transform border border-amber-200/60 dark:border-amber-500/30">
+ <Gift className="w-5 h-5 text-amber-600 dark:text-amber-400 fill-amber-500/20" />
  </div>
  <div className="text-right">
  <h4 className="text-xs font-black text-[#1F2A44]">
@@ -1879,8 +1895,8 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/initiate-paypal-refill`
  className="w-full bg-white hover:bg-gray-50 border border-gray-150 p-4 rounded-2xl flex items-center justify-between shadow-xs transition-all cursor-pointer text-right group"
  >
  <div className="flex items-center gap-3">
- <div className="p-3 bg-sky-50 dark:bg-sky-500/15 text-sky-600 dark:text-sky-400 rounded-xl group-hover:scale-105 transition-transform border border-sky-100 dark:border-sky-500/20">
- <MessageSquare className="w-5 h-5 text-sky-600 dark:text-sky-400" />
+ <div className="p-3 bg-cyan-50 dark:bg-cyan-500/15 text-cyan-600 dark:text-cyan-400 rounded-xl group-hover:scale-105 transition-transform border border-cyan-100 dark:border-cyan-500/20">
+ <MessageSquare className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
  </div>
  <div className="text-right">
  <h4 className="text-xs font-black text-[#1F2A44]">
@@ -3191,29 +3207,76 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/initiate-paypal-refill`
  </div>
  </div>
 
- {/* Dark Mode toggle */}
- <div className={`p-4 flex justify-between items-center ${isRtl ? '' : 'flex-row-reverse'}`}>
- <button 
- dir="ltr"
- role="switch"
- aria-checked={privacyEnabled}
- onClick={handleTogglePrivacy}
- className={`w-11 h-6 rounded-full p-0.5 cursor-pointer transition-colors duration-200 relative shrink-0 ${
- privacyEnabled ? 'bg-[#FF3B7C] shadow-[0_0_12px_rgba(255,59,124,0.4)]' : 'bg-gray-300 dark:bg-slate-700'
- }`}
- >
- <div className={`toggle-knob bg-white w-5 h-5 rounded-full shadow-md transition-transform duration-200 ${
- privacyEnabled ? 'translate-x-5' : 'translate-x-0'
- }`}></div>
- </button>
- <div className={`space-y-0.5 ${isRtl ? 'text-right' : 'text-left'} flex items-center gap-2 ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
- <div className={isRtl ? 'text-right' : 'text-left'}>
- <h5 className="font-extrabold text-xs text-[#1F2A44] dark:text-white">{dict.privacyHeader}</h5>
- <p className="text-[9px] text-gray-400 dark:text-slate-400 font-semibold font-sans">{dict.privacySubtitle}</p>
- </div>
- <Moon className="w-4 h-4 text-[#FF3B7C] shrink-0" />
- </div>
- </div>
+  {/* Theme Mode Selection (System / Light / Dark) */}
+  <div className="p-4 space-y-3">
+    <div className={`flex items-center justify-between ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
+      <div className={`flex items-center gap-2.5 ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
+        <div className="w-8 h-8 rounded-xl bg-pink-50 dark:bg-pink-950/40 flex items-center justify-center text-[#FF3B7C] shrink-0">
+          <Moon className="w-4 h-4" />
+        </div>
+        <div className={isRtl ? 'text-right' : 'text-left'}>
+          <h5 className="font-extrabold text-xs text-[#1F2A44] dark:text-white">
+            {lang === 'ar' ? 'مظهر وتنسيق التطبيق' : lang === 'fr' ? "Thème de l'application" : 'App Appearance & Theme'}
+          </h5>
+          <p className="text-[9px] text-gray-400 dark:text-slate-400 font-semibold font-sans">
+            {lang === 'ar'
+              ? 'اختر الوضع الفاتح، الداكن، أو المزامنة التلقائية مع إعدادات نظام جهازك'
+              : lang === 'fr'
+              ? 'Clair, sombre ou synchronisé avec les paramètres système'
+              : 'Light, dark, or automatically match your operating system'}
+          </p>
+        </div>
+      </div>
+    </div>
+
+    {/* 3-way Segmented Control */}
+    <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-2xl border border-slate-200/60 dark:border-slate-700/60">
+      <button
+        type="button"
+        onClick={() => handleSetTheme('system')}
+        className={`flex flex-col items-center justify-center py-2 px-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+          themePreference === 'system'
+            ? 'bg-white dark:bg-[#151F32] text-[#FF3B7C] shadow-sm scale-100'
+            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+        }`}
+      >
+        <Monitor className="w-4 h-4 mb-1" />
+        <span className="text-[11px] whitespace-nowrap">
+          {lang === 'ar' ? 'حسب النظام' : lang === 'fr' ? 'Système' : 'System'}
+        </span>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => handleSetTheme('light')}
+        className={`flex flex-col items-center justify-center py-2 px-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+          themePreference === 'light'
+            ? 'bg-white dark:bg-[#151F32] text-[#FF3B7C] shadow-sm scale-100'
+            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+        }`}
+      >
+        <Sun className="w-4 h-4 mb-1 text-amber-500" />
+        <span className="text-[11px] whitespace-nowrap">
+          {lang === 'ar' ? 'فاتح' : lang === 'fr' ? 'Clair' : 'Light'}
+        </span>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => handleSetTheme('dark')}
+        className={`flex flex-col items-center justify-center py-2 px-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+          themePreference === 'dark'
+            ? 'bg-white dark:bg-[#151F32] text-[#FF3B7C] shadow-sm scale-100'
+            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+        }`}
+      >
+        <Moon className="w-4 h-4 mb-1 text-[#FF3B7C]" />
+        <span className="text-[11px] whitespace-nowrap">
+          {lang === 'ar' ? 'داكن' : lang === 'fr' ? 'Sombre' : 'Dark'}
+        </span>
+      </button>
+    </div>
+  </div>
 
  {/* Custom Contact Support button & modal triggering row */}
  <div className={`p-4 bg-slate-50/50 flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 ${isRtl ? '' : 'sm:flex-row-reverse'}`}>
@@ -5166,8 +5229,8 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/initiate-paypal-refill`
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                           />
                           <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
-                          <div className="absolute bottom-2.5 left-2.5 bg-amber-400 text-slate-900 px-2.5 py-1 rounded-xl text-xs font-black flex items-center gap-1 shadow-md">
-                            <Star className="w-3.5 h-3.5 fill-slate-900 text-slate-900" />
+                          <div className="absolute bottom-2.5 left-2.5 bg-amber-400 text-slate-900 dark:text-white px-2.5 py-1 rounded-xl text-xs font-black flex items-center gap-1 shadow-md">
+                            <Star className="w-3.5 h-3.5 fill-slate-900 text-slate-900 dark:fill-white dark:text-white" />
                             <span className="font-mono font-bold">{review.rating}.0</span>
                           </div>
                         </div>
@@ -5245,8 +5308,8 @@ const response = await fetch(`${API_BASE_URL}/api/wallet/initiate-paypal-refill`
               >
                 <X className="w-4 h-4" />
               </button>
-              <div className="flex items-center gap-1 bg-amber-400 text-slate-900 px-2.5 py-1 rounded-xl text-xs font-black shadow-xs">
-                <Star className="w-3.5 h-3.5 fill-slate-900 text-slate-900" />
+              <div className="flex items-center gap-1 bg-amber-400 text-slate-900 dark:text-white px-2.5 py-1 rounded-xl text-xs font-black shadow-xs">
+                <Star className="w-3.5 h-3.5 fill-slate-900 text-slate-900 dark:fill-white dark:text-white" />
                 <span className="font-mono">{reviewImagePreview.rating}.0</span>
               </div>
             </div>

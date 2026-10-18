@@ -816,7 +816,7 @@ function HomeView({
  )}
  </div>
  ) : (
- <div className="space-y-7 w-full">
+ <div className="space-y-3.5 sm:space-y-4 w-full">
  {(() => {
  const renderQuestCard = (quest: typeof quests[0] & { distanceKm?: number }, forcedOutsideRadius?: boolean) => {
  const tokenAmount = calculateBookingFee(quest.cashReward, quest.questType);
@@ -856,8 +856,8 @@ function HomeView({
  return (
  <div
  key={quest.id}
- style={{ contentVisibility: 'auto', containIntrinsicSize: '0 400px' }}
- className={`bg-white dark:bg-[#151F32] border rounded-3xl overflow-hidden transition-all flex flex-col justify-between relative cursor-pointer shadow-sm dark:shadow-md ${
+ style={{ contentVisibility: 'auto', containIntrinsicSize: '0 300px' }}
+ className={`bg-white dark:bg-[#151F32] border rounded-2xl sm:rounded-3xl overflow-hidden transition-all flex flex-col justify-between relative cursor-pointer shadow-xs dark:shadow-md ${
  isOutsideRadius ? 'border-dashed border-gray-300 dark:border-slate-700 bg-gray-50/45 dark:bg-slate-900/40 opacity-85' : 'border-slate-200/80 dark:border-slate-800/80 hover:border-[#FF3B7C] dark:hover:border-[#FF3B7C]/70'
  }`}
  onClick={() => {
@@ -901,15 +901,15 @@ function HomeView({
  </div>
  )}
 
- <div className="p-6 sm:p-7 space-y-5">
+ <div className="p-3.5 sm:p-4.5 space-y-2.5">
  
  {/* SOCIAL POST HEADER: Creator avatar, name, Sky Blue checkmark badge and localized timestamp */}
  <div className="flex items-center justify-between">
- <div className="flex items-center gap-3">
+ <div className="flex items-center gap-2.5">
  <div className="relative">
  {/* Inner glowing effect for Poster Avatar */}
  <div 
- className="w-11 h-11 rounded-full p-0.5 bg-gradient-to-tr from-[#1F2A44]/10 to-[#1F2A44]/30 cursor-pointer"
+ className="w-9 h-9 rounded-full p-0.5 bg-gradient-to-tr from-[#1F2A44]/10 to-[#1F2A44]/30 cursor-pointer shrink-0"
  onClick={(e) => {
  e.stopPropagation();
  onViewPublicProfile(quest.creatorId);
@@ -923,8 +923,8 @@ function HomeView({
  />
  </div>
  {/* Sky Blue verification badge overlay on bottom right */}
- <div className="absolute -bottom-1 -right-1 bg-white dark:bg-[#151F32] rounded-full p-1 shadow-sm border border-gray-100 dark:border-slate-700 flex items-center justify-center">
- <Check className="w-2.5 h-2.5 text-[#4FC3F7] stroke-[4.5px]" />
+ <div className="absolute -bottom-0.5 -right-0.5 bg-white dark:bg-[#151F32] rounded-full p-0.5 shadow-xs border border-gray-100 dark:border-slate-700 flex items-center justify-center">
+ <Check className="w-2 h-2 text-[#4FC3F7] stroke-[4px]" />
  </div>
  </div>
 
@@ -942,11 +942,10 @@ function HomeView({
  {/* Sky Blue checkmark icon inside simple badge */}
  <span className="bg-[#4FC3F7]/15 text-[#4FC3F7] text-[8px] px-1.5 py-0.2 rounded font-black tracking-widest uppercase flex items-center gap-0.5">
  <span>VERIFIED</span>
- <span className="text-[7.5px]"></span>
  </span>
  </div>
- <div className="text-[10px] text-gray-400 font-mono flex items-center gap-1 mt-0.5">
- <Clock className="w-3.5 h-3.5 text-gray-300" />
+ <div className="text-[10px] text-gray-400 dark:text-slate-400 font-mono flex items-center gap-1">
+ <Clock className="w-3 h-3 text-gray-300 dark:text-slate-500" />
  <span>{formatArabicDate(quest.createdAt, lang)}</span>
  </div>
  </div>
@@ -954,30 +953,30 @@ function HomeView({
 
  {/* Flagging alert banner and info */}
  {quest.flagsCount && quest.flagsCount > 0 ? (
- <div className="bg-[#FF3B7C]/10 text-[#FF3B7C] px-3 py-1 rounded-xl text-[10px] font-black flex items-center gap-1 animate-pulse">
- <AlertTriangle className="w-3.5 h-3.5" />
+ <div className="bg-[#FF3B7C]/10 text-[#FF3B7C] px-2.5 py-0.5 rounded-lg text-[9.5px] font-black flex items-center gap-1 animate-pulse">
+ <AlertTriangle className="w-3 h-3" />
  <span>{quest.flagsCount} FLAGS </span>
  </div>
  ) : null}
  </div>
 
  {/* SOCIAL POST BODY: Chores descriptions, landmarks, constraints, simulated hashtags */}
- <div className="space-y-4 text-start">
+ <div className="space-y-2 text-start">
  
- <h4 className="text-lg sm:text-xl font-black text-sky-500 dark:text-sky-400 leading-snug tracking-tight text-start mt-1">
+ <h4 className="text-base sm:text-lg font-black text-sky-500 dark:text-sky-400 leading-snug tracking-tight text-start">
  {quest.title}
  </h4>
 
- <div className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-200 leading-relaxed whitespace-pre-line relative text-start mt-2">
+ <div className="text-xs sm:text-[13px] font-medium text-slate-700 dark:text-slate-200 leading-relaxed whitespace-pre-line line-clamp-2 relative text-start">
  {quest.description}
  </div>
 
  {/* Standardized, non-stacking Image Grid Gallery */}
  {galleryImages.length > 0 && (
- <div className="space-y-1.5 pt-1">
+ <div className="space-y-1 pt-0.5">
  {galleryImages.length === 1 && (
  <div 
- className="w-full h-44 sm:h-48 max-h-48 sm:max-h-52 rounded-2xl overflow-hidden shadow-xs cursor-pointer relative bg-gray-50 border border-gray-150/70" 
+ className="w-full h-32 sm:h-36 max-h-36 rounded-xl overflow-hidden shadow-xs cursor-pointer relative bg-gray-50 dark:bg-slate-800 border border-gray-150/70 dark:border-slate-700/70" 
  onClick={(e) => {
  e.stopPropagation();
  setLightboxImage(galleryImages[0]);
@@ -987,7 +986,7 @@ function HomeView({
  </div>
  )}
  {galleryImages.length === 2 && (
- <div className="grid grid-cols-2 gap-1.5 h-36 sm:h-40 rounded-2xl overflow-hidden bg-gray-50 border border-gray-150/70">
+ <div className="grid grid-cols-2 gap-1.5 h-28 sm:h-32 rounded-xl overflow-hidden bg-gray-50 dark:bg-slate-800 border border-gray-150/70 dark:border-slate-700/70">
  {galleryImages.map((img, idx) => (
  <div 
  key={idx} 
@@ -1003,7 +1002,7 @@ function HomeView({
  </div>
  )}
  {galleryImages.length === 3 && (
- <div className="grid grid-cols-3 grid-rows-2 gap-1.5 h-36 sm:h-40 rounded-2xl overflow-hidden bg-gray-50 border border-gray-150/70">
+ <div className="grid grid-cols-3 grid-rows-2 gap-1.5 h-28 sm:h-32 rounded-xl overflow-hidden bg-gray-50 dark:bg-slate-800 border border-gray-150/70 dark:border-slate-700/70">
  <div 
  className="col-span-2 row-span-2 h-full cursor-pointer overflow-hidden relative" 
  onClick={(e) => {
@@ -1028,7 +1027,7 @@ function HomeView({
  </div>
  )}
  {galleryImages.length >= 4 && (
- <div className="grid grid-cols-3 grid-rows-3 gap-1.5 h-36 sm:h-40 rounded-2xl overflow-hidden bg-gray-50 border border-gray-150/70">
+ <div className="grid grid-cols-3 grid-rows-3 gap-1.5 h-28 sm:h-32 rounded-xl overflow-hidden bg-gray-50 dark:bg-slate-800 border border-gray-150/70 dark:border-slate-700/70">
  <div 
  className="col-span-2 row-span-3 h-full cursor-pointer overflow-hidden relative" 
  onClick={(e) => {
@@ -1065,71 +1064,76 @@ function HomeView({
  )}
  </div>
 
- {/* DYNAMIC VISUAL TRANSACTION CALLOUT BOX - Dark Navy with precise typography */}
- <div className="bg-[#1F2A44] rounded-3xl p-5 sm:p-6 border border-[#FFD34D]/20 relative overflow-hidden shadow-xl flex flex-col justify-between gap-4 text-start">
+ {/* DYNAMIC VISUAL TRANSACTION CALLOUT BOX - Streamlined Compact Row Layout */}
+ <div className="bg-[#1F2A44] rounded-2xl p-2.5 sm:p-3 border border-[#FFD34D]/20 relative overflow-hidden shadow-md flex items-center justify-between gap-2.5 text-start">
  
  {/* Technical abstract background art lines */}
- <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-[#FFD34D]/5 to-transparent rounded-full blur-xl pointer-events-none"></div>
+ <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-[#FFD34D]/10 to-transparent rounded-full blur-xl pointer-events-none"></div>
  
- <div className="flex justify-between items-center relative z-10">
+ <div className="flex items-center gap-2.5 relative z-10 shrink-0">
  <div>
- <span className="text-[9.5px] text-[#4FC3F7] block font-black uppercase tracking-widest leading-none mb-1 text-start">
+ <span className="text-[8.5px] text-[#4FC3F7] block font-black uppercase tracking-wider leading-none mb-0.5 text-start">
  {lang === 'ar' ? 'المكافأة' : 'Payout'}
  </span>
- <span className="text-xl font-black text-white font-mono flex items-baseline gap-1">
- {quest.cashReward} <span className="text-xs font-sans text-gray-300 font-semibold">{lang === 'ar' ? 'د.ج' : 'DZD'}</span>
+ <span className="text-base sm:text-lg font-black text-white font-mono flex items-baseline gap-1">
+ {quest.cashReward} <span className="text-[10px] font-sans text-gray-300 font-semibold">{lang === 'ar' ? 'د.ج' : 'DZD'}</span>
  </span>
  </div>
 
- <div className="text-right">
- <span className="text-[9.5px] text-gray-300 block font-black uppercase tracking-widest leading-none mb-1">
- {lang === 'ar' ? 'رسوم الحجز' : 'Booking Fee'}
+ <div className="h-6 w-px bg-white/15"></div>
+
+ <div>
+ <span className="text-[8.5px] text-gray-300 block font-black uppercase tracking-wider leading-none mb-0.5">
+ {lang === 'ar' ? 'رسوم الحجز' : 'Fee'}
  </span>
- <span className="text-xs font-black text-[#FFD34D] font-mono flex items-center justify-end gap-1">
+ <span className="text-xs font-black text-[#FFD34D] font-mono flex items-center gap-0.5">
  {tokenAmount} 
  </span>
  </div>
  </div>
 
  {/* Hot Pink central action button or Applicant standby state */}
+ <div className="relative z-10 flex-1 flex justify-end min-w-0 max-w-[200px] sm:max-w-[230px]">
  {quest.helperId === userProfile.id || quest.assignedRunnerId === userProfile.id || (quest.assignedRunnerIds && quest.assignedRunnerIds.includes(userProfile.id)) ? (
  <button
  disabled
- className="w-full bg-emerald-900/60 border border-emerald-600/60 text-emerald-300 py-3 rounded-2xl font-bold text-[10px] sm:text-xs flex items-center justify-center p-2.5 gap-2"
+ className="w-full bg-emerald-900/60 border border-emerald-600/60 text-emerald-300 py-2 px-2.5 rounded-xl font-bold text-[10px] sm:text-xs flex items-center justify-center gap-1 truncate"
  >
- <span className="text-center">{lang === 'ar' ? 'أنت معين لهذه المهمة بالفعل' : 'You are assigned to this quest'}</span>
+ <span className="truncate">{lang === 'ar' ? 'أنت معين بالفعل' : 'You are assigned'}</span>
  </button>
  ) : quest.applicants?.some(a => a.userId === userProfile.id) ? (
  <button
  disabled
- className="w-full bg-slate-800 border border-slate-700 text-slate-400 py-3 rounded-2xl font-bold text-[10px] sm:text-xs flex items-center justify-center p-2.5 gap-2"
+ className="w-full bg-slate-800 border border-slate-700 text-slate-300 py-2 px-2.5 rounded-xl font-bold text-[10px] sm:text-xs flex items-center justify-center gap-1 truncate"
  >
- <span className="text-center">{lang === 'ar' ? 'تم تقديم طلبك بنجاح.. في انتظار اختيار صاحب العمل ' : 'Application pending.. Awaiting creator selection '}</span>
+ <span className="truncate">{lang === 'ar' ? 'تم التقديم بنجاح ' : 'Application pending '}</span>
  </button>
  ) : isOutsideRadius ? (
  <button
  disabled
- className="w-full bg-slate-400/40 border border-slate-300 text-slate-400 py-3.5 px-7 rounded-2xl font-bold text-[10px] sm:text-xs flex items-center justify-center p-2.5 gap-2 cursor-not-allowed opacity-75"
+ className="w-full bg-slate-700/50 border border-slate-600/50 text-slate-300 py-2 px-2 rounded-xl font-bold text-[9.5px] sm:text-[10.5px] flex items-center justify-center gap-1 cursor-not-allowed opacity-80"
  >
- <MapPin className="w-4.5 h-4.5 text-slate-400" />
- <span className="text-center">{lang === 'ar' ? 'هذه المهمة خارج نطاقك الجغرافي المتاح للحجز ' : 'This quest is outside your available geographical booking limit '}</span>
+ <MapPin className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+ <span className="truncate">{lang === 'ar' ? 'خارج النطاق' : 'Outside limit'}</span>
  </button>
  ) : (
  <button
  onClick={(e) => handleBookTaskClick(quest, e)}
- className="w-full bg-[#FF3B7C] hover:bg-[#FF3B7C]/95 text-white font-black text-xs py-3.5 px-7 rounded-2xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-[#FF3B7C]/25 active:scale-95 cursor-pointer whitespace-nowrap"
+ className="w-full bg-[#FF3B7C] hover:bg-[#FF3B7C]/95 text-white font-black text-xs py-2 px-3.5 rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-md shadow-[#FF3B7C]/25 active:scale-95 cursor-pointer whitespace-nowrap"
  >
- <Award className="w-4.5 h-4.5" />
- <span>{lang === 'ar' ? 'احجز المهمة الآن ' : 'Book Quest Now '}</span>
+ <Award className="w-4 h-4 shrink-0" />
+ <span>{lang === 'ar' ? 'احجز الآن' : 'Book Now'}</span>
  </button>
  )}
  </div>
 
  </div>
 
+ </div>
+
  {/* SOCIAL FEED CARDS ACTIONS PANEL: Hearts, Comments expanders, shares, Scam flags toggle */}
- <div className="bg-slate-50/80 dark:bg-[#111A2E]/90 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between px-6 py-3.5 text-xs font-black">
- <div className="flex items-center gap-4 text-gray-500 dark:text-slate-400">
+ <div className="bg-slate-50/80 dark:bg-[#111A2E]/90 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between px-3.5 sm:px-4.5 py-2 text-xs font-black">
+ <div className="flex items-center gap-3 text-gray-500 dark:text-slate-300">
  
  {/* Simulated interactive Like option */}
  <button
@@ -1138,8 +1142,8 @@ function HomeView({
  isLiked ? 'text-[#FF3B7C]' : 'hover:text-[#1F2A44] dark:hover:text-white'
  }`}
  >
- <Heart className={`w-4 h-4 transition-all group-active:scale-150 ${isLiked ? 'fill-[#FF3B7C] text-[#FF3B7C]' : ''}`} />
- <span>{likesCount}</span>
+ <Heart className={`w-3.5 h-3.5 transition-all group-active:scale-150 ${isLiked ? 'fill-[#FF3B7C] text-[#FF3B7C]' : ''}`} />
+ <span className="text-[11px] font-bold">{likesCount}</span>
  </button>
 
  {/* Expandable comments toggle */}
@@ -1149,23 +1153,24 @@ function HomeView({
  hasExpandedComments ? 'text-[#1F2A44] dark:text-white' : ''
  }`}
  >
- <MessageCircle className="w-4 h-4" />
- <span>{questComments.length}</span>
+ <MessageCircle className="w-3.5 h-3.5" />
+ <span className="text-[11px] font-bold">{questComments.length}</span>
  </button>
  </div>
 
- <div className="flex items-center gap-2">
+ <div className="flex items-center gap-1.5">
  {/* Real-time distance of chore - display-only */}
  {(() => {
  const isRunner = userProfile && (quest.helperId === userProfile.id || quest.assignedRunnerId === userProfile.id || (quest.assignedRunnerIds && quest.assignedRunnerIds.includes(userProfile.id)));
  const isCreator = userProfile && quest.creatorId === userProfile.id;
- const canOpenMap = isRunner || isCreator;
+ const isBooked = quest.status === 'booked' || quest.status === 'active' || quest.status === 'arrived' || quest.status === 'pending_verification' || quest.status === 'active_employment' || quest.status === 'hired' || quest.status === 'disputed';
+ const canOpenMap = isRunner || isCreator || isBooked;
  
  if (canOpenMap) {
  return (
  <div
  onClick={(e) => e.stopPropagation()}
- className="flex items-center gap-1 text-[#4FC3F7] font-mono font-extrabold text-[10px] bg-[#4FC3F7]/10 px-2.5 py-1 rounded-full select-none"
+ className="flex items-center gap-1 text-[#4FC3F7] font-mono font-extrabold text-[10px] bg-[#4FC3F7]/10 px-2 py-0.5 rounded-full select-none"
  title={lang === 'ar' ? 'المسافة الفعلية للمهمة' : 'Real-time distance'}
  >
  <MapPin className="w-3 h-3 text-[#4FC3F7]" />
@@ -1176,10 +1181,10 @@ function HomeView({
  return (
  <div
  onClick={(e) => e.stopPropagation()}
- className="flex items-center gap-1 text-gray-400 font-mono font-bold text-[10px] bg-gray-100 px-2.5 py-1 rounded-full select-none"
+ className="flex items-center gap-1 text-gray-500 dark:text-slate-300 font-mono font-bold text-[10px] bg-gray-100 dark:bg-slate-800 px-2 py-0.5 rounded-full select-none"
  title={lang === 'ar' ? 'الموقع مخفي حتى حجز الكويست' : 'Location hidden until booked'}
  >
- <Lock className="w-3 h-3 text-gray-400" />
+ <Lock className="w-3 h-3 text-gray-400 dark:text-slate-400" />
  <span>{cardDistance ? `${cardDistance} km` : (lang === 'ar' ? 'الموقع غير متوفر ' : 'Location unavailable ')}</span>
  </div>
  );
@@ -1189,16 +1194,16 @@ function HomeView({
  {/* Share button */}
  <button
  onClick={(e) => shareToPlatform(quest, e)}
- className="bg-gray-200 hover:bg-gray-300 text-gray-700 p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center"
+ className="bg-gray-100 hover:bg-gray-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-600 dark:text-slate-200 p-1.5 rounded-lg transition-all cursor-pointer flex items-center justify-center"
  title={dict.shareMessenger}
  >
- <Share2 className="w-3.5 h-3.5 text-gray-500" />
+ <Share2 className="w-3.5 h-3.5" />
  </button>
 
  {/* Flag Scam Shield button */}
  <button
  onClick={(e) => handleFlagClick(quest, e)}
- className="bg-red-50 text-[#FF3B7C] hover:bg-red-100 p-2 rounded-xl transition-colors cursor-pointer flex items-center justify-center"
+ className="bg-red-50 hover:bg-red-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 text-[#FF3B7C] p-1.5 rounded-lg transition-colors cursor-pointer flex items-center justify-center"
  title={lang === 'ar' ? 'تبليغ عن محتوى غير لائق' : 'Flag this post for Scam Shield'}
  >
  <AlertTriangle className="w-3.5 h-3.5" />
@@ -1210,28 +1215,28 @@ function HomeView({
  {hasExpandedComments && (
  <div 
  onClick={(e) => e.stopPropagation()} 
- className="bg-slate-50 border-t border-gray-100 p-4 space-y-3.5"
+ className="bg-slate-50 dark:bg-[#0E1729] border-t border-gray-150 dark:border-slate-800 p-3 sm:p-4 space-y-3"
  >
- <div className="text-[10px] font-black text-gray-400 uppercase tracking-wider">
+ <div className="text-[10px] font-black text-gray-400 dark:text-slate-400 uppercase tracking-wider">
  {lang === 'ar' ? 'محادثات الجيران والزملاء' : 'Direct Conversation with Neighbors'}
  </div>
 
  {/* List comments */}
  {questComments.length === 0 ? (
- <p className="text-[11px] text-gray-400 text-center py-2 font-medium">
+ <p className="text-[11px] text-gray-400 dark:text-slate-400 text-center py-2 font-medium">
  {lang === 'ar' ? 'لا توجد رسائل بعد. كن أول من يكتب استفساراً!' : 'No question comments listed yet. Ask a question regarding tools!'}
  </p>
  ) : (
- <div className="space-y-3">
+ <div className="space-y-2.5 max-h-48 overflow-y-auto">
  {questComments.map((cmt, idx) => (
- <div key={idx} className="flex gap-2.5 items-start">
- <img src={cmt.avatar} className="w-7 h-7 rounded-full object-cover border" />
- <div className="bg-white p-2.5 rounded-2xl border border-gray-100 flex-1 space-y-1">
+ <div key={idx} className="flex gap-2 items-start">
+ <img src={cmt.avatar} className="w-6 h-6 rounded-full object-cover border border-slate-200 dark:border-slate-700 shrink-0" />
+ <div className="bg-white dark:bg-[#1A2640] p-2 sm:p-2.5 rounded-xl border border-gray-150 dark:border-slate-700/70 flex-1 space-y-0.5">
  <div className="flex justify-between items-center">
- <strong className="text-[11px] font-black text-[#1F2A44]">{cmt.author}</strong>
- <span className="text-[9px] text-gray-450 font-mono">{cmt.time}</span>
+ <strong className="text-[11px] font-black text-[#1F2A44] dark:text-white">{cmt.author}</strong>
+ <span className="text-[9px] text-gray-400 dark:text-slate-400 font-mono">{cmt.time}</span>
  </div>
- <p className="text-[11px] font-medium text-gray-600 leading-relaxed">{cmt.text}</p>
+ <p className="text-[11px] font-medium text-gray-700 dark:text-slate-200 leading-relaxed">{cmt.text}</p>
  </div>
  </div>
  ))}
@@ -1240,7 +1245,7 @@ function HomeView({
 
  {/* Comment Input Form */}
  <form onSubmit={(e) => handleAddCommentSubmit(quest.id, e)} className="flex gap-2 items-center">
- <img src={userProfile.avatar} className="w-7 h-7 rounded-full object-cover border shrink-0" />
+ <img src={userProfile.avatar} className="w-6 h-6 rounded-full object-cover border border-slate-200 dark:border-slate-700 shrink-0" />
  <input
  type="text"
  placeholder={lang === 'ar' ? "اطرح سؤالاً عن أدوات العمل المطلوبة..." : "Ask owner a question regarding coordinates..."}
@@ -1249,11 +1254,11 @@ function HomeView({
  ...newCommentTexts,
  [quest.id]: e.target.value
  })}
- className="flex-1 px-3 py-1.5 bg-white border border-gray-200 rounded-xl text-xs font-semibold focus:outline-none"
+ className="flex-1 px-3 py-1.5 bg-white dark:bg-[#151F32] border border-gray-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-slate-400 focus:outline-none"
  />
  <button
  type="submit"
- className="bg-[#1F2A44] text-[#FFD34D] p-2 rounded-xl hover:bg-[#1C283E] transition cursor-pointer"
+ className="bg-[#1F2A44] dark:bg-[#25324D] text-[#FFD34D] p-2 rounded-xl hover:bg-[#1C283E] transition cursor-pointer"
  >
  <Send className="w-3.5 h-3.5" />
  </button>
@@ -1269,24 +1274,24 @@ function HomeView({
  <div className="space-y-6">
  {/* Tier 1 (In-Range Quests) */}
  {gpsDenied || !userLoc ? (
- <div className="bg-amber-500/10 border border-amber-500/30 p-8 rounded-3xl text-center space-y-4 shadow-xs animate-in fade-in duration-200">
- <div className="w-12 h-12 bg-amber-500/20 text-amber-900 rounded-full flex items-center justify-center mx-auto animate-pulse">
- <MapPin className="w-6 h-6 animate-bounce text-amber-900" />
+ <div className="bg-amber-500/10 border border-amber-500/30 p-6 sm:p-8 rounded-3xl text-center space-y-3.5 shadow-xs animate-in fade-in duration-200">
+ <div className="w-12 h-12 bg-amber-500/20 text-amber-900 dark:text-amber-300 rounded-full flex items-center justify-center mx-auto animate-pulse">
+ <MapPin className="w-6 h-6 animate-bounce text-amber-900 dark:text-amber-300" />
  </div>
  <div className="space-y-1.5 max-w-md mx-auto">
- <h4 className="font-extrabold text-xs text-amber-950">
+ <h4 className="font-extrabold text-xs text-amber-950 dark:text-amber-200">
  {isGpsRequesting 
  ? (lang === 'ar' ? 'جاري الاتصال بالأقمار الصناعية وتحديد موقعك...' : 'Acquiring GPS position...')
  : (lang === 'ar' ? 'تحديد الموقع (GPS) غير مفعّل ' : 'GPS Location Disabled ')}
  </h4>
- <p className="text-[11px] font-bold text-amber-900/90 leading-relaxed">
+ <p className="text-[11px] font-bold text-amber-900/90 dark:text-amber-100/90 leading-relaxed">
  {isGpsRequesting
  ? (lang === 'ar' ? 'يرجى الانتظار لحظات لمعايرة إشارة الـ GPS الدقيقة.' : 'Please wait while calibrating high-accuracy GPS signal.')
  : (lang === 'ar'
  ? 'يرجى تفعيل خدمة تحديد الموقع (GPS) لتحديد موقعك واستعراض المهام القريبة منك.'
  : 'Please enable GPS location services to discover nearby tasks around you.')}
  </p>
- <p className="text-[10px] font-medium text-amber-800/80">
+ <p className="text-[10px] font-medium text-amber-800/80 dark:text-amber-200/80">
  {lang === 'ar'
  ? 'تنبيه: لن تظهر المهام القريبة منك إلا عند تفعيله والتصريح بموقعك الجغرافي.'
  : 'Notice: Nearby tasks will not appear until GPS is enabled and permitted.'}
@@ -1296,7 +1301,7 @@ function HomeView({
  type="button"
  onClick={() => requestHomeLocation(true)}
  disabled={isGpsRequesting}
- className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-slate-950 rounded-2xl text-xs font-black shadow-sm transition-all cursor-pointer flex items-center justify-center gap-2 mx-auto"
+ className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-slate-950 dark:text-slate-900 rounded-2xl text-xs font-black shadow-sm transition-all cursor-pointer flex items-center justify-center gap-2 mx-auto"
  >
  {isGpsRequesting
  ? (lang === 'ar' ? 'جاري تحديد الموقع... ' : 'Locating... ')
@@ -1564,7 +1569,8 @@ function HomeView({
  <h4 className="text-gray-400 font-bold text-[10px] uppercase mb-1">{lang === 'ar' ? 'موقع المهمة' : 'Quest Location'}</h4>
  {(() => {
  const isApprovedAndActive = (selectedQuest.helperId === userProfile.id || selectedQuest.assignedRunnerId === userProfile.id || selectedQuest.assignedRunnerIds?.includes(userProfile.id)) && selectedQuest.status !== 'completed';
- const isLocationAuthorized = selectedQuest.creatorId === userProfile.id || isApprovedAndActive;
+ const isBooked = selectedQuest.status === 'booked' || selectedQuest.status === 'active' || selectedQuest.status === 'arrived' || selectedQuest.status === 'pending_verification' || selectedQuest.status === 'active_employment' || selectedQuest.status === 'hired' || selectedQuest.status === 'disputed';
+  const isLocationAuthorized = selectedQuest.creatorId === userProfile.id || isApprovedAndActive || isBooked;
  return (
  <div className="w-full">
  {isLocationAuthorized ? (

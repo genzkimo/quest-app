@@ -1108,6 +1108,141 @@ Provide your output in strict JSON format. Do not combine or nest it in any mark
     }
   });
 
+   // Dedicated Quest Booking / Job Application Endpoint (Reliable Native Capacitor & Web Persistence)
+  const handleQuestBookingRequest = async (req: express.Request, res: express.Response) => {
+    try {
+      const { questId, userId, userName, userAvatar, userPhone, rating, questsCompleted, coords } = req.body;
+
+      if (!questId || !userId) {
+        return res.status(400).json({ error: "معرف المهمة ومعرف المستخدم مطلوبان لإتمام الحجز" });
+      }
+
+      const dbAdmin = getFirestoreAdmin();
+      const questRef = doc(dbAdmin, 'quests', questId);
+      const questSnap = await getDoc(questRef);
+
+      if (!questSnap.exists()) {
+        return res.status(404).json({ error: "المهمة غير موجودة في قاعدة البيانات" });
+      }
+
+      const questData = questSnap.data() as any;
+
+      // Rule: cannot apply to own quest
+      if (questData.creatorId === userId) {
+        return res.status(400).json({ error: "لا يمكنك التقديم على كويست قمت بنشره بنفسك" });
+      }
+
+      // Rule: cannot apply to completed / expired quests
+      if (questData.archived || ['completed', 'cancelled', 'cancelled_by_timeout', 'expired', 'stale_cleared'].includes(questData.status)) {
+        return res.status(400).json({ error: "عذراً، هذه المهمة لم تعد متاحة لاستقبال طلبات الحجز" });
+      }
+
+      const currentApplicants = Array.isArray(questData.applicants) ? questData.applicants : [];
+      const currentJobApplicants = Array.isArray(questData.jobApplicants) ? questData.jobApplicants : [];
+
+      // Check if already applied
+      const alreadyApplied = currentApplicants.some((a: any) => a.userId === userId) ||
+                             currentJobApplicants.some((a: any) => a.applicantId === userId);
+      if (alreadyApplied) {
+        return res.status(400).json({ error: "لقد قمت بالتقديم على هذا الكويست مسبقاً" });
+      }
+
+      const newApplicant = {
+        userId,
+        name: userName || "مستخدم كويست",
+        avatar: userAvatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150",
+        rating: typeof rating === 'number' ? rating : 5.0,
+        questsCompleted: typeof questsCompleted === 'number' ? questsCompleted : 0,
+        phone: userPhone || ""
+      };
+
+      const appId = `app_${Date.now()}_${userId}`;
+      const newJobApplicant = {
+        id: appId,
+        jobId: questId,
+        applicantId: userId,
+        applicantName: userName || "مستخدم كويست",
+        applicantAvatar: userAvatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150",
+        applicantPhone: userPhone || "",
+        appliedAt: new Date().toISOString(),
+        status: 'pending' as const
+      };
+
+      const updatedApplicants = [...currentApplicants.filter((a: any) => a.userId !== userId), newApplicant];
+      const updatedJobApplicants = [...currentJobApplicants.filter((a: any) => a.applicantId !== userId), newJobApplicant];
+      const newStatus = (questData.status === 'open' || !questData.status) ? 'applications' : questData.status;
+
+      // 1. Atomically update quest document in Firestore
+      await updateDoc(questRef, {
+        applicants: updatedApplicants,
+        jobApplicants: updatedJobApplicants,
+        status: newStatus,
+        secretKey: BACKEND_SECRET_KEY
+      });
+
+      // 2. Persist record in job_applications collection for employers
+      try {
+        const jobAppRef = doc(dbAdmin, 'job_applications', appId);
+        await setDoc(jobAppRef, {
+          ...newJobApplicant,
+          secretKey: BACKEND_SECRET_KEY
+        });
+      } catch (jobAppErr) {
+        console.warn("[Quest Booking] Could not write to job_applications collection:", jobAppErr);
+      }
+
+      // 3. Create persistent Notification document for creator
+      if (questData.creatorId) {
+        try {
+          const notifRef = doc(collection(dbAdmin, 'notifications'));
+          const notifText = `تقدم الكابتن ${userName || 'جديد'} لمهمتك "${questData.title}". راجع بروفايله الآن!`;
+          await setDoc(notifRef, {
+            id: notifRef.id,
+            userId: questData.creatorId,
+            text: notifText,
+            questId: questId,
+            createdAt: new Date().toISOString(),
+            read: false,
+            type: 'applicant',
+            secretKey: BACKEND_SECRET_KEY
+          });
+        } catch (notifErr) {
+          console.warn("[Quest Booking] Could not dispatch creator in-app notification:", notifErr);
+        }
+
+        // 4. Try FCM push if creator has token
+        try {
+          const creatorSnap = await getDoc(doc(dbAdmin, 'users', questData.creatorId));
+          if (creatorSnap.exists()) {
+            const fcmToken = creatorSnap.data()?.fcmToken;
+            if (fcmToken) {
+              console.log(`[Quest Booking] Triggered FCM push alert to creator device token ${fcmToken}`);
+            }
+          }
+        } catch (fcmErr) {
+          // ignore
+        }
+      }
+
+      return res.json({
+        success: true,
+        message: "تم تقديم طلبك بنجاح.. في انتظار اختيار صاحب العمل",
+        quest: {
+          ...questData,
+          applicants: updatedApplicants,
+          jobApplicants: updatedJobApplicants,
+          status: newStatus
+        }
+      });
+    } catch (err: any) {
+      console.error("[Quest Booking Error]", err);
+      return res.status(500).json({ error: err.message || "حدث خطأ غير متوقع أثناء معالجة طلب الحجز" });
+    }
+  };
+
+  app.post("/api/quests/book", handleQuestBookingRequest);
+  app.post("/api/quests/apply", handleQuestBookingRequest);
+
   
   // Automated Background Expiration & Stale Quest Expunging Engine
   const PENDING_QUEST_TIMEOUT = 24 * 60 * 60 * 1000; // 24 hours publication window

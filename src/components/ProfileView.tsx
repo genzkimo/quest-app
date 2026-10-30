@@ -55,7 +55,7 @@ import {
  Coins,
  IdCard
 } from 'lucide-react';
-import { UserProfile, Badge, HunterReview, GodfatherReview, Quest } from '../types';
+import { UserProfile, Badge, HunterReview, GodfatherReview, Quest, QuestCategory } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import PullToRefresh from './PullToRefresh';
 import InfoButton from './InfoButton';
@@ -492,6 +492,11 @@ function ProfileView({
  // Settings states correspond exactly to profile keys
  const [language, setLanguage] = useState<'ar' | 'fr' | 'en'>(lang);
  const [enableNotifications, setEnableNotifications] = useState(userProfile.enableNotifications);
+ const [userInterests, setUserInterests] = useState<QuestCategory[]>(userProfile.interests || []);
+ const [notificationRadiusKm, setNotificationRadiusKm] = useState<number>(userProfile.notificationRadiusKm !== undefined ? userProfile.notificationRadiusKm : 25);
+ const [notifyOnNearbyQuests, setNotifyOnNearbyQuests] = useState<boolean>(userProfile.notifyOnNearbyQuests !== false);
+ const [notifyOnStatusUpdates, setNotifyOnStatusUpdates] = useState<boolean>(userProfile.notifyOnStatusUpdates !== false);
+ const [notifyOnDeadlines, setNotifyOnDeadlines] = useState<boolean>(userProfile.notifyOnDeadlines !== false);
  const [privacyEnabled, setPrivacyEnabled] = useState(userProfile.privacyEnabled);
   const [themePreference, setThemePreference] = useState<'system' | 'light' | 'dark'>(
     userProfile.themePreference || (userProfile.privacyEnabled ? 'dark' : 'system')
@@ -506,6 +511,11 @@ function ProfileView({
 
  useEffect(() => {
  setEnableNotifications(userProfile.enableNotifications);
+ setUserInterests(userProfile.interests || []);
+ setNotificationRadiusKm(userProfile.notificationRadiusKm !== undefined ? userProfile.notificationRadiusKm : 25);
+ setNotifyOnNearbyQuests(userProfile.notifyOnNearbyQuests !== false);
+ setNotifyOnStatusUpdates(userProfile.notifyOnStatusUpdates !== false);
+ setNotifyOnDeadlines(userProfile.notifyOnDeadlines !== false);
  setPrivacyEnabled(userProfile.privacyEnabled);
     setThemePreference(userProfile.themePreference || (userProfile.privacyEnabled ? 'dark' : 'system'));
  setAudioEffectsEnabled(!!userProfile.audioEffectsEnabled);
@@ -652,6 +662,45 @@ function ProfileView({
  const newVal = !enableNotifications;
  setEnableNotifications(newVal);
  onUpdateProfile({ enableNotifications: newVal });
+ };
+
+ const handleToggleInterest = (cat: QuestCategory) => {
+ let next: QuestCategory[];
+ if (userInterests.includes(cat)) {
+ next = userInterests.filter(c => c !== cat);
+ } else {
+ next = [...userInterests, cat];
+ }
+ setUserInterests(next);
+ onUpdateProfile({ interests: next });
+ triggerHaptic('soft', !!userProfile.hapticFeedbackEnabled);
+ };
+
+ const handleSetRadius = (radius: number) => {
+ setNotificationRadiusKm(radius);
+ onUpdateProfile({ notificationRadiusKm: radius });
+ triggerHaptic('soft', !!userProfile.hapticFeedbackEnabled);
+ };
+
+ const handleToggleNearbyAlerts = () => {
+ const newVal = !notifyOnNearbyQuests;
+ setNotifyOnNearbyQuests(newVal);
+ onUpdateProfile({ notifyOnNearbyQuests: newVal });
+ triggerHaptic('soft', !!userProfile.hapticFeedbackEnabled);
+ };
+
+ const handleToggleStatusAlerts = () => {
+ const newVal = !notifyOnStatusUpdates;
+ setNotifyOnStatusUpdates(newVal);
+ onUpdateProfile({ notifyOnStatusUpdates: newVal });
+ triggerHaptic('soft', !!userProfile.hapticFeedbackEnabled);
+ };
+
+ const handleToggleDeadlineAlerts = () => {
+ const newVal = !notifyOnDeadlines;
+ setNotifyOnDeadlines(newVal);
+ onUpdateProfile({ notifyOnDeadlines: newVal });
+ triggerHaptic('soft', !!userProfile.hapticFeedbackEnabled);
  };
 
   const handleSetTheme = (theme: 'system' | 'light' | 'dark') => {
@@ -3098,29 +3147,191 @@ function ProfileView({
  </div>
  </div>
 
- {/* Notifications toggle */}
- <div className={`p-4 flex justify-between items-center ${isRtl ? '' : 'flex-row-reverse'}`}>
- <button 
- dir="ltr"
- role="switch"
- aria-checked={enableNotifications}
- onClick={handleToggleNotifications}
- className={`w-11 h-6 rounded-full p-0.5 cursor-pointer transition-colors duration-200 relative shrink-0 ${
- enableNotifications ? 'bg-[#FF3B7C] shadow-[0_0_12px_rgba(255,59,124,0.4)]' : 'bg-gray-300 dark:bg-slate-700'
- }`}
- >
- <div className={`toggle-knob bg-white w-5 h-5 rounded-full shadow-md transition-transform duration-200 ${
- enableNotifications ? 'translate-x-5' : 'translate-x-0'
- }`}></div>
- </button>
- <div className={`space-y-0.5 ${isRtl ? 'text-right' : 'text-left'}`}>
- <h5 className="font-extrabold text-xs text-[#1F2A44] dark:text-white">
- {lang === 'ar' ? 'الإشعارات الميدانية المهمة' : lang === 'fr' ? 'Notifications de terrain importantes' : 'Critical Field Notifications'}
- </h5>
- <p className="text-[9px] text-gray-400 dark:text-slate-400 font-semibold">
- {lang === 'ar' ? 'تلقي تنبيهات عند نشر مهام عاجلة بالقرب منك' : lang === 'fr' ? 'Recevoir des alertes pour les tâches urgentes proches' : 'Get alerted immediately when urgent tasks are posted nearby'}
- </p>
- </div>
+ {/* Real-time Notification Suite */}
+ <div className="divide-y divide-gray-100 dark:divide-slate-800">
+   {/* Master Notifications toggle */}
+   <div className={`p-4 flex justify-between items-center ${isRtl ? '' : 'flex-row-reverse'}`}>
+     <button 
+       dir="ltr"
+       role="switch"
+       aria-checked={enableNotifications}
+       onClick={handleToggleNotifications}
+       className={`w-11 h-6 rounded-full p-0.5 cursor-pointer transition-colors duration-200 relative shrink-0 ${
+         enableNotifications ? 'bg-[#FF3B7C] shadow-[0_0_12px_rgba(255,59,124,0.4)]' : 'bg-gray-300 dark:bg-slate-700'
+       }`}
+     >
+       <div className={`toggle-knob bg-white w-5 h-5 rounded-full shadow-md transition-transform duration-200 ${
+         enableNotifications ? 'translate-x-5' : 'translate-x-0'
+       }`}></div>
+     </button>
+     <div className={`space-y-0.5 ${isRtl ? 'text-right' : 'text-left'}`}>
+       <h5 className="font-extrabold text-xs text-[#1F2A44] dark:text-white flex items-center gap-1.5">
+         <Bell className="w-4 h-4 text-[#FF3B7C]" />
+         <span>{lang === 'ar' ? 'نظام الإشعارات والتنبيهات المباشرة' : lang === 'fr' ? 'Système de notifications en temps réel' : 'Real-Time Notification System'}</span>
+       </h5>
+       <p className="text-[9px] text-gray-400 dark:text-slate-400 font-semibold">
+         {lang === 'ar' ? 'تفعيل الإشعارات الفورية للمهام القريبة وتحديثات الحالة والمواعيد' : 'Instant alerts for nearby quests, status updates & deadlines'}
+       </p>
+     </div>
+   </div>
+
+   {/* Detailed Real-time Notification Controls (Visible when master toggle is active) */}
+   {enableNotifications && (
+     <div className="p-4 space-y-4 bg-slate-50/70 dark:bg-[#0B132B]/50 animate-in fade-in duration-200">
+       
+       {/* 1. Category Interests */}
+       <div className="space-y-2">
+         <div className="flex items-center justify-between">
+           <span className="text-[11px] font-extrabold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+             <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+             <span>{lang === 'ar' ? 'مجالات المهام المفضلة لديك' : 'Preferred Quest Categories'}</span>
+           </span>
+           <span className="text-[9px] font-bold text-slate-400">
+             {userInterests.length === 0
+               ? (lang === 'ar' ? 'كافة المجالات نشطة' : 'All categories active')
+               : (lang === 'ar' ? `${userInterests.length} مجالات محددة` : `${userInterests.length} selected`)}
+           </span>
+         </div>
+         <p className="text-[9px] text-slate-400 leading-tight">
+           {lang === 'ar' ? 'انقر على المجالات لتحديد المهام التي ترغب بتلقي تنبيهات فورية فور نشرها:' : 'Select which quest categories you want instant alerts for:'}
+         </p>
+         <div className="flex flex-wrap gap-1.5 pt-1">
+           {(['صيانة', 'توصيل', 'تعليم', 'تسوق', 'تقنية', 'مساعدة منزلية', 'رعاية أليفة', 'أخرى'] as QuestCategory[]).map((cat) => {
+             const isSelected = userInterests.includes(cat);
+             return (
+               <button
+                 key={cat}
+                 type="button"
+                 onClick={() => handleToggleInterest(cat)}
+                 className={`px-3 py-1.5 rounded-xl text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 active:scale-95 ${
+                   isSelected
+                     ? 'bg-blue-600 text-white shadow-xs ring-1 ring-blue-500'
+                     : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
+                 }`}
+               >
+                 {isSelected && <Check className="w-3 h-3 text-white" />}
+                 <span>{cat}</span>
+               </button>
+             );
+           })}
+         </div>
+       </div>
+
+       {/* 2. Geolocation Radius */}
+       <div className="space-y-2 pt-2 border-t border-slate-200/60 dark:border-slate-800">
+         <div className="flex items-center justify-between">
+           <span className="text-[11px] font-extrabold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+             <MapPin className="w-3.5 h-3.5 text-emerald-500" />
+             <span>{lang === 'ar' ? 'نطاق المسافة الجغرافية للمهام القريبة' : 'Nearby Quest Distance Radius'}</span>
+           </span>
+           <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400">
+             {notificationRadiusKm === 0 || notificationRadiusKm >= 100
+               ? (lang === 'ar' ? 'مفتوح (الكل)' : 'Any distance')
+               : `${notificationRadiusKm} كم`}
+           </span>
+         </div>
+         <div className="grid grid-cols-5 gap-1 p-1 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+           {[5, 10, 25, 50, 0].map((radius) => {
+             const isCurrent = notificationRadiusKm === radius;
+             const label = radius === 0 ? (lang === 'ar' ? 'الكل' : 'All') : `${radius} كم`;
+             return (
+               <button
+                 key={radius}
+                 type="button"
+                 onClick={() => handleSetRadius(radius)}
+                 className={`py-1 rounded-lg text-[9.5px] font-black transition-all cursor-pointer ${
+                   isCurrent
+                     ? 'bg-emerald-500 text-white shadow-xs'
+                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                 }`}
+               >
+                 {label}
+               </button>
+             );
+           })}
+         </div>
+       </div>
+
+       {/* 3. Notification Sub-types */}
+       <div className="space-y-2 pt-2 border-t border-slate-200/60 dark:border-slate-800">
+         {/* Nearby Quests switch */}
+         <div className={`flex justify-between items-center py-1.5 ${isRtl ? '' : 'flex-row-reverse'}`}>
+           <button 
+             dir="ltr"
+             role="switch"
+             aria-checked={notifyOnNearbyQuests}
+             onClick={handleToggleNearbyAlerts}
+             className={`w-9 h-5 rounded-full p-0.5 cursor-pointer transition-colors duration-200 relative shrink-0 ${
+               notifyOnNearbyQuests ? 'bg-emerald-500 shadow-xs' : 'bg-gray-300 dark:bg-slate-700'
+             }`}
+           >
+             <div className={`toggle-knob bg-white w-4 h-4 rounded-full shadow-md transition-transform duration-200 ${
+               notifyOnNearbyQuests ? 'translate-x-4' : 'translate-x-0'
+             }`}></div>
+           </button>
+           <div className={isRtl ? 'text-right' : 'text-left'}>
+             <span className="text-[10.5px] font-bold text-slate-800 dark:text-slate-200 block">
+               {lang === 'ar' ? 'تنبيهات المهام القريبة الجديدة' : 'New Nearby Quest Alerts'}
+             </span>
+             <span className="text-[8.5px] text-slate-400">
+               {lang === 'ar' ? 'إشعار فوري عند نشر مهمة بالقرب منك تطابق اهتماماتك' : 'Alert when tasks matching your interests are posted nearby'}
+             </span>
+           </div>
+         </div>
+
+         {/* Quest Status Transitions switch */}
+         <div className={`flex justify-between items-center py-1.5 ${isRtl ? '' : 'flex-row-reverse'}`}>
+           <button 
+             dir="ltr"
+             role="switch"
+             aria-checked={notifyOnStatusUpdates}
+             onClick={handleToggleStatusAlerts}
+             className={`w-9 h-5 rounded-full p-0.5 cursor-pointer transition-colors duration-200 relative shrink-0 ${
+               notifyOnStatusUpdates ? 'bg-blue-600 shadow-xs' : 'bg-gray-300 dark:bg-slate-700'
+             }`}
+           >
+             <div className={`toggle-knob bg-white w-4 h-4 rounded-full shadow-md transition-transform duration-200 ${
+               notifyOnStatusUpdates ? 'translate-x-4' : 'translate-x-0'
+             }`}></div>
+           </button>
+           <div className={isRtl ? 'text-right' : 'text-left'}>
+             <span className="text-[10.5px] font-bold text-slate-800 dark:text-slate-200 block">
+               {lang === 'ar' ? 'تحديثات حالة المهام (قبول، وصول، إنجاز)' : 'Quest Status Updates (Accepted, Arrived, Done)'}
+             </span>
+             <span className="text-[8.5px] text-slate-400">
+               {lang === 'ar' ? 'تنبيهك فور قبول طلبك، تأكيد الوصول، أو صرف المكافأة' : 'Get notified when your application is accepted, arrival confirmed, or paid'}
+             </span>
+           </div>
+         </div>
+
+         {/* Deadline Reminders switch */}
+         <div className={`flex justify-between items-center py-1.5 ${isRtl ? '' : 'flex-row-reverse'}`}>
+           <button 
+             dir="ltr"
+             role="switch"
+             aria-checked={notifyOnDeadlines}
+             onClick={handleToggleDeadlineAlerts}
+             className={`w-9 h-5 rounded-full p-0.5 cursor-pointer transition-colors duration-200 relative shrink-0 ${
+               notifyOnDeadlines ? 'bg-amber-500 shadow-xs' : 'bg-gray-300 dark:bg-slate-700'
+             }`}
+           >
+             <div className={`toggle-knob bg-white w-4 h-4 rounded-full shadow-md transition-transform duration-200 ${
+               notifyOnDeadlines ? 'translate-x-4' : 'translate-x-0'
+             }`}></div>
+           </button>
+           <div className={isRtl ? 'text-right' : 'text-left'}>
+             <span className="text-[10.5px] font-bold text-slate-800 dark:text-slate-200 block">
+               {lang === 'ar' ? 'تذكيرات المواعيد النهائية (قبل ساعتين و30 دقيقة)' : 'Upcoming Deadline Reminders (2h & 30m)'}
+             </span>
+             <span className="text-[8.5px] text-slate-400">
+               {lang === 'ar' ? 'تنبيهك قبل نفاد وقت تنفيذ المهمة لتسليم إثبات الإنجاز في وقته' : 'Timely reminders before quest execution deadline expires'}
+             </span>
+           </div>
+         </div>
+       </div>
+
+     </div>
+   )}
  </div>
 
  {/* Sound FX */}
@@ -3994,7 +4205,7 @@ function ProfileView({
  audioEffectsEnabled={userProfile?.audioEffectsEnabled !== false}
  hapticFeedbackEnabled={userProfile?.hapticFeedbackEnabled !== false}
  >
- <div className="space-y-6 pb-32 font-sans text-[#1F2A44]" style={{ direction: isRtl ? 'rtl' : 'ltr' }}>
+ <div className="space-y-6 pb-32 font-sans text-[#1F2A44] dark:text-slate-100 modal-scroll-area touch-pan-y" data-allow-scroll="true" style={{ direction: isRtl ? 'rtl' : 'ltr' }}>
  
  {/* Dynamic Profile Header with adaptive banner filling screen edge-to-edge */}
       {/* Full-width Edge-to-Edge Banner */}
@@ -5028,7 +5239,6 @@ function ProfileView({
     {showReviewsModal && (
       <div 
         className="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overscroll-contain select-none"
-        style={{ touchAction: 'none' }}
         onClick={() => setShowReviewsModal(false)}
         onTouchMove={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}
       >
@@ -5037,7 +5247,8 @@ function ProfileView({
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.95, opacity: 0, y: 15 }}
           onClick={(e) => e.stopPropagation()}
-          className="bg-white dark:bg-[#151F32] rounded-3xl max-w-xl w-full max-h-[85vh] flex flex-col shadow-2xl border border-gray-150 dark:border-slate-800 overflow-hidden text-right overscroll-contain"
+          data-allow-scroll="true"
+          className="bg-white dark:bg-[#151F32] rounded-3xl max-w-xl w-full max-h-[85vh] flex flex-col shadow-2xl border border-gray-150 dark:border-slate-800 overflow-hidden text-right overscroll-contain modal-scroll-area touch-pan-y"
           style={{ direction: isRtl ? 'rtl' : 'ltr', touchAction: 'pan-y' }}
         >
           {/* Modal Header */}

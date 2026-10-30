@@ -434,16 +434,38 @@ function MapView({
  lastRouteStartRef.current = { lat: start.lat, lng: start.lng };
  setIsCalculatingRoute(true);
 
- const profiles = mode === 'walking' 
- ? ['foot', 'driving', 'cycling'] 
- : mode === 'cycling' 
- ? ['cycling', 'driving', 'foot'] 
- : ['driving', 'foot', 'cycling'];
+ // Measure straight-line distance in meters
+ const directMeters = calculateDistanceMeters(start.lat, start.lng, end.lat, end.lng);
+
+ // 1. Pedestrian close-range direct crossing (< 70m, e.g. crossing a street, plaza or intersection)
+ if (mode === 'walking' && directMeters <= 70) {
+ setLockedRoutePoints([[start.lat, start.lng], [end.lat, end.lng]]);
+ lastStableRouteIndexRef.current = 0;
+ isFetchingRouteRef.current = false;
+ setIsCalculatingRoute(false);
+ return;
+ }
+
+ // 2. Select appropriate routing engine endpoints for each travel mode
+ const endpoints: string[] = [];
+ if (mode === 'walking') {
+ // Dedicated OpenStreetMap foot/pedestrian router (does not force car one-way or highway U-turn loops)
+ endpoints.push(`https://routing.openstreetmap.de/routed-foot/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&alternatives=false&geometries=geojson`);
+ endpoints.push(`https://router.project-osrm.org/route/v1/foot/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&alternatives=false&geometries=geojson`);
+ } else if (mode === 'cycling') {
+ // Dedicated OpenStreetMap bicycle/moto router
+ endpoints.push(`https://routing.openstreetmap.de/routed-bike/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&alternatives=false&geometries=geojson`);
+ endpoints.push(`https://router.project-osrm.org/route/v1/cycling/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&alternatives=false&geometries=geojson`);
+ endpoints.push(`https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&alternatives=false&geometries=geojson`);
+ } else {
+ // Driving car mode (obeys road network, traffic direction, and dividers)
+ endpoints.push(`https://routing.openstreetmap.de/routed-car/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&alternatives=false&geometries=geojson`);
+ endpoints.push(`https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&alternatives=false&geometries=geojson`);
+ }
 
  let fetchedPoints: [number, number][] | null = null;
 
- for (const profile of profiles) {
- const url = `https://router.project-osrm.org/route/v1/${profile}/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&alternatives=false&geometries=geojson`;
+ for (const url of endpoints) {
  try {
  const res = await fetch(url);
  if (res.ok) {
@@ -457,15 +479,33 @@ function MapView({
  }
  }
  } catch (err: any) {
- console.warn(`OSRM Route fetch failure for ${profile}:`, err?.message || err);
+ console.warn(`Route fetch failure for ${url}:`, err?.message || err);
  }
  }
 
  if (fetchedPoints && fetchedPoints.length > 0) {
+ // In walking mode, detect if the road network produced an absurd car-like highway U-turn detour
+ if (mode === 'walking') {
+ let routeLengthMeters = 0;
+ for (let i = 0; i < fetchedPoints.length - 1; i++) {
+ routeLengthMeters += calculateDistanceMeters(
+ fetchedPoints[i][0],
+ fetchedPoints[i][1],
+ fetchedPoints[i + 1][0],
+ fetchedPoints[i + 1][1]
+ );
+ }
+ // If the destination is nearby (< 250m) but the router forces a detour > 2.2x the direct distance,
+ // discard the vehicular U-turn and allow direct pedestrian crossing
+ if (directMeters < 250 && routeLengthMeters > directMeters * 2.2) {
+ fetchedPoints = [[start.lat, start.lng], [end.lat, end.lng]];
+ }
+ }
+
  setLockedRoutePoints(fetchedPoints);
  lastStableRouteIndexRef.current = 0;
  } else if (lockedRoutePoints.length === 0) {
- // Guaranteed fallback if all OSRM servers are offline on initial start
+ // Guaranteed fallback if all routing servers are offline
  setLockedRoutePoints([[start.lat, start.lng], [end.lat, end.lng]]);
  lastStableRouteIndexRef.current = 0;
  }
@@ -1459,16 +1499,13 @@ function MapView({
  return (
  <div className="space-y-4 pb-12 h-[calc(100vh-140px)] flex flex-col" style={{ direction: isRtl ? 'rtl' : 'ltr' }}>
  
- {/* Dynamic routing line animations */}
+ {/* Dynamic routing line animations - Solid continuous non-dashed line */}
  <style>{`
- @keyframes routingPulseAnim {
- to {
- stroke-dashoffset: -20;
- }
- }
  .pulsing-routing-path {
- stroke-dasharray: 10, 10;
- animation: routingPulseAnim 1.2s linear infinite !important;
+ stroke-dasharray: none !important;
+ stroke-linecap: round;
+ stroke-linejoin: round;
+ filter: drop-shadow(0 0 6px rgba(255, 59, 124, 0.45));
  }
  `}</style>
 
@@ -1722,7 +1759,12 @@ function MapView({
  <div className="flex bg-slate-100/5 border border-white/5 rounded-xl p-1 gap-1 select-none flex-1 md:flex-none">
  <button
  onClick={() => {
+ if (travelMode !== 'driving') {
  setTravelMode('driving');
+ setLockedRoutePoints([]);
+ lastRouteFetchKeyRef.current = '';
+ lastStableRouteIndexRef.current = 0;
+ }
  const hapticEnabled = userProfile.hapticFeedbackEnabled !== false;
  triggerHaptic('soft', hapticEnabled);
  }}
@@ -1738,7 +1780,12 @@ function MapView({
  </button>
  <button
  onClick={() => {
+ if (travelMode !== 'cycling') {
  setTravelMode('cycling');
+ setLockedRoutePoints([]);
+ lastRouteFetchKeyRef.current = '';
+ lastStableRouteIndexRef.current = 0;
+ }
  const hapticEnabled = userProfile.hapticFeedbackEnabled !== false;
  triggerHaptic('soft', hapticEnabled);
  }}
@@ -1754,7 +1801,12 @@ function MapView({
  </button>
  <button
  onClick={() => {
+ if (travelMode !== 'walking') {
  setTravelMode('walking');
+ setLockedRoutePoints([]);
+ lastRouteFetchKeyRef.current = '';
+ lastStableRouteIndexRef.current = 0;
+ }
  const hapticEnabled = userProfile.hapticFeedbackEnabled !== false;
  triggerHaptic('soft', hapticEnabled);
  }}

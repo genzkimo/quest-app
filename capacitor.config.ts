@@ -13,7 +13,7 @@ const config: CapacitorConfig = {
       providers: ['google.com']
     },
     SplashScreen: {
-      launchShowDuration: 1500,
+      launchShowDuration: 800,
       launchAutoHide: true,
       androidScaleType: "CENTER_CROP",
       showSpinner: false,

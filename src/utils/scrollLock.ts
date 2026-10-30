@@ -6,12 +6,58 @@ let prevBodyOverflow = '';
 let prevDocOverflow = '';
 let prevBodyTouchAction = '';
 
+/**
+ * Checks whether an element or any of its ancestors is an intended scroll container.
+ * This guarantees that content inside modals or full-screen views (like reviews or public profile)
+ * can always be freely scrolled on touch devices.
+ */
+function isScrollableElement(el: HTMLElement | null): boolean {
+  if (!el) return false;
+  let curr: HTMLElement | null = el;
+
+  while (curr && curr !== document.body && curr !== document.documentElement) {
+    if (curr.getAttribute('data-allow-scroll') === 'true' || curr.classList.contains('modal-scroll-area')) {
+      return true;
+    }
+
+    const className = typeof curr.className === 'string' ? curr.className : '';
+    if (
+      className.includes('overflow-y-auto') ||
+      className.includes('overflow-auto') ||
+      className.includes('overflow-y-scroll') ||
+      className.includes('overflow-scroll')
+    ) {
+      return true;
+    }
+
+    try {
+      const style = window.getComputedStyle(curr);
+      const oy = style.overflowY;
+      const ox = style.overflowX;
+      if (oy === 'auto' || oy === 'scroll' || ox === 'auto' || ox === 'scroll') {
+        if (curr.scrollHeight > curr.clientHeight || curr.scrollWidth > curr.clientWidth) {
+          return true;
+        }
+      }
+    } catch {
+      // Ignore errors in reading computed styles
+    }
+
+    curr = curr.parentElement;
+  }
+
+  return false;
+}
+
 const preventBackgroundTouch = (e: TouchEvent) => {
   const target = e.target as HTMLElement | null;
-  // Allow scrolling only inside elements explicitly marked as scrollable or with overscroll-contain inside the modal
-  if (target && (target.closest('[data-allow-scroll="true"]') || target.closest('.modal-scroll-area'))) {
+
+  // If the touch target is inside any scrollable container, never prevent scroll!
+  if (isScrollableElement(target)) {
     return;
   }
+
+  // Only prevent default on non-scrollable backdrop areas
   if (e.cancelable) {
     e.preventDefault();
   }
@@ -28,7 +74,7 @@ export function lockBodyScroll(): () => void {
     document.documentElement.style.overflow = 'hidden';
     document.body.style.overflow = 'hidden';
 
-    // Prevent background touch scrolling on mobile (especially on shaded backdrop areas)
+    // Prevent background touch scrolling on mobile (only on shaded non-scrollable backdrop areas)
     window.addEventListener('touchmove', preventBackgroundTouch, { passive: false });
   }
   lockCount++;
@@ -46,4 +92,16 @@ export function lockBodyScroll(): () => void {
       window.removeEventListener('touchmove', preventBackgroundTouch);
     }
   };
+}
+
+/**
+ * Emergency reset to safely clear any leaked lock states across view transitions.
+ */
+export function forceUnlockAllScroll(): void {
+  if (typeof document === 'undefined') return;
+  lockCount = 0;
+  document.documentElement.style.overflow = '';
+  document.body.style.overflow = '';
+  document.body.style.touchAction = '';
+  window.removeEventListener('touchmove', preventBackgroundTouch);
 }

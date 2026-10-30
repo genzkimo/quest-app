@@ -37,8 +37,6 @@ import InfoButton from './InfoButton';
 import { lockBodyScroll } from '../utils/scrollLock';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 
-
-
 interface PublicProfileViewProps {
  userId: string;
  currentUser: UserProfile | null;
@@ -321,7 +319,7 @@ export default function PublicProfileView({
  };
 
  return (
- <div className="space-y-4 pb-32 font-sans text-[#1F2A44] dark:text-white min-h-screen bg-[#F8FAFC] dark:bg-[#0B1120]" style={{ direction: isRtl ? 'rtl' : 'ltr' }}>
+ <div className="space-y-4 pb-32 font-sans text-[#1F2A44] dark:text-white min-h-screen bg-[#F8FAFC] dark:bg-[#0B1120] modal-scroll-area touch-pan-y" data-allow-scroll="true" style={{ direction: isRtl ? 'rtl' : 'ltr' }}>
       {/* 1. Dynamic Public Profile Header with adaptive banner filling screen edge-to-edge */}
         {/* Scam shield warning banner if flagsCount > 0 */}
         {flagsCount > 0 && (
@@ -973,7 +971,6 @@ export default function PublicProfileView({
     {showReviewsModal && (
       <div 
         className="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overscroll-contain select-none"
-        style={{ touchAction: 'none' }}
         onClick={() => setShowReviewsModal(false)}
         onTouchMove={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}
       >
@@ -982,7 +979,8 @@ export default function PublicProfileView({
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.95, opacity: 0, y: 15 }}
           onClick={(e) => e.stopPropagation()}
-          className="bg-white dark:bg-[#151F32] rounded-3xl max-w-lg w-full max-h-[85vh] flex flex-col shadow-2xl border border-gray-150 dark:border-slate-800 overflow-hidden text-right overscroll-contain"
+          data-allow-scroll="true"
+          className="bg-white dark:bg-[#151F32] rounded-3xl max-w-lg w-full max-h-[85vh] flex flex-col shadow-2xl border border-gray-150 dark:border-slate-800 overflow-hidden text-right overscroll-contain modal-scroll-area touch-pan-y"
           style={{ direction: isRtl ? 'rtl' : 'ltr', touchAction: 'pan-y' }}
         >
           {/* Modal Header with User Score & Stars */}
@@ -1071,7 +1069,7 @@ export default function PublicProfileView({
           )}
 
           {/* Scrollable Reviews List */}
-          <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3 overscroll-contain touch-pan-y" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3 overscroll-contain touch-pan-y modal-scroll-area" data-allow-scroll="true" style={{ WebkitOverflowScrolling: 'touch' }}>
             {modalReviewRoleTab === 'hunter' ? (
               reviewsReceived.length === 0 ? (
                 <div className="text-xs text-center text-gray-400 py-12 bg-slate-50/60 border border-dashed border-gray-200 rounded-3xl font-semibold">

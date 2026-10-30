@@ -77,6 +77,7 @@ interface MyQuestsViewProps {
  setQuests?: (quests: Quest[]) => void;
  onArrivedAtQuest?: (questId: string) => void;
  onNavigateToProfileSubmenu?: (tab: string) => void;
+  onStartNavigation?: (quest: Quest) => void;
 }
 
 const CATEGORIES_LIST: QuestCategory[] = [
@@ -118,47 +119,7 @@ function MyQuestsView({
   const [endWorkReasonText, setEndWorkReasonText] = useState("");
   const scrolledQuestIdRef = useRef<string | null>(null);
  const activeQuestCount = userProfile?.hasActiveQuest === false ? 0 : quests.filter(q => q.creatorId === currentUserId && !['completed', 'cancelled', 'cancelled_by_timeout', 'stale_cleared', 'expired', 'terminated', 'archived'].includes(q.status) && !q.archived && !isQuestExpired(q)).length;
- const getSmartInitialTab = (): 'created' | 'obligations' => {
- if (initialTab) return initialTab;
-
- const activeCreated = quests.filter(q => 
- q.creatorId === currentUserId && 
- !['completed', 'cancelled', 'cancelled_by_timeout', 'stale_cleared', 'expired', 'terminated', 'archived'].includes(q.status) && 
- !q.archived && 
- !isQuestExpired(q)
- );
-
- const activeBooked = quests.filter(q => 
- (q.helperId === currentUserId || q.assignedRunnerId === currentUserId || q.assignedRunnerIds?.includes(currentUserId) || q.employeeId === currentUserId) &&
- !['completed', 'cancelled', 'cancelled_by_timeout', 'stale_cleared', 'expired', 'terminated', 'archived'].includes(q.status) &&
- !q.archived &&
- !isQuestExpired(q)
- );
-
- if (activeCreated.length > 0 && activeBooked.length === 0) return 'created';
- if (activeBooked.length > 0 && activeCreated.length === 0) return 'obligations';
- if (activeCreated.length > 0 && activeBooked.length > 0) {
- const latestCreatedTime = Math.max(...activeCreated.map(q => new Date(q.createdAt || 0).getTime()), 0);
- const latestBookedTime = Math.max(...activeBooked.map(q => new Date((q as any).updatedAt || q.assignedAt || q.createdAt || 0).getTime()), 0);
-
- return latestBookedTime > latestCreatedTime ? 'obligations' : 'created';
- }
-
- const allCreated = quests.filter(q => q.creatorId === currentUserId);
- const allBooked = quests.filter(q => q.helperId === currentUserId || q.assignedRunnerId === currentUserId || q.assignedRunnerIds?.includes(currentUserId) || q.employeeId === currentUserId);
-
- if (allCreated.length > 0 && allBooked.length === 0) return 'created';
- if (allBooked.length > 0 && allCreated.length === 0) return 'obligations';
- if (allCreated.length > 0 && allBooked.length > 0) {
- const latestCreated = Math.max(...allCreated.map(q => new Date(q.createdAt || 0).getTime()), 0);
- const latestBooked = Math.max(...allBooked.map(q => new Date(q.createdAt || 0).getTime()), 0);
- return latestBooked > latestCreated ? 'obligations' : 'created';
- }
-
- return 'created';
- };
-
- const [activeTab, setActiveTab] = useState<'obligations' | 'created'>(getSmartInitialTab);
+ const [activeTab, setActiveTab] = useState<'obligations' | 'created'>(initialTab || 'obligations');
 
  const handleRefresh = async () => {
  try {
@@ -264,59 +225,21 @@ function MyQuestsView({
  }
  };
 
- // Listen to initialTab prop updates and apply
+ // Listen to initialTab prop updates only if explicitly passed
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+      if (onClearInitialTab) {
+        onClearInitialTab();
+      }
+    }
+  }, [initialTab, onClearInitialTab]);
+
  useEffect(() => {
- if (initialTab) {
- setActiveTab(initialTab);
- if (onClearInitialTab) {
- onClearInitialTab();
- }
- } else {
- setActiveTab(getSmartInitialTab());
- }
- }, [initialTab, onClearInitialTab]);
-
- // Scroll and highlight pre-selected quest on created tab
- useEffect(() => {
- if (initialSelectedQuestId) {
- if (activeTab !== 'created') {
- setActiveTab('created');
- }
-
- // Check if target quest is in history vs active tab
- const targetQuest = quests.find(q => q.id === initialSelectedQuestId);
- if (targetQuest) {
- const isHistory = isHistoryStatus(targetQuest.status);
- if (showHistory !== isHistory) {
- setShowHistory(isHistory);
- }
- }
-
- let attempts = 0;
- const attemptScroll = () => {
- const element = document.getElementById(`quest-${initialSelectedQuestId}`);
- if (element) {
- element.scrollIntoView({ behavior: 'smooth', block: 'center' });
- } else if (attempts < 6) {
- attempts++;
- setTimeout(attemptScroll, 150);
- }
- };
-
- const timer = setTimeout(attemptScroll, 200);
-
- const clearTimer = setTimeout(() => {
- if (onClearInitialSelectedQuest) {
- onClearInitialSelectedQuest();
- }
- }, 4000);
-
- return () => {
- clearTimeout(timer);
- clearTimeout(clearTimer);
- };
- }
- }, [activeTab, initialSelectedQuestId, onClearInitialSelectedQuest, quests, showHistory]);
+    if (initialSelectedQuestId && onClearInitialSelectedQuest) {
+      onClearInitialSelectedQuest();
+    }
+  }, [initialSelectedQuestId, onClearInitialSelectedQuest]);
 
  // Local state for UI feedback toast notifications
  const [localToast, setLocalToast] = useState<string | null>(null);
@@ -557,6 +480,43 @@ function MyQuestsView({
  (showHistory ? (isHistoryStatus(q.status) || q.archived || isQuestExpired(q)) : (isActiveStatus(q.status) && !q.archived && !isQuestExpired(q)))
  );
 
+  const appliedQuests = quests.filter(q => {
+    if (isQuestExpired(q) || q.status === 'expired' || q.status === 'stale_cleared' || q.status === 'cancelled_by_timeout') return false;
+    if (q.archived) return false;
+    if (['completed', 'cancelled', 'cancelled_by_timeout', 'stale_cleared', 'expired', 'terminated'].includes(q.status)) return false;
+
+    const isAlreadyAssigned = q.helperId === currentUserId || 
+      q.assignedRunnerId === currentUserId || 
+      q.employeeId === currentUserId || 
+      (q.assignedRunnerIds && q.assignedRunnerIds.includes(currentUserId));
+    if (isAlreadyAssigned) return false;
+
+    const isApplicant = (q.applicants?.some(a => a.userId === currentUserId)) || 
+      (q.jobApplicants?.some(a => a.applicantId === currentUserId));
+    if (!isApplicant) return false;
+
+    return true;
+  });
+
+  const handleCancelApplicant = async (questId: string) => {
+    try {
+      const questRef = doc(db, 'quests', questId);
+      const questSnap = await getDoc(questRef);
+      if (questSnap.exists()) {
+        const qData = questSnap.data() as Quest;
+        const updatedApplicants = (qData.applicants || []).filter(a => a.userId !== currentUserId);
+        await setDoc(questRef, { applicants: updatedApplicants }, { merge: true });
+        if (setQuests) {
+          setQuests(quests.map(q => q.id === questId ? { ...q, applicants: updatedApplicants } : q));
+        }
+        showToast(lang === 'ar' ? 'تم إلغاء طلب الحجز بنجاح' : 'Booking request cancelled');
+      }
+    } catch (err) {
+      console.error("Failed to cancel applicant request:", err);
+      showToast(lang === 'ar' ? 'حدث خطأ أثناء إلغاء الطلب' : 'Failed to cancel request');
+    }
+  };
+
  const [archiveFilter, setArchiveFilter] = useState<'all' | 'quick' | 'long_term' | 'completed' | 'finished'>('all');
 
  const applyArchiveFilter = (questList: Quest[]) => {
@@ -654,72 +614,49 @@ function MyQuestsView({
  audioEffectsEnabled={userProfile?.audioEffectsEnabled !== false}
  hapticFeedbackEnabled={userProfile?.hapticFeedbackEnabled !== false}
  >
- <div className="space-y-6 pt-[max(1.75rem,calc(env(safe-area-inset-top,0px)+1.25rem))] pb-32 font-sans text-[#1F2A44] px-3 sm:px-6 w-full" style={{ direction: isRtl ? 'rtl' : 'ltr' }}>
+ <div className="space-y-6 pt-[max(3.25rem,calc(env(safe-area-inset-top,0px)+2.25rem))] pb-36 font-sans text-[#1F2A44] px-3 sm:px-6 w-full" style={{ direction: isRtl ? 'rtl' : 'ltr' }}>
  
- {/* Persistent Tabs (The PinnedTabBar) */}
- <div className="flex bg-gray-100 p-1.5 rounded-2xl border border-gray-200 items-center gap-2">
- {activeQuestCount > 0 ? (
- <>
- {/* Created Tab (Primary state for Poster/Employer mode) */}
- <button
- id="tab-created-active-quest"
- onClick={() => setActiveTab('created')}
- className={`flex-1 py-3 px-4 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
- activeTab === 'created' ? 'bg-[#1F2A44] text-[#FFD34D] shadow-md scale-[1.01]' : 'text-gray-500 hover:text-gray-75'
- }`}
- >
- <Plus className="w-4 h-4 shrink-0 text-[#FFD34D]" />
- <span className="truncate">{dict.createdTab} ({createdQuests.length})</span>
- </button>
+ {/* Stable Persistent Tabs (Fixed Order: مهامي then طلباتي) */}
+  <div className="flex bg-slate-100 dark:bg-slate-800/80 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-700 items-center gap-2">
+    {/* Tab 1: مهامي (Obligations & Booking Requests) */}
+    <button
+      id="tab-obligations"
+      onClick={() => setActiveTab('obligations')}
+      className={`flex-1 py-3 px-3 sm:px-4 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+        activeTab === 'obligations' 
+          ? 'bg-[#1F2A44] text-[#FFD34D] shadow-md scale-[1.01]' 
+          : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+      }`}
+    >
+      <Briefcase className="w-4 h-4 shrink-0" />
+      <span className="truncate">
+        {lang === 'ar' ? 'مهامي' : lang === 'fr' ? 'Mes Missions' : 'My Jobs'} ({obligations.length})
+      </span>
+      {appliedQuests.length > 0 && (
+        <span className="text-[10px] bg-amber-500 text-slate-950 font-extrabold px-1.5 py-0.5 rounded-full shrink-0">
+          {appliedQuests.length} {lang === 'ar' ? 'قيد المراجعة' : 'pending'}
+        </span>
+      )}
+    </button>
 
- {/* Obligations Tab (Secondary, now equal-sized state) */}
- <button
- id="tab-obligations-active-quest"
- onClick={() => setActiveTab('obligations')}
- className={`flex-1 py-3 px-4 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
- activeTab === 'obligations' ? 'bg-[#1F2A44] text-[#FFD34D] shadow-md scale-[1.01]' : 'text-gray-500 hover:text-gray-75'
- }`}
- title={dict.obigationsTab}
- >
- <Briefcase className="w-4 h-4 shrink-0" />
- <span className="truncate">
- {lang === 'ar' ? 'مهامي ' : lang === 'fr' ? 'Engagements ' : 'My Jobs '} ({obligations.length})
- </span>
- </button>
- </>
- ) : (
- <>
- {/* Obligations Tab (Primary state for Runner/Worker mode) */}
- <button
- id="tab-obligations-inactive-quest"
- onClick={() => setActiveTab('obligations')}
- className={`flex-1 py-3 px-4 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
- activeTab === 'obligations' ? 'bg-[#1F2A44] text-[#FFD34D] shadow-md scale-[1.01]' : 'text-gray-500 hover:text-gray-75'
- }`}
- >
- <Briefcase className="w-4 h-4 shrink-0 text-[#FFD34D]" />
- <span className="truncate">{dict.obigationsTab} ({obligations.length})</span>
- </button>
+    {/* Tab 2: طلباتي (Created Quests) */}
+    <button
+      id="tab-created"
+      onClick={() => setActiveTab('created')}
+      className={`flex-1 py-3 px-3 sm:px-4 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+        activeTab === 'created' 
+          ? 'bg-[#1F2A44] text-[#FFD34D] shadow-md scale-[1.01]' 
+          : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+      }`}
+    >
+      <Plus className="w-4 h-4 shrink-0" />
+      <span className="truncate">
+        {lang === 'ar' ? 'طلباتي' : lang === 'fr' ? 'Mes Primes' : 'My Posts'} ({createdQuests.length})
+      </span>
+    </button>
+  </div>
 
- {/* Created Tab (Secondary, now equal-sized state) */}
- <button
- id="tab-created-inactive-quest"
- onClick={() => setActiveTab('created')}
- className={`flex-1 py-3 px-4 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
- activeTab === 'created' ? 'bg-[#1F2A44] text-[#FFD34D] shadow-md scale-[1.01]' : 'text-gray-500 hover:text-gray-75'
- }`}
- title={dict.createdTab}
- >
- <Plus className="w-4 h-4 shrink-0" />
- <span className="truncate">
- {lang === 'ar' ? 'طلباتي ' : lang === 'fr' ? 'Mes Primes ' : 'My Posts '} ({createdQuests.length})
- </span>
- </button>
- </>
- )}
- </div>
-
- {/* Archive Warning & Indicator and Navigation Back Button */}
+  {/* Archive Warning & Indicator and Navigation Back Button */}
  {showHistory && (
  <div className="bg-amber-50 border border-amber-200 rounded-3xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 text-amber-900 animate-fadeIn shadow-sm">
  <div className="flex items-center gap-3">
@@ -853,41 +790,9 @@ function MyQuestsView({
 
  {/* Worker Obligations Mode */}
  {activeTab === 'obligations' && (
- <div className="space-y-4">
- {displayObligations.length === 0 ? (
- <div className="py-10 px-4 text-center space-y-3">
- <div className="mx-auto flex justify-center">
- {showHistory ? (
- <svg className="w-24 h-24" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
- <circle cx="60" cy="60" r="50" className="fill-slate-100/90" />
- <circle cx="60" cy="60" r="38" className="fill-slate-200/50" />
- <path d="M36 42C36 38.6863 38.6863 36 42 36H54L60 42H78C81.3137 42 84 44.6863 84 48V78C84 81.3137 81.3137 84 78 84H42C38.6863 84 36 81.3137 36 78V42Z" fill="#FFFFFF" stroke="#64748B" strokeWidth="3" strokeLinejoin="round" />
- <circle cx="52" cy="58" r="2.5" fill="#475569" />
- <circle cx="68" cy="58" r="2.5" fill="#475569" />
- <path d="M53 68C56 64 64 64 67 68" stroke="#475569" strokeWidth="2.5" strokeLinecap="round" />
- </svg>
- ) : (
- <svg className="w-24 h-24" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
- <circle cx="60" cy="60" r="50" className="fill-blue-50/80" />
- <circle cx="60" cy="60" r="38" className="fill-indigo-50/60" />
- <rect x="38" y="32" width="44" height="56" rx="10" fill="#FFFFFF" stroke="#3B82F6" strokeWidth="3" />
- <rect x="48" y="26" width="24" height="10" rx="4" fill="#3B82F6" />
- <circle cx="52" cy="52" r="2.5" fill="#475569" />
- <circle cx="68" cy="52" r="2.5" fill="#475569" />
- <path d="M53 64C56 60 64 60 67 64" stroke="#475569" strokeWidth="2.5" strokeLinecap="round" />
- <line x1="48" y1="72" x2="72" y2="72" stroke="#CBD5E1" strokeWidth="2.5" strokeLinecap="round" strokeDasharray="2 2" />
- <path d="M26 40L32 46M32 40L26 46" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" />
- <path d="M88 70L94 76M94 70L88 76" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" />
- </svg>
- )}
- </div>
- <h3 className="font-extrabold text-sm text-slate-800">
- {showHistory 
- ? (lang === 'ar' ? 'لا توجد كويستات مؤرشفة' : 'No archived quests')
- : (lang === 'ar' ? 'لم تحجز أي مهمة بعد' : 'You haven\'t booked any tasks yet')}
- </h3>
- </div>
- ) : (
+ <div className="space-y-6">
+ {/* 1. Accepted Ongoing Obligations */}
+ {displayObligations.length > 0 ? (
  <div className="space-y-4">
  {displayObligations.map((quest) => {
  const isOngoing = quest.status === 'booked' || quest.status === 'arrived';
@@ -957,7 +862,7 @@ function MyQuestsView({
  {quest.title}
  </h3>
  {(() => {
- const isAuthorized = quest.creatorId === currentUserId || isOngoing || isArrived || isUnderReview || isFinished;
+ const isAuthorized = quest.creatorId === currentUserId || isOngoing || isArrived || isUnderReview || isFinished || isDisputed || quest.status === 'booked' || quest.status === 'active' || quest.status === 'active_employment';
  return (
  <div className="inline-flex items-center gap-1.5 text-xs max-w-full">
  {isAuthorized ? (
@@ -979,118 +884,13 @@ function MyQuestsView({
  </div>
 
  
-  {/* Long-Term Contract Summary Card (Rule 9) */}
-  {(quest.questType === "long_term" || quest.status === "active_employment" || quest.status === "ending" || quest.status === "disputed" || quest.status === "active" || quest.status === "booked" || quest.helperId === currentUserId || quest.employeeId === currentUserId || quest.assignedRunnerId === currentUserId) && (
-    <div className="bg-sky-50/80 dark:bg-sky-950/30 border border-sky-200/80 dark:border-sky-800/80 rounded-2xl p-4 text-xs space-y-2 text-start my-2">
-      <div className="font-extrabold text-sky-900 dark:text-sky-200 flex items-center justify-between border-b border-sky-200/60 dark:border-sky-800/60 pb-2">
-        <span className="flex items-center gap-1.5">
-          <Briefcase className="w-4 h-4 text-sky-600 dark:text-sky-400 shrink-0" />
-          <span>{lang === "ar" ? "تفاصيل عقد العمل" : "Contract Details"}</span>
-        </span>
-        <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-sky-200/60 dark:bg-sky-900/60 text-sky-800 dark:text-sky-200">
-          {quest.status === "completed" || quest.archived
-            ? (lang === "ar" ? "منتهي ومؤرشف" : "Completed & Archived")
-            : quest.status === "ending"
-            ? (lang === "ar" ? "قيد الإنهاء" : "Ending Request")
-            : (lang === "ar" ? "عقد نشط" : "Active Contract")}
-        </span>
-      </div>
-      <div className="grid grid-cols-2 gap-2 pt-1 text-[11px] font-medium text-slate-700 dark:text-slate-300">
-        <div>
-          <span className="text-slate-400 block text-[10px]">{lang === "ar" ? "اسم العمل:" : "Job Title:"}</span>
-          <span className="font-bold text-slate-900 dark:text-white">{quest.title}</span>
-        </div>
-        <div>
-          <span className="text-slate-400 block text-[10px]">{lang === "ar" ? "الراتب:" : "Salary:"}</span>
-          <span className="font-bold text-emerald-600 dark:text-emerald-400">{quest.cashReward} DA ({quest.salaryPeriod === "monthly" ? (lang === "ar" ? "شهري" : "Monthly") : quest.salaryPeriod === "weekly" ? (lang === "ar" ? "أسبوعي" : "Weekly") : (lang === "ar" ? "يومي" : "Daily")})</span>
-        </div>
-        <div>
-          <span className="text-slate-400 block text-[10px]">{lang === "ar" ? "صاحب العمل:" : "Employer:"}</span>
-          <span className="font-bold text-slate-800 dark:text-slate-200">{quest.creatorName || (lang === "ar" ? "صاحب العمل" : "Employer")}</span>
-        </div>
-        <div>
-          <span className="text-slate-400 block text-[10px]">{lang === "ar" ? "العامل المتعاقد:" : "Employee:"}</span>
-          <span className="font-bold text-slate-800 dark:text-slate-200">{quest.helperName || quest.employeeId || (lang === "ar" ? "غير محدد" : "N/A")}</span>
-        </div>
-        <div>
-          <span className="text-slate-400 block text-[10px]">{lang === "ar" ? "تاريخ البداية:" : "Start Date:"}</span>
-          <span className="font-bold text-slate-800 dark:text-slate-200">{quest.startDate ? formatArabicDate(quest.startDate) : (quest.assignedAt ? formatArabicDate(quest.assignedAt) : formatArabicDate(quest.createdAt))}</span>
-        </div>
-        <div>
-          <span className="text-slate-400 block text-[10px]">{lang === "ar" ? "تاريخ النهاية:" : "End Date:"}</span>
-          <span className="font-bold text-slate-800 dark:text-slate-200">{quest.terminatedAt ? formatArabicDate(quest.terminatedAt) : (quest.endDate ? formatArabicDate(quest.endDate) : (lang === "ar" ? "مستمر / غير محدد" : "Ongoing / Indefinite"))}</span>
-        </div>
-        {/* Contract Termination Row */}
-        <div className="col-span-2 pt-2 border-t border-sky-200/60 dark:border-sky-800/60 mt-1">
-          {quest.status === "ending" ? (
-            quest.endRequestedBy === currentUserId ? (
-              <div className="p-3 bg-amber-100/80 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 rounded-xl text-xs font-black text-center space-y-2">
-                <p>{lang === "ar" ? "تم فسخ العقد وفك الارتباط. المنشور بانتظار إطلاع الطرف الآخر لنقله للأرشيف." : "Contract severed & unlinked. Post awaiting partner read receipt."}</p>
-                <button
-                  type="button"
-                  onClick={() => onConfirmEndWork && onConfirmEndWork(quest.id)}
-                  className="w-full bg-amber-600 hover:bg-amber-700 text-white py-1.5 rounded-lg font-black text-[11px] cursor-pointer transition-all"
-                >
-                  {lang === "ar" ? "نقل للأرشيف 📁" : "Move to Archive 📁"}
-                </button>
-              </div>
-            ) : (
-              <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-xl space-y-2 text-start">
-                <p className="text-xs font-black text-rose-800 dark:text-rose-200 text-center">
-                  {lang === "ar" ? "وصلك إشعار فسخ العقد وفك الارتباط" : "Contract termination & unlinking notice"}
-                </p>
-                <div className="bg-white/80 dark:bg-rose-900/40 p-2 rounded-lg border border-rose-200/60 dark:border-rose-800/60 text-right">
-                  <span className="text-[10px] text-rose-600 dark:text-rose-300 font-bold block">{lang === "ar" ? "السبب الموضح بالطلب:" : "Reason provided:"}</span>
-                  <p className="text-xs font-extrabold text-slate-800 dark:text-slate-100">{quest.endReason || (lang === "ar" ? "لم يحدد سبب إضافي" : "No reason provided")}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => onConfirmEndWork && onConfirmEndWork(quest.id)}
-                  className="w-full bg-rose-600 hover:bg-rose-700 text-white font-black text-xs py-2 rounded-xl shadow-xs transition-all cursor-pointer text-center"
-                >
-                  {lang === "ar" ? "تأكيد الاطلاع 📁" : "Acknowledge 📁"}
-                </button>
-              </div>
-            )
-          ) : quest.status === "disputed" ? (
-            <div className="p-2.5 bg-rose-100/80 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200 rounded-xl text-xs font-black text-center">
-              {lang === "ar" ? "العقد في حالة نزاع حالياً - جاري معالجته من قِبل الإدارة" : "Contract in dispute"}
-            </div>
-          ) : (quest.employeeId || quest.helperId || quest.assignedRunnerId || (quest.assignedRunnerIds && quest.assignedRunnerIds.length > 0)) && (quest.status === "active_employment" || quest.status === "active" || quest.status === "booked" || quest.questType === "long_term") && quest.status !== "completed" && !quest.archived ? (
-            <button
-              type="button"
-              onClick={() => setEndWorkQuestModal(quest)}
-              className="w-full bg-white dark:bg-slate-900 border border-rose-300 hover:border-rose-500 text-rose-600 dark:text-rose-400 font-black text-xs py-2 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs hover:bg-rose-50 dark:hover:bg-rose-950/30"
-            >
-              <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
-              <span>{lang === "ar" ? "فسخ العقد" : "Sever Contract"}</span>
-            </button>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  )}
-
-  {/* Description Section */}
- <div className="text-xs text-slate-600 leading-relaxed text-start space-y-3">
- <p className="whitespace-pre-wrap font-medium text-slate-700 dark:text-slate-200 text-xs sm:text-sm leading-relaxed text-start">
- {quest.description}
- </p>
- {quest.imageUrl && (
- <div 
-   onClick={() => {
-     setLightboxImage(quest.imageUrl!);
-     setLightboxMeta({ title: quest.title, subtitle: quest.creatorName, caption: quest.description });
-   }}
-   className="relative group overflow-hidden rounded-[1.5rem] border border-slate-150 max-h-56 bg-slate-50 flex items-center justify-center shadow-xs transition duration-300 cursor-zoom-in"
- >
-   <img src={quest.imageUrl} alt={quest.title} className="w-full h-full object-cover max-h-56 group-hover:scale-[1.01] transition duration-500" />
-   <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/60 backdrop-blur-xs rounded-lg text-white text-[10px] font-bold flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-     <span>{lang === 'ar' ? 'تكبير' : 'Zoom'}</span>
-   </div>
+  
+ {/* Minimal Ending Notice if active */}
+ {quest.status === "ending" && (
+ <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-xs font-bold text-amber-900 dark:text-amber-200 text-center">
+ {lang === "ar" ? "هذا العقد في مرحلة إنهاء الارتباط" : "Contract in termination process"}
  </div>
  )}
- </div>
 
  {/* Compact Employer Profile Row */}
  {quest.creatorId && (() => {
@@ -1150,46 +950,7 @@ function MyQuestsView({
  {/* Actions Panel */}
  <div className="pt-3 border-t border-slate-100 space-y-3">
  {isOngoing && (
- <div className="flex flex-col gap-2.5 w-full">
- <div className="flex gap-2 w-full">
- <button
- onClick={() => setSelectedProofQuest(quest)}
- className="flex-1 bg-[#FF3B7C] hover:bg-[#FF3B7C]/95 text-white font-extrabold text-xs py-3 rounded-2xl transition duration-200 cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
- >
- <Camera className="w-4 h-4 text-white" />
- <span>{lang === 'ar' ? 'إتمام' : 'Complete'}</span>
- </button>
-
- <button
- onClick={() => {
- window.dispatchEvent(new CustomEvent('navigate-to-quest-map', { detail: { quest } }));
- }}
- className="flex-1 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 font-bold text-xs py-2.5 rounded-2xl transition duration-200 cursor-pointer flex items-center justify-center gap-1.5"
- >
- <MapPin className="w-3.5 h-3.5 text-sky-500" />
- <span>{lang === 'ar' ? 'الموقع' : 'Location'}</span>
- </button>
-
- <button
- onClick={() => {
- const refundAmount = Math.round(quest.bookingFeeDA * 0.30);
- onCancelBookedQuest(quest.id, refundAmount);
- }}
- className="flex-1 bg-white hover:bg-rose-50 text-rose-600 border border-rose-100 hover:border-rose-200 font-bold text-xs py-2.5 rounded-2xl transition duration-200 cursor-pointer flex items-center justify-center gap-1"
- >
- <span>{lang === 'ar' ? 'إلغاء الحجز' : 'Cancel Reservation'}</span>
- </button>
-
- <button
- type="button"
- onClick={() => setEndWorkQuestModal(quest)}
- className="flex-1 bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 hover:border-rose-300 font-bold text-xs py-2.5 rounded-2xl transition duration-200 cursor-pointer flex items-center justify-center gap-1 shadow-2xs"
- >
- <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
- <span>{lang === 'ar' ? 'فسخ العقد' : 'Sever Contract'}</span>
- </button>
- </div>
-
+ <div className="flex flex-col gap-3 w-full">
  {(() => {
  const isRunnerOnly = (quest.helperId === currentUserId || quest.assignedRunnerId === currentUserId || quest.assignedRunnerIds?.includes(currentUserId)) && quest.creatorId !== currentUserId;
  return isRunnerOnly && !isArrived && onArrivedAtQuest ? (
@@ -1197,14 +958,56 @@ function MyQuestsView({
  onClick={() => {
  onArrivedAtQuest(quest.id);
  }}
- className="w-full bg-gradient-to-r from-[#FFD34D] to-[#FF3B7C] hover:from-[#FFD34D]/90 hover:to-[#FF3B7C]/90 text-white font-extrabold text-xs py-3.5 rounded-2xl shadow-md transition duration-200 cursor-pointer flex items-center justify-center gap-1.5 mt-0.5"
+ className="w-full bg-gradient-to-r from-[#FFD34D] to-[#FF3B7C] hover:from-[#FFD34D]/90 hover:to-[#FF3B7C]/90 text-white font-black text-xs py-3 rounded-2xl shadow-sm transition duration-200 cursor-pointer flex items-center justify-center gap-2 active:scale-[0.98]"
  >
- <CheckCircle2 className="w-4 h-4" />
- <span> {lang === 'ar' ? 'تأكيد الوصول للموقع' : 'Confirm Arrival Directly '}
- </span>
+ <CheckCircle2 className="w-4 h-4 text-white" />
+ <span>{lang === 'ar' ? 'تأكيد الوصول إلى الموقع' : 'Confirm Arrival At Location'}</span>
  </button>
  ) : null;
  })()}
+
+ {/* Primary Action Row */}
+ <div className="flex items-center gap-2 w-full">
+ <button
+ onClick={() => setSelectedProofQuest(quest)}
+ className="flex-[2] bg-[#FF3B7C] hover:bg-[#FF3B7C]/95 active:scale-[0.98] text-white font-black text-xs py-3 rounded-2xl transition duration-200 cursor-pointer flex items-center justify-center gap-1.5 shadow-md shadow-pink-500/20"
+ >
+ <Camera className="w-4 h-4 text-white" />
+ <span>{lang === 'ar' ? 'إتمام المهمة ورفع الإثبات' : 'Complete Quest'}</span>
+ </button>
+
+ <button
+ onClick={() => {
+ window.dispatchEvent(new CustomEvent('navigate-to-quest-map', { detail: { quest } }));
+ }}
+ className="flex-1 bg-slate-100 hover:bg-slate-200/80 active:scale-[0.98] text-slate-700 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-bold text-xs py-3 rounded-2xl transition duration-200 cursor-pointer flex items-center justify-center gap-1.5"
+ >
+ <MapPin className="w-3.5 h-3.5 text-sky-500" />
+ <span>{lang === 'ar' ? 'الموقع' : 'Location'}</span>
+ </button>
+ </div>
+
+ {/* Dedicated Danger Actions Row */}
+ <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center gap-2 w-full">
+ <button
+ onClick={() => {
+ const refundAmount = Math.round(quest.bookingFeeDA * 0.30);
+ onCancelBookedQuest(quest.id, refundAmount);
+ }}
+ className="flex-1 bg-rose-50/60 hover:bg-rose-100/70 text-rose-600 dark:bg-rose-950/20 dark:text-rose-400 border border-rose-200/70 dark:border-rose-800/40 font-semibold text-[11px] py-2 rounded-xl transition duration-200 cursor-pointer flex items-center justify-center gap-1"
+ >
+ <span>{lang === 'ar' ? 'إلغاء الحجز' : 'Cancel Reservation'}</span>
+ </button>
+
+ <button
+ type="button"
+ onClick={() => setEndWorkQuestModal(quest)}
+ className="flex-1 bg-rose-50/60 hover:bg-rose-100/70 text-rose-600 dark:bg-rose-950/20 dark:text-rose-400 border border-rose-200/70 dark:border-rose-800/40 font-semibold text-[11px] py-2 rounded-xl transition duration-200 cursor-pointer flex items-center justify-center gap-1"
+ >
+ <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+ <span>{lang === 'ar' ? 'فسخ العقد' : 'Sever Contract'}</span>
+ </button>
+ </div>
  </div>
  )}
  {isUnderReview && (
@@ -1223,10 +1026,12 @@ function MyQuestsView({
 
  {onViewQuestDetail && (
  <button
+ type="button"
  onClick={() => onViewQuestDetail(quest.id)}
- className="w-full bg-[#1F2A44]/5 hover:bg-[#1F2A44]/10 text-[#1F2A44] border border-[#1F2A44]/10 font-bold text-xs py-2.5 rounded-2xl transition duration-200 cursor-pointer flex items-center justify-center gap-1.5 mt-2.5"
+ className="w-full bg-[#1F2A44]/5 hover:bg-[#1F2A44]/10 text-[#1F2A44] dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 border border-[#1F2A44]/10 dark:border-slate-700 font-bold text-xs py-2.5 rounded-xl transition duration-200 cursor-pointer flex items-center justify-center gap-1.5 mt-1"
  >
- <span>{lang === 'ar' ? 'تفاصيل كاملة ' : 'Full Details '}</span>
+ <FileText className="w-3.5 h-3.5 text-slate-500" />
+ <span>{lang === 'ar' ? 'تفاصيل كاملة 📋' : 'Full Details 📋'}</span>
  </button>
  )}
  </div>
@@ -1234,111 +1039,131 @@ function MyQuestsView({
  </div>
  );
  })}
+ </div>
+ ) : appliedQuests.length === 0 ? (
+ <div className="py-10 px-4 text-center space-y-3">
+ <div className="mx-auto flex justify-center">
+ {showHistory ? (
+ <svg className="w-24 h-24" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+ <circle cx="60" cy="60" r="50" className="fill-slate-100/90" />
+ <circle cx="60" cy="60" r="38" className="fill-slate-200/50" />
+ <path d="M36 42C36 38.6863 38.6863 36 42 36H54L60 42H78C81.3137 42 84 44.6863 84 48V78C84 81.3137 81.3137 84 78 84H42C38.6863 84 36 81.3137 36 78V42Z" fill="#FFFFFF" stroke="#64748B" strokeWidth="3" strokeLinejoin="round" />
+ <circle cx="52" cy="58" r="2.5" fill="#475569" />
+ <circle cx="68" cy="58" r="2.5" fill="#475569" />
+ <path d="M53 68C56 64 64 64 67 68" stroke="#475569" strokeWidth="2.5" strokeLinecap="round" />
+ </svg>
+ ) : (
+ <svg className="w-24 h-24" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+ <circle cx="60" cy="60" r="50" className="fill-blue-50/80" />
+ <circle cx="60" cy="60" r="38" className="fill-indigo-50/60" />
+ <rect x="38" y="32" width="44" height="56" rx="10" fill="#FFFFFF" stroke="#3B82F6" strokeWidth="3" />
+ <rect x="48" y="26" width="24" height="10" rx="4" fill="#3B82F6" />
+ <circle cx="52" cy="52" r="2.5" fill="#475569" />
+ <circle cx="68" cy="52" r="2.5" fill="#475569" />
+ <path d="M53 64C56 60 64 60 67 64" stroke="#475569" strokeWidth="2.5" strokeLinecap="round" />
+ <line x1="48" y1="72" x2="72" y2="72" stroke="#CBD5E1" strokeWidth="2.5" strokeLinecap="round" strokeDasharray="2 2" />
+ <path d="M26 40L32 46M32 40L26 46" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" />
+ <path d="M88 70L94 76M94 70L88 76" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" />
+ </svg>
+ )}
+ </div>
+ <h3 className="font-extrabold text-sm text-slate-800 dark:text-slate-200">
+ {showHistory 
+ ? (lang === 'ar' ? 'لا توجد كويستات مؤرشفة' : 'No archived quests')
+ : (lang === 'ar' ? 'لم تقم بحجز أو تنفيذ أي مهمة حتى الآن' : 'No booked tasks yet')}
+ </h3>
+ </div>
+ ) : null}
 
- {/* Applied Pending Quests */}
- {!showHistory && (() => {
- const hasActiveAcceptedAssignment = quests.some(q => 
-   !isQuestExpired(q) &&
-   !q.archived &&
-   (q.status === 'booked' || q.status === 'active' || q.status === 'arrived' || q.status === 'active_employment') &&
-   (q.helperId === currentUserId || q.assignedRunnerId === currentUserId || q.employeeId === currentUserId || q.assignedRunnerIds?.includes(currentUserId))
- );
+ {/* 2. Applied Pending Quests Strip (ALWAYS visible if user has pending booking requests!) */}
+ {!showHistory && appliedQuests.length > 0 && (
+ <div className="space-y-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+ <div className="flex items-center justify-between px-1">
+ <h3 className="text-xs font-black text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+ <Clock className="w-4 h-4 text-amber-500" />
+ <span>{lang === 'ar' ? 'المهام التي تم طلب حجزها (قيد الانتظار)' : 'Requested Quests (Pending Review)'}</span>
+ <span className="text-[10px] font-mono bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300 px-2 py-0.5 rounded-full font-bold">
+ {appliedQuests.length}
+ </span>
+ </h3>
+ </div>
 
- // If a runner was accepted for any quest, all their other requests across general and employers are cancelled by code algorithm
- if (hasActiveAcceptedAssignment) return null;
-
- const appliedQuests = quests.filter(q => {
-   // 1. Strict Expiry Check: Remove expired tasks from booking strips
-   if (isQuestExpired(q) || q.status === 'expired' || q.status === 'stale_cleared' || q.status === 'cancelled_by_timeout') return false;
-   if (q.archived) return false;
-   if (['completed', 'cancelled', 'cancelled_by_timeout', 'stale_cleared', 'expired', 'terminated'].includes(q.status)) return false;
-
-   // 2. Prevent Double Booking Appearance: Never show as booking request if already booked/assigned for this user
-   const isAlreadyAssigned = q.helperId === currentUserId || 
-     q.assignedRunnerId === currentUserId || 
-     q.employeeId === currentUserId || 
-     (q.assignedRunnerIds && q.assignedRunnerIds.includes(currentUserId));
-   if (isAlreadyAssigned) return false;
-
-   // 3. User must have applied to this quest
-   const isApplicant = (q.applicants?.some(a => a.userId === currentUserId)) || 
-     (q.jobApplicants?.some(a => a.applicantId === currentUserId));
-   if (!isApplicant) return false;
-
-   return true;
- });
-
- if (appliedQuests.length === 0) return null;
+ <div className="grid gap-3">
+ {appliedQuests.map((quest) => {
+ const isBookedByOther = (quest.status === 'booked' || quest.status === 'active' || quest.status === 'active_employment') &&
+ quest.helperId !== currentUserId &&
+ quest.assignedRunnerId !== currentUserId &&
+ quest.employeeId !== currentUserId &&
+ (!quest.assignedRunnerIds || !quest.assignedRunnerIds.includes(currentUserId));
 
  return (
- <div className="space-y-3 pt-4 border-t border-slate-200">
- <div className="flex items-center justify-between px-1">
-   <h3 className="text-xs font-black text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
-     <Clock className="w-3.5 h-3.5 text-amber-500" />
-     <span>{lang === 'ar' ? 'شريط طلبات الحجز' : 'Booking Requests Strip'}</span>
-     <span className="text-[10px] font-mono bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full font-bold">
-       {appliedQuests.length}
-     </span>
-   </h3>
+ <div key={quest.id} className="bg-white dark:bg-slate-800 border border-slate-200/90 dark:border-slate-700 p-4 rounded-2xl shadow-xs space-y-3 transition-all">
+ <div className="flex justify-between items-start gap-2">
+ <div className="space-y-1 text-start min-w-0 flex-1">
+ <span className="text-[9px] font-black px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 uppercase">
+ {quest.category}
+ </span>
+ <h4 className="font-extrabold text-sm text-slate-800 dark:text-white truncate mt-1">{quest.title}</h4>
+ {quest.location && (
+ <p className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
+ <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+ <span className="truncate">{cleanLocationName(quest.location)}</span>
+ </p>
+ )}
+ </div>
+ <div className="text-right shrink-0">
+ <span className="text-[#FF3B7C] font-black text-xs font-mono bg-rose-50 dark:bg-rose-950/30 px-2.5 py-1 rounded-xl border border-rose-100 dark:border-rose-900/40 block">
+ {quest.cashReward} DA
+ </span>
+ </div>
  </div>
 
- <div className="grid gap-2.5">
- {appliedQuests.map((quest) => {
-   const isBookedByOther = (quest.status === 'booked' || quest.status === 'active' || quest.status === 'active_employment') &&
-     quest.helperId !== currentUserId &&
-     quest.assignedRunnerId !== currentUserId &&
-     quest.employeeId !== currentUserId &&
-     (!quest.assignedRunnerIds || !quest.assignedRunnerIds.includes(currentUserId));
-
-   return (
-   <div key={quest.id} className="bg-white border border-slate-200/90 p-3.5 rounded-2xl shadow-xs space-y-2.5 transition-all">
-     <div className="flex justify-between items-center gap-2">
-       <div className="space-y-0.5 text-start min-w-0 flex-1">
-         <span className="text-[9px] font-black px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 uppercase">
-           {quest.category}
-         </span>
-         <h4 className="font-extrabold text-sm text-slate-800 dark:text-white truncate mt-1">{quest.title}</h4>
-       </div>
-       <div className="text-right shrink-0">
-         <span className="text-[#FF3B7C] font-black text-xs font-mono bg-rose-50 px-2.5 py-1 rounded-xl border border-rose-100 block">
-           {quest.cashReward} DA
-         </span>
-       </div>
-     </div>
-
-     {isBookedByOther ? (
-       <div className="bg-rose-50 border border-rose-200/70 p-2.5 rounded-xl text-start flex items-center justify-between gap-2">
-         <div className="flex items-center gap-1.5 text-xs font-bold text-rose-700">
-           <XCircle className="w-4 h-4 text-rose-500 shrink-0" />
-           <span className="text-[11px] leading-snug">
-             {lang === 'ar' ? 'تم حجزها من شخص آخر وستختفي تلقائياً' : 'Booked by another runner - will disappear'}
-           </span>
-         </div>
-       </div>
-     ) : (
-       <div className="bg-amber-50/70 border border-amber-200/60 p-2.5 rounded-xl flex items-center justify-between text-start gap-2">
-         <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-800">
-           <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0 animate-pulse" />
-           <span>{lang === 'ar' ? 'طلب الحجز قيد المراجعة' : 'Booking pending approval'}</span>
-         </div>
-         {onViewQuestDetail && (
-           <button
-             type="button"
-             onClick={() => onViewQuestDetail(quest.id)}
-             className="text-[10px] font-black text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-lg cursor-pointer transition-all shrink-0"
-           >
-             {lang === 'ar' ? 'عرض' : 'View'}
-           </button>
-         )}
-       </div>
-     )}
-   </div>
-   );
- })}
+ {isBookedByOther ? (
+ <div className="bg-rose-50 dark:bg-rose-950/30 border border-rose-200/70 dark:border-rose-900/40 p-2.5 rounded-xl text-start flex items-center justify-between gap-2">
+ <div className="flex items-center gap-1.5 text-xs font-bold text-rose-700 dark:text-rose-400">
+ <XCircle className="w-4 h-4 text-rose-500 shrink-0" />
+ <span className="text-[11px] leading-snug">
+ {lang === 'ar' ? 'تم تعيين منفذ آخر لهذه المهمة' : 'Booked by another runner'}
+ </span>
  </div>
+ <button
+ type="button"
+ onClick={() => handleCancelApplicant(quest.id)}
+ className="text-[10px] font-bold text-rose-700 dark:text-rose-400 bg-white dark:bg-slate-800 hover:bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg cursor-pointer transition-all shrink-0"
+ >
+ {lang === 'ar' ? 'حذف من القائمة' : 'Dismiss'}
+ </button>
+ </div>
+ ) : (
+ <div className="bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/60 dark:border-amber-800/40 p-2.5 rounded-xl flex items-center justify-between text-start gap-2">
+ <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-800 dark:text-amber-300">
+ <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0 animate-pulse" />
+ <span>{lang === 'ar' ? 'طلب الحجز قيد المراجعة لدى صاحب العمل' : 'Booking pending approval'}</span>
+ </div>
+ <div className="flex items-center gap-1.5 shrink-0">
+ <button
+ type="button"
+ onClick={() => handleCancelApplicant(quest.id)}
+ className="text-[10px] font-bold text-rose-600 hover:text-rose-700 bg-white dark:bg-slate-800 hover:bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg cursor-pointer transition-all"
+ >
+ {lang === 'ar' ? 'إلغاء الطلب' : 'Cancel'}
+ </button>
+ {onViewQuestDetail && (
+ <button
+ type="button"
+ onClick={() => onViewQuestDetail(quest.id)}
+ className="text-[10px] font-black text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 hover:bg-slate-100 border border-slate-200 dark:border-slate-700 px-2.5 py-1 rounded-lg cursor-pointer transition-all"
+ >
+ {lang === 'ar' ? 'عرض' : 'View'}
+ </button>
+ )}
+ </div>
+ </div>
+ )}
  </div>
  );
- })()}
+ })}
+ </div>
  </div>
  )}
  </div>
@@ -1452,118 +1277,11 @@ function MyQuestsView({
  </div>
 
  
-  {/* Long-Term Contract Summary Card (Rule 9) */}
-  {(quest.questType === "long_term" || quest.status === "active_employment" || quest.status === "ending" || quest.status === "disputed" || quest.status === "active" || quest.status === "booked" || quest.helperId === currentUserId || quest.employeeId === currentUserId || quest.assignedRunnerId === currentUserId) && (
-    <div className="bg-sky-50/80 dark:bg-sky-950/30 border border-sky-200/80 dark:border-sky-800/80 rounded-2xl p-4 text-xs space-y-2 text-start my-2">
-      <div className="font-extrabold text-sky-900 dark:text-sky-200 flex items-center justify-between border-b border-sky-200/60 dark:border-sky-800/60 pb-2">
-        <span className="flex items-center gap-1.5">
-          <Briefcase className="w-4 h-4 text-sky-600 dark:text-sky-400 shrink-0" />
-          <span>{lang === "ar" ? "تفاصيل عقد العمل" : "Contract Details"}</span>
-        </span>
-        <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-sky-200/60 dark:bg-sky-900/60 text-sky-800 dark:text-sky-200">
-          {quest.status === "completed" || quest.archived
-            ? (lang === "ar" ? "منتهي ومؤرشف" : "Completed & Archived")
-            : quest.status === "ending"
-            ? (lang === "ar" ? "قيد الإنهاء" : "Ending Request")
-            : (lang === "ar" ? "عقد نشط" : "Active Contract")}
-        </span>
-      </div>
-      <div className="grid grid-cols-2 gap-2 pt-1 text-[11px] font-medium text-slate-700 dark:text-slate-300">
-        <div>
-          <span className="text-slate-400 block text-[10px]">{lang === "ar" ? "اسم العمل:" : "Job Title:"}</span>
-          <span className="font-bold text-slate-900 dark:text-white">{quest.title}</span>
-        </div>
-        <div>
-          <span className="text-slate-400 block text-[10px]">{lang === "ar" ? "الراتب:" : "Salary:"}</span>
-          <span className="font-bold text-emerald-600 dark:text-emerald-400">{quest.cashReward} DA ({quest.salaryPeriod === "monthly" ? (lang === "ar" ? "شهري" : "Monthly") : quest.salaryPeriod === "weekly" ? (lang === "ar" ? "أسبوعي" : "Weekly") : (lang === "ar" ? "يومي" : "Daily")})</span>
-        </div>
-        <div>
-          <span className="text-slate-400 block text-[10px]">{lang === "ar" ? "صاحب العمل:" : "Employer:"}</span>
-          <span className="font-bold text-slate-800 dark:text-slate-200">{quest.creatorName || (lang === "ar" ? "صاحب العمل" : "Employer")}</span>
-        </div>
-        <div>
-          <span className="text-slate-400 block text-[10px]">{lang === "ar" ? "العامل المتعاقد:" : "Employee:"}</span>
-          <span className="font-bold text-slate-800 dark:text-slate-200">{quest.helperName || quest.employeeId || (lang === "ar" ? "غير محدد" : "N/A")}</span>
-        </div>
-        <div>
-          <span className="text-slate-400 block text-[10px]">{lang === "ar" ? "تاريخ البداية:" : "Start Date:"}</span>
-          <span className="font-bold text-slate-800 dark:text-slate-200">{quest.startDate ? formatArabicDate(quest.startDate) : (quest.assignedAt ? formatArabicDate(quest.assignedAt) : formatArabicDate(quest.createdAt))}</span>
-        </div>
-        <div>
-          <span className="text-slate-400 block text-[10px]">{lang === "ar" ? "تاريخ النهاية:" : "End Date:"}</span>
-          <span className="font-bold text-slate-800 dark:text-slate-200">{quest.terminatedAt ? formatArabicDate(quest.terminatedAt) : (quest.endDate ? formatArabicDate(quest.endDate) : (lang === "ar" ? "مستمر / غير محدد" : "Ongoing / Indefinite"))}</span>
-        </div>
-        {/* Contract Termination Row */}
-        <div className="col-span-2 pt-2 border-t border-sky-200/60 dark:border-sky-800/60 mt-1">
-          {quest.status === "ending" ? (
-            quest.endRequestedBy === currentUserId ? (
-              <div className="p-3 bg-amber-100/80 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 rounded-xl text-xs font-black text-center space-y-2">
-                <p>{lang === "ar" ? "تم فسخ العقد وفك الارتباط. المنشور بانتظار إطلاع الطرف الآخر لنقله للأرشيف." : "Contract severed & unlinked. Post awaiting partner read receipt."}</p>
-                <button
-                  type="button"
-                  onClick={() => onConfirmEndWork && onConfirmEndWork(quest.id)}
-                  className="w-full bg-amber-600 hover:bg-amber-700 text-white py-1.5 rounded-lg font-black text-[11px] cursor-pointer transition-all"
-                >
-                  {lang === "ar" ? "نقل للأرشيف 📁" : "Move to Archive 📁"}
-                </button>
-              </div>
-            ) : (
-              <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-xl space-y-2 text-start">
-                <p className="text-xs font-black text-rose-800 dark:text-rose-200 text-center">
-                  {lang === "ar" ? "وصلك إشعار فسخ العقد وفك الارتباط" : "Contract termination & unlinking notice"}
-                </p>
-                <div className="bg-white/80 dark:bg-rose-900/40 p-2 rounded-lg border border-rose-200/60 dark:border-rose-800/60 text-right">
-                  <span className="text-[10px] text-rose-600 dark:text-rose-300 font-bold block">{lang === "ar" ? "السبب الموضح بالطلب:" : "Reason provided:"}</span>
-                  <p className="text-xs font-extrabold text-slate-800 dark:text-slate-100">{quest.endReason || (lang === "ar" ? "لم يحدد سبب إضافي" : "No reason provided")}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => onConfirmEndWork && onConfirmEndWork(quest.id)}
-                  className="w-full bg-rose-600 hover:bg-rose-700 text-white font-black text-xs py-2 rounded-xl shadow-xs transition-all cursor-pointer text-center"
-                >
-                  {lang === "ar" ? "تأكيد الاطلاع 📁" : "Acknowledge 📁"}
-                </button>
-              </div>
-            )
-          ) : quest.status === "disputed" ? (
-            <div className="p-2.5 bg-rose-100/80 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200 rounded-xl text-xs font-black text-center">
-              {lang === "ar" ? "العقد في حالة نزاع حالياً - جاري معالجته من قِبل الإدارة" : "Contract in dispute"}
-            </div>
-          ) : (quest.employeeId || quest.helperId || quest.assignedRunnerId || (quest.assignedRunnerIds && quest.assignedRunnerIds.length > 0)) && (quest.status === "active_employment" || quest.status === "active" || quest.status === "booked" || quest.questType === "long_term") && quest.status !== "completed" && !quest.archived ? (
-            <button
-              type="button"
-              onClick={() => setEndWorkQuestModal(quest)}
-              className="w-full bg-white dark:bg-slate-900 border border-rose-300 hover:border-rose-500 text-rose-600 dark:text-rose-400 font-black text-xs py-2 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs hover:bg-rose-50 dark:hover:bg-rose-950/30"
-            >
-              <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
-              <span>{lang === "ar" ? "فسخ العقد" : "Sever Contract"}</span>
-            </button>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  )}
-
-  {/* Description Section */}
- {quest.description && quest.description.trim() && (
- <div className="text-xs text-slate-600 leading-relaxed text-start space-y-3">
- <p className="font-medium text-slate-700 dark:text-slate-200 text-xs sm:text-sm leading-relaxed text-start break-words">
- {quest.description}
- </p>
- {quest.imageUrl && (
- <div 
-   onClick={() => {
-     setLightboxImage(quest.imageUrl!);
-     setLightboxMeta({ title: quest.title, subtitle: quest.creatorName, caption: quest.description });
-   }}
-   className="relative group overflow-hidden rounded-[1.5rem] border border-slate-150 max-h-56 bg-slate-50 flex items-center justify-center shadow-xs transition duration-300 cursor-zoom-in"
- >
-   <img src={quest.imageUrl} alt={quest.title} className="w-full h-full object-cover max-h-56 group-hover:scale-[1.01] transition duration-500" />
-   <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/60 backdrop-blur-xs rounded-lg text-white text-[10px] font-bold flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-     <span>{lang === 'ar' ? 'تكبير' : 'Zoom'}</span>
-   </div>
- </div>
- )}
+  
+ {/* Minimal Ending Notice if active */}
+ {quest.status === "ending" && (
+ <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-xs font-bold text-amber-900 dark:text-amber-200 text-center">
+ {lang === "ar" ? "هذا العقد في مرحلة إنهاء الارتباط" : "Contract in termination process"}
  </div>
  )}
 
@@ -2569,77 +2287,65 @@ function MyQuestsView({
 
  {/* Interactive Godfather Rating Review popup dialog upon Confirm Payout */}
  <AnimatePresence>
- {ratingQuestId && (
- <div className="fixed inset-0 bg-[#1F2A44]/80 backdrop-blur-md flex items-center justify-center p-4 z-50">
- <motion.div
- initial={{ scale: 0.9, opacity: 0 }}
- animate={{ scale: 1, opacity: 1 }}
- exit={{ scale: 0.9, opacity: 0 }}
- className="bg-white rounded-3xl p-6 max-w-sm w-full space-y-4 shadow-2xl border border-gray-150 text-center"
- >
- <div className="w-12 h-12 bg-amber-50 rounded-full flex items-center justify-center mx-auto text-amber-500">
- <Star className="w-6 h-6 fill-amber-500 text-amber-500" />
- </div>
+ {ratingQuestId && (() => {
+ const targetQuest = quests.find(q => q.id === ratingQuestId);
+ const targetName = targetQuest?.helperName || (lang === 'ar' ? 'العامل' : 'Worker');
 
- {/* Stars selection */}
- <div className="space-y-1 text-center">
- <label className="text-xs font-black text-[#1F2A44] block">
- {lang === 'ar' ? 'كم نجمة يستحق شريكك؟' : 'How many stars does your partner deserve?'}
- </label>
- <div className="flex items-center justify-center gap-2 pt-1">
+ return (
+ <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+ <motion.div
+ initial={{ scale: 0.95, opacity: 0 }}
+ animate={{ scale: 1, opacity: 1 }}
+ exit={{ scale: 0.95, opacity: 0 }}
+ className="bg-white dark:bg-slate-900 rounded-3xl p-6 max-w-sm w-full space-y-4 shadow-2xl border border-slate-200 dark:border-slate-800 text-center"
+ >
+ {/* 1. اسم العامل فقط */}
+ <h3 className="text-base font-black text-slate-900 dark:text-white">
+ {targetName}
+ </h3>
+
+ {/* 2. شريط النجوم فقط */}
+ <div className="flex items-center justify-center gap-1.5 py-1">
  {[1, 2, 3, 4, 5].map((starVal) => (
  <button
  key={starVal}
  type="button"
  onClick={() => setRatingVal(starVal)}
- className="p-1 cursor-pointer transition-all active:scale-125 select-none"
+ className="p-1 cursor-pointer transition-transform active:scale-90 hover:scale-110"
  >
  <Star 
- className={`w-7 h-7 transition-colors ${
- starVal <= ratingVal ? 'fill-[#FFD34D] text-[#FFD34D]' : 'text-gray-200'
+ className={`w-8 h-8 transition-colors ${
+ starVal <= ratingVal ? 'fill-amber-400 text-amber-400' : 'text-slate-200 dark:text-slate-700'
  }`} 
  />
  </button>
  ))}
  </div>
- </div>
 
- {/* Testimonial comments text shape */}
- <div className="space-y-1 text-right">
- <label className="text-xs font-black text-[#1F2A44] block">
- {lang === 'ar' ? 'التفاصيل' : 'Details'}
- </label>
+ {/* 3. حقل إدخال الملاحظات فقط */}
  <textarea
- rows={2}
- maxLength={140}
- placeholder={lang === 'ar' ? 'اكتب التفاصيل والملاحظات...' : 'Write details and feedback...'}
+ rows={3}
+ placeholder={lang === 'ar' ? 'الملاحظات...' : 'Notes...'}
  value={ratingComment}
  onChange={(e) => setRatingComment(e.target.value)}
- className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold focus:outline-none"
+ className="w-full p-3 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold focus:outline-none focus:border-amber-400 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 resize-none"
  />
- </div>
 
- {/* Confirmation CTAs */}
- <div className="space-y-2 pt-2">
+ {/* 4. زر إرسال فقط */}
  <button
+ type="button"
  onClick={() => {
  onConfirmPayout(ratingQuestId, ratingVal, ratingComment);
  setRatingQuestId(null);
  }}
- className="w-full bg-[#1F2A44] hover:bg-[#1E2E4E] text-[#FFD34D] font-extrabold text-xs py-3 rounded-xl transition-all cursor-pointer shadow-md shadow-[#1F2A44]/15"
+ className="w-full py-3 bg-[#1F2A44] hover:bg-[#152037] text-white dark:bg-amber-400 dark:hover:bg-amber-500 dark:text-slate-950 font-black rounded-2xl text-xs shadow-md transition-all cursor-pointer active:scale-98"
  >
- {lang === 'ar' ? 'تأكيد' : 'Confirm'}
+ {lang === 'ar' ? 'إرسال' : 'Submit'}
  </button>
- <button
- onClick={() => setRatingQuestId(null)}
- className="w-full text-gray-400 hover:text-gray-600 text-[10px] font-semibold cursor-pointer py-1"
- >
- {dict.cancelBtn}
- </button>
- </div>
  </motion.div>
  </div>
- )}
+ );
+ })()}
  </AnimatePresence>
 
  {/* Dynamic Native Floating Local Notice Card */}

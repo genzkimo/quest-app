@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { ArrowLeft, ArrowRight, Search, Clock } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Search, Clock, MapPin } from 'lucide-react';
 import { Quest, UserProfile } from '../types';
 import UnifiedQuestCard from './UnifiedQuestCard';
 import { isQuestExpired } from '../utils/questExpiry';
@@ -72,7 +72,7 @@ export default function QuestDetailScreen({
 
   return (
     <div
-      className="w-full max-w-lg mx-auto font-sans pt-[max(1rem,calc(env(safe-area-inset-top,0px)+0.75rem))] pb-32"
+      className="w-full max-w-lg mx-auto font-sans pt-[max(3.25rem,calc(env(safe-area-inset-top,0px)+2rem))] pb-32"
       style={{ direction: isRTL ? 'rtl' : 'ltr' }}
     >
  {/* Top Breadcrumb Navigation Header */}
@@ -94,10 +94,26 @@ export default function QuestDetailScreen({
  )}
  </button>
  
- <span className="text-[10px] font-black font-mono text-slate-400 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800 px-3 py-1.5 rounded-full border border-slate-100 dark:border-slate-700">
- {isRTL ? 'تفاصيل الكويست' : 'Quest details'}
- </span>
- </div>
+       <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            if (onStartNavigation) {
+              onStartNavigation(quest);
+            }
+          }}
+          className="flex items-center gap-1.5 text-xs font-black text-white bg-[#FF3B7C] hover:bg-[#e0346c] py-2 px-3.5 rounded-full transition-all active:scale-95 cursor-pointer shadow-sm shadow-[#FF3B7C]/25"
+          title={isRTL ? 'عرض على الخريطة' : 'View on Map'}
+        >
+          <MapPin className="w-3.5 h-3.5 text-white" />
+          <span>{isRTL ? 'عرض الخريطة' : 'View on Map'}</span>
+        </button>
+
+        <span className="hidden sm:inline-block text-[10px] font-black font-mono text-slate-400 dark:text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800 px-3 py-1.5 rounded-full border border-slate-100 dark:border-slate-700">
+          {isRTL ? 'تفاصيل الكويست' : 'Quest details'}
+        </span>
+      </div>
+      </div>
 
  {/* Standalone card rendering without dialog backdrop */}
  <div className="w-full relative">

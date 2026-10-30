@@ -29,6 +29,13 @@ import Navbar from './components/Navbar';
 import QuestLogo from './components/QuestLogo';
 import HomeView from './components/HomeView';
 import type { NotificationDoc } from './components/NotificationScreen';
+import { 
+  checkNearbyQuestMatch, 
+  checkQuestDeadlineStatus, 
+  formatNearbyAlertText, 
+  formatStatusTransitionText 
+} from './utils/notificationEngine';
+import type { QuestCategory } from './types';
 import UnifiedQuestCard from './components/UnifiedQuestCard';
 
 // Resilient Lazy Loader with Automatic Retry to prevent "Failed to fetch dynamically imported module" errors
@@ -85,8 +92,8 @@ import { serverShield } from './utils/performanceEngine';
 import { calculateBookingFee } from './utils/fee';
 import AuthScreen from './components/AuthScreen';
 import { getDeviceLanguage } from './utils/language';
-import { lockBodyScroll } from './utils/scrollLock';
-import { Lock, CheckCircle2, Star, X, Coins, ShieldX, MessageSquare, Users } from 'lucide-react';
+import { lockBodyScroll, forceUnlockAllScroll } from './utils/scrollLock';
+import { Lock, CheckCircle2, Star, X, Coins, ShieldX, MessageSquare, Users, Sparkles, ThumbsUp, ShieldCheck, ZoomIn } from 'lucide-react';
 import { isQuestExpired, isContractTimedOut, PENDING_QUEST_TIMEOUT, ACTIVE_CONTRACT_TIMEOUT } from './utils/questExpiry';
 
 const generateShortId = () => {
@@ -163,6 +170,17 @@ export default function App() {
  const notifiedMsgIdsRef = React.useRef<Set<string>>(new Set());
  const seededHunterRef = React.useRef<boolean>(false);
  const seededGodfatherRef = React.useRef<boolean>(false);
+	const prevQuestStatusMapRef = React.useRef<Map<string, string>>(new Map());
+	const notifiedDeadlinesRef = React.useRef<Set<string>>(new Set());
+
+	useEffect(() => {
+		try {
+			const stored = localStorage.getItem('notified_deadlines_v1');
+			if (stored) {
+				JSON.parse(stored).forEach((k: string) => notifiedDeadlinesRef.current.add(k));
+			}
+		} catch (e) {}
+	}, []);
  
  // State variables for GPS Permission Guardrails
  const [isGpsEnabled, setIsGpsEnabled] = useState<boolean>(true);
@@ -446,7 +464,74 @@ export default function App() {
  }
  };
 
- const navigateToQuestDetail = (questId: string) => {
+ // Core Functional Notification Hub helper (supports real-time alerts, categories, rewards & deadlines)
+	const addNotification = async (
+		userId: string,
+		text: string,
+		questId?: string,
+		type: string = 'info',
+		extra?: { category?: QuestCategory; cashReward?: number; metadata?: Record<string, any> }
+	) => {
+		const notifTitle = userProfile?.language === 'ar' ? 'إشعار جديد ' : 'New Notification ';
+
+		// 1. Dispatch push notification to recipient's mobile device via FCM
+		sendPushNotification(userId, notifTitle, text, { questId: questId || "", type });
+
+		// 2. If the notification recipient is the current active user, trigger local phone system notification immediately
+		if (userProfile && userId === userProfile.id) {
+			triggerPhoneDeviceNotification(notifTitle, text, { questId, type });
+		}
+
+		if (auth.currentUser) {
+			try {
+				const notifRef = doc(collection(db, 'notifications'));
+				const newNotif: any = {
+					id: notifRef.id,
+					userId,
+					text,
+					questId: questId || "",
+					createdAt: new Date().toISOString(),
+					read: false,
+					type
+				};
+				if (extra?.category) newNotif.category = extra.category;
+				if (extra?.cashReward !== undefined) newNotif.cashReward = extra.cashReward;
+				if (extra?.metadata) newNotif.metadata = extra.metadata;
+
+				await setDoc(notifRef, newNotif);
+			} catch (e) {
+				console.error("Failed creating cloud notification:", e);
+			}
+		} else {
+			try {
+				const key = 'local_notifications';
+				const stored = localStorage.getItem(key);
+				let list: NotificationDoc[] = [];
+				if (stored) {
+					list = JSON.parse(stored);
+				}
+				const newNotif: NotificationDoc = {
+					id: `local-notif-${Date.now()}`,
+					userId,
+					text,
+					questId: questId || "",
+					createdAt: new Date().toISOString(),
+					read: false,
+					type,
+					category: extra?.category,
+					cashReward: extra?.cashReward,
+					metadata: extra?.metadata
+				};
+				list.unshift(newNotif);
+				localStorage.setItem(key, JSON.stringify(list));
+				setNotifications(list);
+			} catch (err) {
+				console.error("Failed creating local notification:", err);
+			}
+		}
+	};
+
+	const navigateToQuestDetail = (questId: string) => {
  setNavigationHistory(prev => [
  ...prev.slice(-15),
  { view: currentView, questDetailId: globalQuestDetailId, selectedPublicProfileId }
@@ -475,6 +560,7 @@ export default function App() {
  { view: currentView, questDetailId: globalQuestDetailId, selectedPublicProfileId }
  ]);
  }
+ forceUnlockAllScroll();
  setCurrentView(view);
  setSelectedPublicProfileId(null);
  setGlobalQuestDetailId(null);
@@ -832,6 +918,48 @@ export default function App() {
   const intervalId = setInterval(runCleanup, 30000);
   return () => clearInterval(intervalId);
  }, [quests, userProfile]);
+
+ // Automated Real-time Quest Deadline Reminders Loop (checks every 60s)
+ useEffect(() => {
+   if (!userProfile?.id || !quests || quests.length === 0) return;
+   if (userProfile.enableNotifications === false || userProfile.notifyOnDeadlines === false) return;
+
+   const checkAllDeadlines = () => {
+     quests.forEach((q) => {
+       const reminder = checkQuestDeadlineStatus(q, userProfile);
+       if (reminder && !notifiedDeadlinesRef.current.has(reminder.dedupKey)) {
+         notifiedDeadlinesRef.current.add(reminder.dedupKey);
+         try {
+           localStorage.setItem('notified_deadlines_v1', JSON.stringify(Array.from(notifiedDeadlinesRef.current)));
+         } catch (e) {}
+
+         triggerPhoneDeviceNotification(reminder.title, reminder.body, {
+           questId: q.id,
+           type: 'deadline_reminder'
+         });
+
+         import('./utils/audio').then(m => {
+           m.playNotificationSound(userProfile?.audioEffectsEnabled !== false);
+         }).catch(() => {});
+
+         addNotification(
+           userProfile.id,
+           reminder.body,
+           q.id,
+           'deadline_reminder',
+           { category: q.category, cashReward: q.cashReward, metadata: { stage: reminder.stage, minutesLeft: reminder.minutesLeft } }
+         );
+       }
+     });
+   };
+
+   // Immediate check on load / changes
+   checkAllDeadlines();
+
+   // Periodic 60-second timer
+   const deadlineInterval = setInterval(checkAllDeadlines, 60000);
+   return () => clearInterval(deadlineInterval);
+ }, [quests, userProfile?.id, userProfile?.enableNotifications, userProfile?.notifyOnDeadlines, userProfile?.language]);
 
   // Auto-repair & reconcile user availability and active quest flags against actual active quests
   useEffect(() => {
@@ -1550,61 +1678,6 @@ export default function App() {
  };
  }, []);
 
- // Core Functional Notification Hub helper
- const addNotification = async (userId: string, text: string, questId?: string, type: string = 'info') => {
- const notifTitle = userProfile?.language === 'ar' ? 'إشعار جديد ' : 'New Notification ';
-
- // 1. Dispatch push notification to recipient's mobile device via FCM
- sendPushNotification(userId, notifTitle, text, { questId: questId || "", type });
-
- // 2. If the notification recipient is the current active user, trigger local phone system notification immediately
- if (userProfile && userId === userProfile.id) {
- triggerPhoneDeviceNotification(notifTitle, text, { questId, type });
- }
-
- if (auth.currentUser) {
- try {
- const notifRef = doc(collection(db, 'notifications'));
- const newNotif = {
- id: notifRef.id,
- userId,
- text,
- questId: questId || "",
- createdAt: new Date().toISOString(),
- read: false,
- type
- };
- await setDoc(notifRef, newNotif);
- } catch (e) {
- console.error("Failed creating cloud notification:", e);
- }
- } else {
- // Offline fallback
- try {
- const key = 'local_notifications';
- const stored = localStorage.getItem(key);
- let list: NotificationDoc[] = [];
- if (stored) {
- list = JSON.parse(stored);
- }
- const newNotif: NotificationDoc = {
- id: `local-notif-${Date.now()}`,
- userId,
- text,
- questId: questId || "",
- createdAt: new Date().toISOString(),
- read: false,
- type
- };
- list.unshift(newNotif);
- localStorage.setItem(key, JSON.stringify(list));
- setNotifications(list);
- } catch (err) {
- console.error("Failed creating local notification:", err);
- }
- }
- };
-
  // 2. Synchronize states with either cloud database (Firestore) or LocalStorage
  const syncQuests = (newQuests: Quest[], deletedId?: string) => {
  const sanitizedQuests = newQuests.filter(q => !isQuestExpired(q));
@@ -2121,17 +2194,18 @@ export default function App() {
   <div className={`fixed -inset-2 bg-white dark:bg-[#0B132B] flex flex-col items-center justify-center font-sans px-6 select-none overflow-hidden z-[99999] transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1) ${
     splashFadeOut ? 'opacity-0 scale-105 pointer-events-none' : 'opacity-100 scale-100'
   }`}>
-    {/* Subtle Ambient Glow with delayed bloom animation to seamlessly merge with white native splash */}
+    {/* Subtle Ambient Glow with delayed bloom animation to seamlessly merge with native splash screen */}
     <motion.div
-      initial={{ opacity: 0, scale: 0.6 }}
+      initial={{ opacity: 0, scale: 0.65 }}
       animate={{ 
-        opacity: [0, 0.9, 0.75],
-        scale: [0.6, 1.08, 1.0]
+        opacity: [0, 0, 0.85, 0.75],
+        scale: [0.65, 0.65, 1.05, 1.0]
       }}
       transition={{
-        delay: 0.38,
-        duration: 0.95,
-        ease: [0.16, 1, 0.3, 1]
+        delay: 0.35,
+        duration: 1.1,
+        ease: [0.16, 1, 0.3, 1],
+        times: [0, 0.25, 0.75, 1]
       }}
       className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[28rem] h-[28rem] rounded-full bg-gradient-to-tr from-[#FC0D82]/20 via-[#FC0D82]/12 to-transparent dark:from-[#FC0D82]/15 dark:via-[#FC0D82]/8 dark:to-transparent blur-[110px] pointer-events-none"
     />
@@ -4108,159 +4182,65 @@ export default function App() {
  {/* Instant Completion-before-Evaluation Block Overlay */}
  {pendingVerificationQuests.length > 0 && (
  <div 
- className="fixed inset-0 bg-slate-900/98 backdrop-blur-md z-[99999] flex flex-col items-center justify-start overflow-y-auto p-4 md:p-8"
+ className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 overflow-y-auto"
  style={{ direction: userProfile?.language === 'ar' ? 'rtl' : 'ltr' }}
  >
- <div className="max-w-xl w-full bg-white dark:bg-slate-800 rounded-3xl p-6 sm:p-8 border border-gray-200/50 dark:border-slate-700 shadow-2xl space-y-6 text-center my-auto">
- 
- {/* Warning Lock Header */}
- <div className="space-y-3">
- <div className="w-16 h-16 bg-rose-50 dark:bg-rose-950/40 text-[#FF3B7C] rounded-full flex items-center justify-center mx-auto mb-2 animate-bounce">
- <Lock className="w-8 h-8" />
- </div>
- 
- <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-slate-100 leading-snug">
- {userProfile?.language === 'ar' 
- ? ' يجب دفع المكافأة للاستمرار!' 
- : userProfile?.language === 'fr'
- ? ' Libérez le paiement pour continuer !'
- : ' Release Payout to Continue!'}
- </h2>
- 
- <p className="text-xs text-slate-500 dark:text-slate-400 font-bold leading-relaxed">
- {userProfile?.language === 'ar' 
- ? 'يرجى مراجعة إثبات تسليم العمل أدناه وتقييم المساعد لتحرير مستحقاته وإلغاء القفل فوراً.' 
- : userProfile?.language === 'fr'
- ? 'Veuillez vérifier la preuve de travail ci-dessous, évaluer l’assistant pour libérer ses fonds et déverrouiller l’application.'
- : 'Please check the completion proof below, rate the helper to release funds and unlock the application.'}
- </p>
- </div>
-
- {/* Quests Pending List */}
- <div className="space-y-4">
+ <div className="max-w-sm w-full bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-2xl text-center space-y-4 my-auto">
  {pendingVerificationQuests.map((quest) => {
  const questRating = blockedQuestRatings[quest.id] || 5;
  const questComment = blockedQuestComments[quest.id] || '';
- 
+ const helperName = quest.helperName || (userProfile?.language === 'ar' ? 'العامل' : 'Worker');
+
  return (
- <div 
- key={quest.id}
- className="p-5 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-slate-150/80 dark:border-slate-700 text-start space-y-4"
- >
- {/* Quest Title & Reward */}
- <div className="flex justify-between items-start gap-2">
- <div className="space-y-0.5">
- <span className="text-[9px] font-black px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400">
- {quest.category}
- </span>
- <h3 className="text-sm font-black text-[#1F2A44] dark:text-slate-100 leading-snug">
- {quest.title}
+ <div key={quest.id} className="space-y-4 text-center">
+ {/* 1. اسم العامل فقط */}
+ <h3 className="text-base font-black text-slate-900 dark:text-white">
+ {helperName}
  </h3>
- </div>
- <div className="text-right shrink-0">
- <span className="text-xs font-black text-sky-600 dark:text-sky-400 block">
- {quest.cashReward} DA
- </span>
- <span className="text-[9px] text-gray-400 font-bold block">
- {userProfile?.language === 'ar' ? 'المكافأة النقدية' : 'Cash Reward'}
- </span>
- </div>
- </div>
 
- {/* Helper Info Section */}
- <div className="flex items-center gap-3 bg-white dark:bg-slate-800 p-3 rounded-xl border border-gray-100 dark:border-slate-700/80">
- <img 
- src={quest.creatorAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150'} 
- alt={quest.helperName || 'Helper'} 
- className="w-10 h-10 rounded-full object-cover border border-amber-300" 
- />
- <div className="flex-1">
- <h4 className="text-xs font-black text-slate-800 dark:text-slate-100 leading-none mb-1">
- {quest.helperName || (userProfile?.language === 'ar' ? 'المساعد المعتمد' : 'Field Helper')}
- </h4>
- <p className="text-[10px] text-gray-400 font-bold leading-none">
- {userProfile?.language === 'ar' ? 'منفذ الكويست الميداني' : 'Field Quest Performer'}
- </p>
- </div>
- <div className="text-right">
- <span className="text-xs text-amber-500 font-black">
- 5.0
- </span>
- </div>
- </div>
-
- {/* Completion Proof Photo Preview with click-to-zoom */}
- {quest.proofImageUrl && (
- <div className="space-y-1.5">
- <span className="text-[10px] font-black text-[#FF3B7C] uppercase tracking-wider block">
- {userProfile?.language === 'ar' ? 'إثبات الإنجاز المرفوع بواسطة المساعد:' : 'Proof of Completion Uploaded:'}
- </span>
- <div 
- onClick={() => setLightboxBlockedImageUrl(quest.proofImageUrl || null)}
- className="group relative cursor-pointer overflow-hidden rounded-xl border border-rose-100 dark:border-rose-950/40 bg-black/5 flex items-center justify-center max-h-48 aspect-video"
- >
- <img 
- src={quest.proofImageUrl} 
- alt="Proof image" 
- className="w-full h-full object-cover group-hover:scale-102 transition duration-300"
- referrerPolicy="no-referrer"
- />
- <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition duration-200 text-white font-extrabold text-xs">
- {userProfile?.language === 'ar' ? 'عرض مكبّر لإثبات التسليم' : 'Click to Zoom Proof'}
- </div>
- </div>
- </div>
- )}
-
- {/* Star Rating Evaluator */}
- <div className="space-y-1.5 text-center bg-white dark:bg-slate-800 p-3 rounded-xl border border-gray-100 dark:border-slate-700/80">
- <span className="text-[10px] font-black text-[#1F2A44] dark:text-slate-300 block">
- {userProfile?.language === 'ar' ? 'قيم أداء المساعد واكتب كلمة تقييم:' : 'Rate helper performance & write a comment:'}
- </span>
+ {/* 2. شريط النجوم فقط */}
  <div className="flex items-center justify-center gap-1.5 py-1">
  {[1, 2, 3, 4, 5].map((star) => (
  <button
  key={star}
  type="button"
  onClick={() => setBlockedQuestRatings(prev => ({ ...prev, [quest.id]: star }))}
- className="transition-transform active:scale-90 hover:scale-110 cursor-pointer p-0.5"
+ className="p-1 cursor-pointer transition-transform active:scale-90 hover:scale-110"
  >
  <Star 
- className={`w-7 h-7 ${
+ className={`w-8 h-8 transition-colors ${
  star <= questRating 
- ? 'text-amber-400 fill-amber-400 drop-shadow-xs' 
- : 'text-gray-200 dark:text-gray-700'
+ ? 'text-amber-400 fill-amber-400' 
+ : 'text-slate-200 dark:text-slate-700'
  }`} 
  />
  </button>
  ))}
  </div>
+
+ {/* 3. حقل إدخال الملاحظات فقط */}
  <textarea
  value={questComment}
  onChange={(e) => setBlockedQuestComments(prev => ({ ...prev, [quest.id]: e.target.value }))}
- placeholder={userProfile?.language === 'ar' ? 'اكتب كلمة شكر أو تعليقاً... (مثال: بطل أمين، عمل سريع ومتقن!)' : 'Write feedback... (e.g. Awesome speed & great results!)'}
- className="w-full p-2.5 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-150 dark:border-slate-700 rounded-lg font-bold focus:outline-none text-slate-800 dark:text-slate-100"
- rows={2}
+ placeholder={userProfile?.language === 'ar' ? 'الملاحظات...' : 'Notes...'}
+ rows={3}
+ className="w-full p-3 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold focus:outline-none focus:border-amber-400 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 resize-none"
  />
- </div>
 
- {/* Submit Payout release Button */}
+ {/* 4. زر إرسال فقط */}
  <button
+ type="button"
  onClick={() => {
  handleConfirmPayout(quest.id, questRating, questComment);
- showToast(userProfile?.language === 'ar' ? ' تم الدفع للمساعد بنجاح وتقييمه، تم إلغاء القفل بنجاح!' : ' Payout confirmed & helper reviewed! App unblocked successfully.');
+ showToast(userProfile?.language === 'ar' ? 'تم الإرسال بنجاح' : 'Submitted successfully');
  }}
- className="w-full bg-[#FF3B7C] hover:bg-[#FF3B7C]/90 text-white font-extrabold text-xs py-3.5 rounded-xl transition duration-200 flex items-center justify-center gap-2 shadow-lg shadow-[#FF3B7C]/15 cursor-pointer"
+ className="w-full py-3 bg-[#1F2A44] hover:bg-[#152037] text-white dark:bg-amber-400 dark:hover:bg-amber-500 dark:text-slate-950 font-black rounded-2xl text-xs shadow-md transition-all cursor-pointer active:scale-98"
  >
- <CheckCircle2 className="w-4.5 h-4.5 text-white" />
- <span>
- {userProfile?.language === 'ar' ? 'تأكيد إتمام العمل وتحرير الأموال للمساعد ' : 'Confirm Completion & Release Cash '}
- </span>
+ {userProfile?.language === 'ar' ? 'إرسال' : 'Submit'}
  </button>
  </div>
  );
  })}
- </div>
  </div>
  </div>
  )}
@@ -4408,9 +4388,10 @@ export default function App() {
  {selectedPublicProfileId && (
     <div 
       id="public-profile-backdrop"
-      className="fixed inset-0 bg-[#F8FAFC] dark:bg-[#0B1120] z-[9999] overflow-y-auto w-full h-full flex flex-col text-slate-900 dark:text-slate-100"
+      data-allow-scroll="true"
+      className="fixed inset-0 bg-[#F8FAFC] dark:bg-[#0B1120] z-[9999] overflow-y-auto w-full h-full flex flex-col text-slate-900 dark:text-slate-100 modal-scroll-area touch-pan-y overscroll-contain"
     >
-      <div className="w-full min-h-screen flex-1 flex flex-col">
+      <div className="w-full min-h-screen flex-1 flex flex-col modal-scroll-area touch-pan-y" data-allow-scroll="true">
         <React.Suspense fallback={<ViewLoadingFallback />}>
           <PublicProfileView 
            userId={selectedPublicProfileId}
@@ -4797,7 +4778,7 @@ export default function App() {
  />
  )}
 
- 
+
  </>
  )}
   </React.Suspense>
@@ -5014,8 +4995,8 @@ export default function App() {
  />
  )}
 
- {/* Global Smart Floating Widget for Active Reserved Quests */}
- {authenticatedUser && userProfile && !showTermsConsentModal && !showOnboardingModal && (
+ {/* Global Smart Floating Widget for Active Reserved Quests (Hidden on my-quests and quest detail to avoid covering action buttons) */}
+ {authenticatedUser && userProfile && !showTermsConsentModal && !showOnboardingModal && currentView !== 'my-quests' && !globalQuestDetailId && (
  <ActiveQuestFloatingWidget
  userProfile={userProfile}
  quests={quests}

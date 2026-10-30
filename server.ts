@@ -1340,6 +1340,7 @@ Provide your output in strict JSON format. Do not combine or nest it in any mark
             }
             continue;
           }
+          }
 
         // 3. Active / Booked contracts older than 24 hours -> transition to cancelled_by_timeout
         if (status === "active" || status === "booked") {

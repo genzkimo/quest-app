@@ -1340,7 +1340,8 @@ Provide your output in strict JSON format. Do not combine or nest it in any mark
             }
             continue;
           }
-          }
+
+          
 
         // 3. Active / Booked contracts older than 24 hours -> transition to cancelled_by_timeout
         if (status === "active" || status === "booked") {
@@ -1375,6 +1376,7 @@ Provide your output in strict JSON format. Do not combine or nest it in any mark
             }
           }
         }
+        } 
 
       if (deletedCount > 0 || timedOutCount > 0) {
         console.log(`[Auto-Cleanup] Completed: ${deletedCount} expired quests deleted, ${timedOutCount} contracts timed out.`);

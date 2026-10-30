@@ -1265,7 +1265,6 @@ Provide your output in strict JSON format. Do not combine or nest it in any mark
 
         // 1. Open / Pending quests older than 24 hours -> Permanently delete from Firestore!
         if (status === "open" || status === "pending") {
-          // Only delete if createdAt is a genuine historical timestamp older than 24 hours
           if (createdAt && !isNaN(createdAt) && (now - createdAt) >= PENDING_QUEST_TIMEOUT) {
             console.log(`[Auto-Cleanup] Deleting expired open quest ${d.id} (created at ${data.createdAt})`);
             try {
@@ -1286,7 +1285,7 @@ Provide your output in strict JSON format. Do not combine or nest it in any mark
                 console.error(`[Auto-Cleanup] Could not expire quest ${d.id}:`, updErr);
               }
             }
-            // If creator exists, adjust creator's quest count
+
             if (data.creatorId) {
               try {
                 const userRef = doc(db, "users", data.creatorId);
@@ -1340,8 +1339,7 @@ Provide your output in strict JSON format. Do not combine or nest it in any mark
             }
             continue;
           }
-
-          
+        }
 
         // 3. Active / Booked contracts older than 24 hours -> transition to cancelled_by_timeout
         if (status === "active" || status === "booked") {
@@ -1357,11 +1355,11 @@ Provide your output in strict JSON format. Do not combine or nest it in any mark
               });
               timedOutCount++;
 
-            const assignedRunners = Array.isArray(data.assignedRunnerIds) && data.assignedRunnerIds.length > 0
-              ? data.assignedRunnerIds
-              : [data.helperId, data.assignedRunnerId].filter(Boolean);
+              const assignedRunners = Array.isArray(data.assignedRunnerIds) && data.assignedRunnerIds.length > 0
+                ? data.assignedRunnerIds
+                : [data.helperId, data.assignedRunnerId].filter(Boolean);
 
-            for (const rId of assignedRunners) {
+              for (const rId of assignedRunners) {
                 try {
                   await updateDoc(doc(db, "users", rId), { 
                     isAvailable: true,
@@ -1376,7 +1374,7 @@ Provide your output in strict JSON format. Do not combine or nest it in any mark
             }
           }
         }
-        } 
+      }
 
       if (deletedCount > 0 || timedOutCount > 0) {
         console.log(`[Auto-Cleanup] Completed: ${deletedCount} expired quests deleted, ${timedOutCount} contracts timed out.`);
@@ -1390,6 +1388,7 @@ Provide your output in strict JSON format. Do not combine or nest it in any mark
       }
       return { error: String(err) };
     }
+  }
   }
 
   // Trigger cleanup route for clients & admin

@@ -1389,7 +1389,7 @@ Provide your output in strict JSON format. Do not combine or nest it in any mark
       return { error: String(err) };
     }
   }
-  }
+  
 
   // Trigger cleanup route for clients & admin
   app.all("/api/cleanup-expired-quests", async (req, res) => {

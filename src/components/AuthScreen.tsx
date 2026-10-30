@@ -51,9 +51,11 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute('content', '#FC0D82');
   }, []);
+
   const [mode, setMode] = useState<AuthMode>('onboarding');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [authNotice, setAuthNotice] = useState<string | null>(null);
 
   // Form states
@@ -82,32 +84,31 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
   const isFr = lang === 'fr';
 
   const handleGoogleSignIn = async () => {
-  if (loading || isGoogleLoading) return;
- setIsGoogleLoading(true);
+    if (loading || isGoogleLoading) return;
+    setIsGoogleLoading(true);
+    setLoading(true);
 
-  setLoading(true);
+    try {
+      await AuthService.signInWithGoogle();
 
-  try {
-    await AuthService.signInWithGoogle();
+      showToast(
+        isAr
+          ? '🎉 تم تسجيل الدخول بنجاح عبر Google!'
+          : '🎉 Logged in with Google successfully!'
+      );
+    } catch (e: any) {
+      console.error('Google Sign In Error', e);
 
-    showToast(
-      isAr
-        ? '🎉 تم تسجيل الدخول بنجاح عبر Google!'
-        : '🎉 Logged in with Google successfully!'
-    );
-  } catch (e: any) {
-    console.error('Google Sign In Error', e);
-
-    showToast(
-      isAr
-        ? '⚠️ فشل تسجيل الدخول: ' + e.message
-        : '⚠️ Login failed: ' + e.message
-    );
-  } finally {
-    setIsGoogleLoading(false);
-    setLoading(false);
-  }
-};
+      showToast(
+        isAr
+          ? '⚠️ فشل تسجيل الدخول: ' + e.message
+          : '⚠️ Login failed: ' + e.message
+      );
+    } finally {
+      setIsGoogleLoading(false);
+      setLoading(false);
+    }
+  };
 
   const handleCreateAccount = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -184,7 +185,6 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
     } catch (err: any) {
       if (err.code === 'auth/email-already-in-use') {
         showToast(isAr ? 'ℹ️ هذا الحساب موجود بالفعل! جاري تحويلك لصفحة تسجيل الدخول.' : 'ℹ️ This account already exists! Redirecting to login.');
-        // Autofill email to login and flip screen
         setMode('login');
       } else if (err.code === 'auth/operation-not-allowed') {
         setAuthNotice('operation-not-allowed');
@@ -316,8 +316,7 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
   };
 
   return (
-     <div className="min-h-screen bg-[#FC0D82] text-white flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans select-none [color-scheme:light]">
-      {/* Glow Spotlights */}
+    <div className="min-h-screen bg-[#FC0D82] text-white flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans select-none [color-scheme:light]">
       <div className="absolute top-[-10%] left-[-10%] w-96 h-96 rounded-full bg-white/10 blur-3xl animate-pulse"></div>
       <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 rounded-full bg-slate-900/40 blur-3xl animate-pulse" style={{ animationDelay: '2s' }}></div>
 
@@ -332,7 +331,6 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
               transition={{ duration: 0.3 }}
               className="text-center space-y-8 py-8"
             >
-              {/* Logo Section */}
               <div className="flex flex-col items-center justify-center space-y-4">
                 <div className="p-5 bg-white/10 rounded-[40px] shadow-2xl backdrop-blur-md transform hover:scale-105 transition duration-300">
                   <QuestLogo size="xl" textColor="text-white" iconOnly={true} />
@@ -347,92 +345,89 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
                 </p>
               </div>
 
-              {/* Action Buttons */}
               <div className="space-y-4 pt-6">
                 {isGoogleLoading ? (
- <motion.div
- initial={{ opacity: 0, scale: 0.95 }}
- animate={{ opacity: 1, scale: 1 }}
- exit={{ opacity: 0, scale: 0.95 }}
- transition={{ duration: 0.3 }}
- className="py-8 px-6 bg-white/15 backdrop-blur-xl rounded-3xl border border-white/25 shadow-2xl flex flex-col items-center justify-center space-y-4 my-2 select-none"
- >
- <div className="relative flex items-center justify-center">
- {/* Outer smooth spinner */}
- <div className="w-16 h-16 rounded-full border-4 border-white/20 border-t-white animate-spin"></div>
- {/* Google emblem centered */}
- <div className="absolute inset-0 flex items-center justify-center">
- <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-md">
- <svg className="w-5 h-5" viewBox="0 0 24 24">
- <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
- <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
- <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22c-.62-.57-1.02-1.34-1.21-2.18v-.45z" fill="#FBBC05" />
- <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
- </svg>
- </div>
- </div>
- </div>
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    transition={{ duration: 0.3 }}
+                    className="py-8 px-6 bg-white/15 backdrop-blur-xl rounded-3xl border border-white/25 shadow-2xl flex flex-col items-center justify-center space-y-4 my-2 select-none"
+                  >
+                    <div className="relative flex items-center justify-center">
+                      <div className="w-16 h-16 rounded-full border-4 border-white/20 border-t-white animate-spin"></div>
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-md">
+                          <svg className="w-5 h-5" viewBox="0 0 24 24">
+                            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+                            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+                            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22c-.62-.57-1.02-1.34-1.21-2.18v-.45z" fill="#FBBC05" />
+                            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+                          </svg>
+                        </div>
+                      </div>
+                    </div>
 
- <div className="space-y-1.5 text-center">
- <h3 className="text-base font-black text-white">
- {isAr ? 'جاري تسجيل الدخول بحساب Google...' : 'Signing in with Google...'}
- </h3>
- <p className="text-xs text-white/85 font-medium leading-relaxed max-w-xs mx-auto">
- {isAr 
- ? 'يرجى الانتظار لحظات، العملية قيد الإجراء بأمان في الخلفية...' 
- : 'Please wait a moment, authenticating securely in the background...'}
- </p>
- </div>
+                    <div className="space-y-1.5 text-center">
+                      <h3 className="text-base font-black text-white">
+                        {isAr ? 'جاري تسجيل الدخول بحساب Google...' : 'Signing in with Google...'}
+                      </h3>
+                      <p className="text-xs text-white/85 font-medium leading-relaxed max-w-xs mx-auto">
+                        {isAr 
+                          ? 'يرجى الانتظار لحظات، العملية قيد الإجراء بأمان في الخلفية...' 
+                          : 'Please wait a moment, authenticating securely in the background...'}
+                      </p>
+                    </div>
 
- <div className="flex items-center gap-1.5 pt-1">
- <span className="w-2 h-2 rounded-full bg-white animate-bounce" style={{ animationDelay: '0ms' }}></span>
- <span className="w-2 h-2 rounded-full bg-white animate-bounce" style={{ animationDelay: '150ms' }}></span>
- <span className="w-2 h-2 rounded-full bg-white animate-bounce" style={{ animationDelay: '300ms' }}></span>
- </div>
- </motion.div>
- ) : (
- <>
-                <button
-                  type="button"
-                  onClick={() => setMode('login')}
-                  className="w-full py-4 bg-white text-[#FC0D82] text-sm font-black rounded-3xl hover:bg-slate-100 transition duration-200 shadow-xl cursor-pointer flex items-center justify-center gap-2"
-                >
-                  <span>{isAr ? 'تسجيل الدخول' : 'Log In'}</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
+                    <div className="flex items-center gap-1.5 pt-1">
+                      <span className="w-2 h-2 rounded-full bg-white animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                      <span className="w-2 h-2 rounded-full bg-white animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                      <span className="w-2 h-2 rounded-full bg-white animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                    </div>
+                  </motion.div>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setMode('login')}
+                      className="w-full py-4 bg-white text-[#FC0D82] text-sm font-black rounded-3xl hover:bg-slate-100 transition duration-200 shadow-xl cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <span>{isAr ? 'تسجيل الدخول' : 'Log In'}</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
 
-                <button
-                  type="button"
-                  onClick={() => setMode('register')}
-                  className="w-full py-4 bg-transparent border-2 border-white/80 text-white text-sm font-black rounded-3xl hover:bg-white hover:text-[#FC0D82] transition duration-200 cursor-pointer flex items-center justify-center gap-2"
-                >
-                  <span>{isAr ? 'إنشاء حساب جديد' : 'Create New Account'}</span>
-                </button>
+                    <button
+                      type="button"
+                      onClick={() => setMode('register')}
+                      className="w-full py-4 bg-transparent border-2 border-white/80 text-white text-sm font-black rounded-3xl hover:bg-white hover:text-[#FC0D82] transition duration-200 cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <span>{isAr ? 'إنشاء حساب جديد' : 'Create New Account'}</span>
+                    </button>
 
-                <div className="flex items-center justify-center gap-3 py-1">
-                  <div className="h-[1px] bg-white/20 flex-1"></div>
-                  <span className="text-[10px] uppercase tracking-wider font-extrabold opacity-60">
-                    {isAr ? 'أو' : 'or'}
-                  </span>
-                  <div className="h-[1px] bg-white/20 flex-1"></div>
-                </div>
+                    <div className="flex items-center justify-center gap-3 py-1">
+                      <div className="h-[1px] bg-white/20 flex-1"></div>
+                      <span className="text-[10px] uppercase tracking-wider font-extrabold opacity-60">
+                        {isAr ? 'أو' : 'or'}
+                      </span>
+                      <div className="h-[1px] bg-white/20 flex-1"></div>
+                    </div>
 
-                <button
-                  type="button"
-                  disabled={loading}
-                  onClick={handleGoogleSignIn}
-                  className="w-full py-3.5 bg-white text-[#FC0D82] text-sm font-black rounded-3xl hover:bg-slate-50 transition duration-200 shadow-xl cursor-pointer flex items-center justify-center gap-2.5 border border-white"
-                >
-                  <svg className="w-4 h-4" viewBox="0 0 24 24">
-                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
-                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
-                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22c-.62-.57-1.02-1.34-1.21-2.18v-.45z" fill="#FBBC05" />
-                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
-                  </svg>
-                  <span>{isAr ? 'الدخول بحساب Google' : 'Continue with Google'}</span>
-                </button>
-                 </>
- )}
+                    <button
+                      type="button"
+                      disabled={loading}
+                      onClick={handleGoogleSignIn}
+                      className="w-full py-3.5 bg-white text-[#FC0D82] text-sm font-black rounded-3xl hover:bg-slate-50 transition duration-200 shadow-xl cursor-pointer flex items-center justify-center gap-2.5 border border-white"
+                    >
+                      <svg className="w-4 h-4" viewBox="0 0 24 24">
+                        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+                        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+                        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22c-.62-.57-1.02-1.34-1.21-2.18v-.45z" fill="#FBBC05" />
+                        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+                      </svg>
+                      <span>{isAr ? 'الدخول بحساب Google' : 'Continue with Google'}</span>
+                    </button>
+                  </>
+                )}
 
                 <p className="text-[10px] text-white/90 font-bold text-center mt-3 leading-snug px-2">
                   {isAr ? (
@@ -552,7 +547,7 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
                     </div>
                   </div>
                 )}
-                {/* Email Input */}
+                
                 <div className="space-y-1.5 text-right">
                   <label className="text-[10px] text-slate-400 font-black tracking-wider uppercase block">
                     {isAr ? 'البريد الإلكتروني 📧' : 'Email Address 📧'}
@@ -570,7 +565,6 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
                   </div>
                 </div>
 
-                {/* Password Input */}
                 <div className="space-y-1.5 text-right">
                   <div className="flex justify-between items-center">
                     <button
@@ -604,7 +598,6 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
                   </div>
                 </div>
 
-                {/* Submit button */}
                 <button
                   type="submit"
                   disabled={loading}
@@ -620,7 +613,6 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
                   )}
                 </button>
 
-                {/* Google Sign-In Option */}
                 <div className="flex items-center justify-center gap-2 py-1">
                   <div className="h-[1px] bg-slate-100 flex-1"></div>
                   <span className="text-[10px] uppercase font-bold text-slate-400">
@@ -628,38 +620,37 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
                   </span>
                   <div className="h-[1px] bg-slate-100 flex-1"></div>
                 </div>
-                {isGoogleLoading ? (
- <div className="w-full py-3.5 px-4 bg-slate-50 border border-slate-200/80 rounded-2xl flex flex-col items-center justify-center gap-1.5 animate-in fade-in select-none">
- <div className="flex items-center gap-2">
- <div className="w-4 h-4 border-2 border-[#FC0D82] border-t-transparent rounded-full animate-spin"></div>
- <span className="text-xs font-black text-slate-800">
- {isAr ? 'جاري الاتصال بحساب Google بالخلفية...' : 'Connecting to Google in background...'}
- </span>
- </div>
- <p className="text-[10px] text-slate-400 font-medium">
- {isAr ? 'يرجى الانتظار لحظات...' : 'Please wait a moment...'}
- </p>
- </div>
- ) : (
 
-                <button
-                  type="button"
-                  onClick={handleGoogleSignIn}
-                  disabled={loading}
-                  className="w-full py-3 bg-white text-slate-700 text-xs font-black rounded-2xl hover:bg-slate-50 transition duration-200 shadow-md cursor-pointer flex items-center justify-center gap-2 border border-slate-200"
-                >
-                  <svg className="w-4 h-4 mr-1" viewBox="0 0 24 24">
-                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
-                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
-                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22c-.62-.57-1.02-1.34-1.21-2.18v-.45z" fill="#FBBC05" />
-                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
-                  </svg>
-                  <span>{isAr ? 'الدخول بواسطة حساب Google' : 'Sign In with Google'}</span>
-                </button>
-                 )}
+                {isGoogleLoading ? (
+                  <div className="w-full py-3.5 px-4 bg-slate-50 border border-slate-200/80 rounded-2xl flex flex-col items-center justify-center gap-1.5 animate-in fade-in select-none">
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 border-2 border-[#FC0D82] border-t-transparent rounded-full animate-spin"></div>
+                      <span className="text-xs font-black text-slate-800">
+                        {isAr ? 'جاري الاتصال بحساب Google بالخلفية...' : 'Connecting to Google in background...'}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 font-medium">
+                      {isAr ? 'يرجى الانتظار لحظات...' : 'Please wait a moment...'}
+                    </p>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleGoogleSignIn}
+                    disabled={loading}
+                    className="w-full py-3 bg-white text-slate-700 text-xs font-black rounded-2xl hover:bg-slate-50 transition duration-200 shadow-md cursor-pointer flex items-center justify-center gap-2 border border-slate-200"
+                  >
+                    <svg className="w-4 h-4 mr-1" viewBox="0 0 24 24">
+                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22c-.62-.57-1.02-1.34-1.21-2.18v-.45z" fill="#FBBC05" />
+                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+                    </svg>
+                    <span>{isAr ? 'الدخول بواسطة حساب Google' : 'Sign In with Google'}</span>
+                  </button>
+                )}
               </form>
 
-              {/* Secondary actions */}
               <div className="pt-6 mt-6 border-t border-slate-50 text-center">
                 <p className="text-[11px] text-slate-400 font-bold">
                   {isAr ? 'ليست لديك عضوية بعد؟' : 'New to Quest Platform?'}
@@ -755,15 +746,15 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
                         <svg className="w-4 h-4" viewBox="0 0 24 24">
                           <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#FFF" />
                           <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#FFF" />
-                          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22c-.62-.57-1.02-1.34-1.21-2.18v-.45z" fill="#FBBC05" />
-                          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+                          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22c-.62-.57-1.02-1.34-1.21-2.18v-.45z" fill="#FFF" />
+                          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#FFF" />
                         </svg>
                         <span>{isAr ? '🚀 التسجيل والدخول المباشر بـ Google' : '🚀 Instant Google Sign-Up & Login'}</span>
                       </button>
                     </div>
                   </div>
                 )}
-                {/* Full name Row */}
+
                 <div className="grid grid-cols-2 gap-2 text-right">
                   <div className="space-y-1">
                     <label className="text-[9px] text-slate-400 font-black uppercase">{isAr ? 'اللقب 👤' : 'Last Name 👤'}</label>
@@ -789,7 +780,6 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
                   </div>
                 </div>
 
-                {/* Residence Structure */}
                 <div className="space-y-1.5 text-right bg-slate-50/50 p-2.5 border border-slate-100 rounded-2xl">
                   <h3 className="text-[9px] text-slate-400 font-black uppercase mb-1 flex items-center justify-end gap-1">
                     <span>{isAr ? 'مكان الإقامة (الولاية والبلدية) 📍' : 'City Residence Info 📍'}</span>
@@ -832,7 +822,6 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
                   </div>
                 </div>
 
-                {/* Email Address */}
                 <div className="space-y-1 text-right">
                   <label className="text-[9px] text-slate-400 font-black uppercase block">{isAr ? 'البريد الإلكتروني 📧' : 'Email Address 📧'}</label>
                   <input
@@ -845,7 +834,6 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
                   />
                 </div>
 
-                {/* Password Selection */}
                 <div className="space-y-1 text-right">
                   <label className="text-[9px] text-slate-400 font-black uppercase block">{isAr ? 'كلمة المرور الآمنة 🔒' : 'Secure Password 🔒'}</label>
                   <div className="relative">
@@ -867,7 +855,6 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
                   </div>
                 </div>
 
-                {/* Submit Account Creation button */}
                 <button
                   type="submit"
                   disabled={loading}
@@ -884,7 +871,6 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
                 </button>
               </form>
 
-              {/* Return link */}
               <div className="pt-4 mt-4 border-t border-slate-50 text-center">
                 <p className="text-[10px] text-slate-400 font-bold">
                   {isAr ? 'لديك عضوية سابقة؟' : 'Already have a profile?'}
@@ -967,7 +953,6 @@ export default function AuthScreen({ showToast, lang = 'ar' }: AuthScreenProps) 
         </AnimatePresence>
       </div>
 
-      {/* Footer support signature */}
       <div className="absolute bottom-6 left-0 right-0 text-center text-[10px] text-pink-100/70 font-black tracking-widest font-mono select-none">
         {isAr ? 'كويست الجزائر • حماية سحابية آمنة' : 'QUEST DZ • SECURE CLOUD ENCRYPTED'}
       </div>

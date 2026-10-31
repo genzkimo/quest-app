@@ -291,45 +291,18 @@ export default function ActiveQuestFloatingWidget({
                 </div>
               </div>
 
-              {/* Action Buttons: 1 CLEAR PRIMARY ACTION + 1 Subtitle secondary action */}
-              <div className="space-y-2 pt-1">
-                {/* CLEAR PRIMARY BUTTON */}
-                {isRunner ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsOpen(false);
-                      onNavigateToMap(currentQuest);
-                    }}
-                    className="w-full py-3 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white font-black text-xs rounded-xl shadow-md shadow-sky-500/25 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.98]"
-                  >
-                    <Navigation className="w-4 h-4 text-white" />
-                    <span>{lang === 'ar' ? 'فتح الملاحة والخريطة 📍' : 'Start Navigation 📍'}</span>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsOpen(false);
-                      onOpenQuestDetail(currentQuest.id);
-                    }}
-                    className="w-full py-3 bg-gradient-to-r from-[#FF3B7C] to-[#e02d6b] hover:opacity-95 text-white font-black text-xs rounded-xl shadow-md shadow-[#FF3B7C]/25 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.98]"
-                  >
-                    <ExternalLink className="w-4 h-4 text-white" />
-                    <span>{lang === 'ar' ? 'متابعة تفاصيل المهمة 📋' : 'View Task Details 📋'}</span>
-                  </button>
-                )}
-
-                {/* Subdued Secondary Action Link */}
+              {/* Single Unified Action Button: إدارة في صفحة مهامي */}
+              <div className="pt-1">
                 <button
                   type="button"
                   onClick={() => {
                     setIsOpen(false);
                     onOpenMyQuests(isCreator ? 'created' : 'obligations');
                   }}
-                  className="w-full py-2 text-[11px] font-bold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 transition-colors cursor-pointer text-center"
+                  className="w-full py-3 bg-[#1F2A44] hover:bg-[#152037] text-[#FFD34D] font-black text-xs rounded-xl shadow-md transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  {lang === 'ar' ? 'إدارة في قائمة مهامي وعقودي' : 'Manage in My Quests'}
+                  <Zap className="w-4 h-4 text-[#FFD34D]" />
+                  <span>{lang === 'ar' ? 'إدارة في صفحة مهامي' : 'Manage in My Quests'}</span>
                 </button>
               </div>
             </motion.div>

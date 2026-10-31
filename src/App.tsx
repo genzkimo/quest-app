@@ -604,6 +604,11 @@ export default function App() {
  setActiveMessagesChatId(null);
  return true;
  }
+ if (isInsideChat || (currentView === 'messages' && isInsideChat)) {
+ window.dispatchEvent(new CustomEvent('close-active-chat'));
+ setIsInsideChat(false);
+ return true;
+ }
  if (profileSubmenu && profileSubmenu !== 'main') {
  setProfileSubmenu('main');
  return true;
@@ -670,6 +675,7 @@ export default function App() {
  showOnboardingModal,
  activeArrivalAlert,
  activeMessagesChatId,
+ isInsideChat,
  profileSubmenu,
  globalQuestDetailId,
  selectedPublicProfileId,
@@ -4414,6 +4420,7 @@ export default function App() {
  {/* Main Navigation & Top Header Frame */}
  <Navbar 
  currentView={currentView}
+ isInsideChat={isInsideChat}
  isHeaderHidden={isInsideChat || currentView === 'messages' || currentView === 'profile' || currentView === 'my-quests'}
  onViewChange={(view) => {
  setShowNotifications(false);
@@ -4542,7 +4549,9 @@ export default function App() {
  window.dispatchEvent(openChatEvent);
  }}
  onManageQuest={(questId) => {
- setMyQuestsActiveTab('created');
+ const targetQ = quests.find(q => q.id === questId);
+ const isOwner = targetQ && userProfile && targetQ.creatorId === userProfile.id;
+ setMyQuestsActiveTab(isOwner ? 'created' : 'obligations');
  setInitialSelectedQuestId(questId);
  setNavigationHistory([]);
  setGlobalQuestDetailId(null);
@@ -4778,7 +4787,7 @@ export default function App() {
  />
  )}
 
-
+ 
  </>
  )}
   </React.Suspense>

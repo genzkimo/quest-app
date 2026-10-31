@@ -16,6 +16,7 @@ import {
  Sparkles,
  RefreshCw,
  FileText,
+	Settings,
  Star,
  Image,
  Camera,
@@ -617,24 +618,24 @@ function MyQuestsView({
  <div className="space-y-6 pt-[max(3.25rem,calc(env(safe-area-inset-top,0px)+2.25rem))] pb-36 font-sans text-[#1F2A44] px-3 sm:px-6 w-full" style={{ direction: isRtl ? 'rtl' : 'ltr' }}>
  
  {/* Stable Persistent Tabs (Fixed Order: مهامي then طلباتي) */}
-  <div className="flex bg-slate-100 dark:bg-slate-800/80 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-700 items-center gap-2">
+  <div className="flex bg-slate-100 dark:bg-slate-800/90 p-1.5 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 items-center gap-2">
     {/* Tab 1: مهامي (Obligations & Booking Requests) */}
     <button
       id="tab-obligations"
       onClick={() => setActiveTab('obligations')}
-      className={`flex-1 py-3 px-3 sm:px-4 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+      className={`flex-1 py-3 px-3 sm:px-4 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-2 ${
         activeTab === 'obligations' 
-          ? 'bg-[#1F2A44] text-[#FFD34D] shadow-md scale-[1.01]' 
+          ? 'bg-[#1F2A44] text-[#FFD34D] shadow-md shadow-[#1F2A44]/25 scale-[1.01]' 
           : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
       }`}
     >
-      <Briefcase className="w-4 h-4 shrink-0" />
+      <Briefcase className="w-4 h-4 shrink-0 text-[#38BDF8]" />
       <span className="truncate">
-        {lang === 'ar' ? 'مهامي' : lang === 'fr' ? 'Mes Missions' : 'My Jobs'} ({obligations.length})
+        {lang === 'ar' ? 'مهامي الميدانية' : lang === 'fr' ? 'Mes Missions' : 'My Jobs'} ({obligations.length})
       </span>
       {appliedQuests.length > 0 && (
-        <span className="text-[10px] bg-amber-500 text-slate-950 font-extrabold px-1.5 py-0.5 rounded-full shrink-0">
-          {appliedQuests.length} {lang === 'ar' ? 'قيد المراجعة' : 'pending'}
+        <span className="text-[10px] bg-[#FFD34D] text-[#1F2A44] font-black px-2 py-0.5 rounded-full shrink-0 shadow-xs">
+          {appliedQuests.length} {lang === 'ar' ? 'معلقة' : 'pending'}
         </span>
       )}
     </button>
@@ -643,15 +644,15 @@ function MyQuestsView({
     <button
       id="tab-created"
       onClick={() => setActiveTab('created')}
-      className={`flex-1 py-3 px-3 sm:px-4 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+      className={`flex-1 py-3 px-3 sm:px-4 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-2 ${
         activeTab === 'created' 
-          ? 'bg-[#1F2A44] text-[#FFD34D] shadow-md scale-[1.01]' 
+          ? 'bg-[#1F2A44] text-[#FFD34D] shadow-md shadow-[#1F2A44]/25 scale-[1.01]' 
           : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
       }`}
     >
-      <Plus className="w-4 h-4 shrink-0" />
+      <Plus className="w-4 h-4 shrink-0 text-[#FF3B7C]" />
       <span className="truncate">
-        {lang === 'ar' ? 'طلباتي' : lang === 'fr' ? 'Mes Primes' : 'My Posts'} ({createdQuests.length})
+        {lang === 'ar' ? 'طلباتي المنشورة' : lang === 'fr' ? 'Mes Primes' : 'My Posts'} ({createdQuests.length})
       </span>
     </button>
   </div>
@@ -789,756 +790,598 @@ function MyQuestsView({
  )}
 
  {/* Worker Obligations Mode */}
- {activeTab === 'obligations' && (
- <div className="space-y-6">
- {/* 1. Accepted Ongoing Obligations */}
- {displayObligations.length > 0 ? (
- <div className="space-y-4">
- {displayObligations.map((quest) => {
- const isOngoing = quest.status === 'booked' || quest.status === 'arrived';
- const isArrived = quest.status === 'arrived';
- const isUnderReview = quest.status === 'pending_verification';
- const isDisputed = quest.status === 'disputed';
- const isFinished = quest.status === 'completed';
+  {activeTab === 'obligations' && (
+    <div className="space-y-6">
+      {/* 1. Accepted Ongoing Obligations */}
+      {displayObligations.length > 0 ? (
+        <div className="space-y-4">
+          {displayObligations.map((quest) => {
+            const isOngoing = quest.status === 'booked' || quest.status === 'arrived' || quest.status === 'active' || quest.status === 'hired' || quest.status === 'active_employment';
+            const isArrived = quest.status === 'arrived';
+            const isUnderReview = quest.status === 'pending_verification';
+            const isDisputed = quest.status === 'disputed';
+            const isFinished = quest.status === 'completed';
 
- return (
- <div 
- key={quest.id} 
- className={`bg-white border rounded-[2rem] p-6 space-y-5 shadow-sm transition-all duration-300 relative ${
- showHistory 
- ? 'grayscale opacity-75 border-slate-200 bg-slate-50/50' 
- : 'border-[#1F2A44] hover:border-[#FF3B7C] hover:shadow-lg'
- }`}
- >
- {/* Header: Status, Category, and Reward */}
- <div className="flex justify-between items-center gap-4 border-b border-slate-100 pb-3">
- <div className="flex items-center gap-2 flex-wrap text-start">
- <span className="text-[10px] font-black px-3 py-1 rounded-full bg-[#1F2A44]/5 text-[#1F2A44] border border-[#1F2A44]/10 uppercase tracking-wider">
- {quest.category}
- </span>
- 
- {isOngoing && !isArrived && (
- <span className="text-[10px] font-black px-3 py-1 rounded-full bg-[#2196F3]/10 text-[#1565C0] border border-[#2196F3]/20 flex items-center gap-1">
- <span className="w-1.5 h-1.5 rounded-full bg-[#2196F3] animate-pulse"></span>
- {lang === 'ar' ? 'قيد التنفيذ' : 'In Progress'}
- </span>
- )}
- {isArrived && (
- <span className="text-[10px] font-black px-3 py-1 rounded-full bg-[#FFB300]/10 text-[#B78103] border border-[#FFB300]/20 animate-pulse flex items-center gap-1">
- <span className="w-1.5 h-1.5 rounded-full bg-[#FFB300]"></span>
- {lang === 'ar' ? 'وصلت للموقع ' : 'Arrived '}
- </span>
- )}
- {isUnderReview && (
- <span className="text-[10px] font-black px-3 py-1 rounded-full bg-[#FF9800]/10 text-[#E65100] border border-[#FF9800]/20 flex items-center gap-1">
- <span className="w-1.5 h-1.5 rounded-full bg-[#FF9800] animate-ping"></span>
- {lang === 'ar' ? 'قيد المراجعة ' : 'Under Review '}
- </span>
- )}
- {isDisputed && (
- <span className="text-[10px] font-black px-3 py-1 rounded-full bg-[#E91E63]/10 text-[#C2185B] border border-[#E91E63]/20 flex items-center gap-1">
- <span className="w-1.5 h-1.5 rounded-full bg-[#E91E63]"></span>
- {lang === 'ar' ? 'نزاع مالي ' : 'Dispute '}
- </span>
- )}
- {isFinished && (
- <span className="text-[10px] font-black px-3 py-1 rounded-full bg-[#4CAF50]/10 text-[#2E7D32] border border-[#4CAF50]/20 flex items-center gap-1">
- <span className="w-1.5 h-1.5 rounded-full bg-[#4CAF50]"></span>
- {lang === 'ar' ? 'مكتملة ' : 'Completed '}
- </span>
- )}
- </div>
+            // Top status accent color
+            const statusColor = isFinished 
+              ? 'bg-emerald-500' 
+              : isDisputed 
+              ? 'bg-[#FF3B7C]' 
+              : isUnderReview 
+              ? 'bg-amber-500' 
+              : isArrived 
+              ? 'bg-[#FFD34D]' 
+              : 'bg-[#38BDF8]';
 
- <div className="shrink-0">
- <span className="text-[#FF3B7C] font-black text-sm md:text-base font-mono block bg-[#FF3B7C]/5 px-3.5 py-1.5 rounded-2xl border border-[#FF3B7C]/20 shadow-2xs">
- {quest.cashReward} DA
- </span>
- </div>
- </div>
+            // Status label & badge
+            let statusBadge = {
+              text: lang === 'ar' ? 'قيد التنفيذ' : 'In Progress',
+              className: 'bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-400 border border-sky-200 dark:border-sky-800'
+            };
+            if (isArrived) {
+              statusBadge = {
+                text: lang === 'ar' ? 'وصلت للموقع' : 'Arrived',
+                className: 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+              };
+            } else if (isUnderReview) {
+              statusBadge = {
+                text: lang === 'ar' ? 'قيد المراجعة' : 'Under Review',
+                className: 'bg-orange-50 dark:bg-orange-950/40 text-orange-700 dark:text-orange-300 border border-orange-200 dark:border-orange-800'
+              };
+            } else if (isDisputed) {
+              statusBadge = {
+                text: lang === 'ar' ? 'نزاع مالي' : 'Dispute',
+                className: 'bg-rose-50 dark:bg-rose-950/40 text-[#FF3B7C] border border-rose-200 dark:border-rose-800'
+              };
+            } else if (isFinished) {
+              statusBadge = {
+                text: lang === 'ar' ? 'مكتملة' : 'Completed',
+                className: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+              };
+            }
 
- {/* Title and Location */}
- <div className="space-y-2 text-start">
- <h3 className="font-black text-xl md:text-2xl text-sky-500 dark:text-sky-400 leading-snug tracking-tight break-words">
- {quest.title}
- </h3>
- {(() => {
- const isAuthorized = quest.creatorId === currentUserId || isOngoing || isArrived || isUnderReview || isFinished || isDisputed || quest.status === 'booked' || quest.status === 'active' || quest.status === 'active_employment';
- return (
- <div className="inline-flex items-center gap-1.5 text-xs max-w-full">
- {isAuthorized ? (
- <div className="inline-flex items-center gap-1.5 text-xs text-slate-700 bg-slate-100/80 px-3 py-1.5 rounded-2xl font-bold">
- <MapPin className="w-3.5 h-3.5 text-sky-600 shrink-0" />
- <span className="truncate">{quest.location || (lang === 'ar' ? 'الموقع الميداني' : 'Field Location')}</span>
- </div>
- ) : (
- <div className="inline-flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50/80 border border-amber-200/60 px-3 py-1.5 rounded-2xl font-bold">
- <Lock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
- <span>
- {lang === 'ar' ? ' الموقع مخفي حتى قبول الحجز' : ' Hidden until booked'}
- </span>
- </div>
- )}
- </div>
- );
- })()}
- </div>
+            const employerName = quest.creatorName || (lang === 'ar' ? 'صاحب العمل' : 'Employer');
+            const employerAvatar = quest.creatorAvatar || `https://api.dicebear.com/7.x/initials/svg?seed=${employerName}&backgroundColor=111827`;
+            const employerPhone = quest.creatorPhone || '0550000000';
 
- 
-  
- {/* Minimal Ending Notice if active */}
- {quest.status === "ending" && (
- <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-xs font-bold text-amber-900 dark:text-amber-200 text-center">
- {lang === "ar" ? "هذا العقد في مرحلة إنهاء الارتباط" : "Contract in termination process"}
- </div>
- )}
+            return (
+              <div 
+                key={quest.id} 
+                className={`bg-white dark:bg-slate-900 border rounded-3xl overflow-hidden shadow-sm transition-all duration-300 relative ${
+                  showHistory 
+                    ? 'grayscale opacity-75 border-slate-200 dark:border-slate-800' 
+                    : 'border-slate-200 dark:border-slate-800 hover:border-[#1F2A44] dark:hover:border-sky-500 hover:shadow-xl'
+                }`}
+              >
+                {/* 1. Top Status Accent Strip */}
+                <div className={`h-1.5 w-full ${statusColor}`} />
 
- {/* Compact Employer Profile Row */}
- {quest.creatorId && (() => {
- const name = quest.creatorName || (lang === 'ar' ? 'صاحب العمل' : 'Employer');
- const avatar = quest.creatorAvatar || `https://api.dicebear.com/7.x/initials/svg?seed=${name}&backgroundColor=111827`;
- return (
- <div className="flex flex-col gap-2.5 p-3.5 bg-slate-50/80 rounded-2xl border border-slate-100/80 hover:bg-slate-50 transition-colors duration-200">
- <div 
- onClick={() => onViewPublicProfile && onViewPublicProfile(quest.creatorId!)}
- className="flex items-center gap-2.5 cursor-pointer hover:opacity-85 transition-opacity"
- >
- <img src={avatar} alt={name} className="w-9 h-9 rounded-full object-cover border border-slate-200 shadow-xs shrink-0" />
- <div className="text-start">
- <span className="text-[9px] text-slate-400 block font-black uppercase tracking-wider">
- {lang === 'ar' ? 'صاحب العمل' : 'Employer'}
- </span>
- <span className="text-xs font-extrabold text-slate-800 leading-none flex items-center gap-1 mt-0.5">
- {name}
- <span className="text-amber-500 font-mono font-bold text-[10px]">★ 5.0</span>
- </span>
- </div>
- </div>
- 
- {(isOngoing || isArrived || isUnderReview || isDisputed || isFinished) && (
- <div className="flex items-center gap-2 pt-2 border-t border-slate-200/60 w-full">
- <button
- type="button"
- onClick={() => {
- window.dispatchEvent(new CustomEvent('open-chat', {
- detail: {
- chatId: `${quest.id}_${quest.creatorId}_${currentUserId}`,
- questTitle: quest.title,
- recipientName: quest.creatorName,
- recipientAvatar: quest.creatorAvatar
- }
- }));
- }}
- className="flex-1 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white font-extrabold text-xs py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer"
- >
- <MessageSquare className="w-3.5 h-3.5 text-sky-400 shrink-0" />
- <span>{lang === 'ar' ? 'دردشة' : 'Chat'}</span>
- </button>
+                <div className="p-5 space-y-4">
+                  {/* 2. Title & Status Badge (Clean & Direct) */}
+                  <div className="flex items-start justify-between gap-3 text-start">
+                    <h3 className="font-black text-base sm:text-lg text-slate-900 dark:text-white leading-snug tracking-tight break-words flex-1">
+                      {quest.title}
+                    </h3>
+                    <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full shrink-0 flex items-center gap-1 mt-0.5 ${statusBadge.className}`}>
+                      <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+                      {statusBadge.text}
+                    </span>
+                  </div>
 
- <a
- href={`tel:${quest.creatorPhone || '0550000000'}`}
- className="flex-1 bg-sky-600 hover:bg-sky-700 active:scale-95 text-white font-extrabold text-xs py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-sm text-center"
- >
- <Phone className="w-3.5 h-3.5 text-white shrink-0" />
- <span>{lang === 'ar' ? 'اتصال' : 'Call'}</span>
- </a>
- </div>
- )}
- </div>
- );
- })()}
+                  {/* 4. Counterpart: Employer with Inline Direct Action Icons */}
+                  <div className="flex items-center justify-between gap-3 p-3 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200/60 dark:border-slate-700/60 w-full text-start pt-1">
+                    <div 
+                      onClick={() => onViewPublicProfile && quest.creatorId && onViewPublicProfile(quest.creatorId)}
+                      className={`flex items-center gap-2.5 min-w-0 flex-1 ${quest.creatorId ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+                    >
+                      <img src={employerAvatar} alt={employerName} className="w-9 h-9 rounded-full object-cover border border-slate-200 dark:border-slate-700 shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold block uppercase tracking-wider">
+                          {lang === 'ar' ? 'صاحب العمل' : 'Employer'}
+                        </span>
+                        <span className="text-xs font-black text-slate-900 dark:text-white truncate flex items-center gap-1">
+                          {employerName}
+                          <span className="text-[#FFD34D] font-mono font-bold text-[10px]">★ 5.0</span>
+                        </span>
+                      </div>
+                    </div>
 
- {/* Actions Panel */}
- <div className="pt-3 border-t border-slate-100 space-y-3">
- {isOngoing && (
- <div className="flex flex-col gap-3 w-full">
- {(() => {
- const isRunnerOnly = (quest.helperId === currentUserId || quest.assignedRunnerId === currentUserId || quest.assignedRunnerIds?.includes(currentUserId)) && quest.creatorId !== currentUserId;
- return isRunnerOnly && !isArrived && onArrivedAtQuest ? (
- <button
- onClick={() => {
- onArrivedAtQuest(quest.id);
- }}
- className="w-full bg-gradient-to-r from-[#FFD34D] to-[#FF3B7C] hover:from-[#FFD34D]/90 hover:to-[#FF3B7C]/90 text-white font-black text-xs py-3 rounded-2xl shadow-sm transition duration-200 cursor-pointer flex items-center justify-center gap-2 active:scale-[0.98]"
- >
- <CheckCircle2 className="w-4 h-4 text-white" />
- <span>{lang === 'ar' ? 'تأكيد الوصول إلى الموقع' : 'Confirm Arrival At Location'}</span>
- </button>
- ) : null;
- })()}
+                    {/* Inline Icon-Only Chat & Call for Worker facing Employer (Always visible) */}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          window.dispatchEvent(new CustomEvent('open-chat', {
+                            detail: {
+                              chatId: `${quest.id}_${quest.creatorId}_${currentUserId}`,
+                              questTitle: quest.title,
+                              recipientName: employerName,
+                              recipientAvatar: employerAvatar
+                            }
+                          }));
+                        }}
+                        className="w-8 h-8 rounded-xl bg-[#1F2A44] hover:bg-[#152037] active:scale-90 text-white flex items-center justify-center transition-all shadow-xs cursor-pointer"
+                        title={lang === 'ar' ? 'دردشة مباشرة' : 'Chat'}
+                        aria-label={lang === 'ar' ? 'دردشة مباشرة' : 'Chat'}
+                      >
+                        <MessageSquare className="w-4 h-4 text-[#38BDF8]" />
+                      </button>
 
- {/* Primary Action Row */}
- <div className="flex items-center gap-2 w-full">
- <button
- onClick={() => setSelectedProofQuest(quest)}
- className="flex-[2] bg-[#FF3B7C] hover:bg-[#FF3B7C]/95 active:scale-[0.98] text-white font-black text-xs py-3 rounded-2xl transition duration-200 cursor-pointer flex items-center justify-center gap-1.5 shadow-md shadow-pink-500/20"
- >
- <Camera className="w-4 h-4 text-white" />
- <span>{lang === 'ar' ? 'إتمام المهمة ورفع الإثبات' : 'Complete Quest'}</span>
- </button>
+                      <a
+                        href={`tel:${employerPhone}`}
+                        className="w-8 h-8 rounded-xl bg-[#38BDF8] hover:bg-sky-500 active:scale-90 text-slate-950 flex items-center justify-center transition-all shadow-xs"
+                        title={lang === 'ar' ? 'اتصال هاتفي' : 'Call'}
+                        aria-label={lang === 'ar' ? 'اتصال هاتفي' : 'Call'}
+                      >
+                        <Phone className="w-4 h-4 text-slate-950" />
+                      </a>
+                    </div>
+                  </div>
 
- <button
- onClick={() => {
- window.dispatchEvent(new CustomEvent('navigate-to-quest-map', { detail: { quest } }));
- }}
- className="flex-1 bg-slate-100 hover:bg-slate-200/80 active:scale-[0.98] text-slate-700 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-bold text-xs py-3 rounded-2xl transition duration-200 cursor-pointer flex items-center justify-center gap-1.5"
- >
- <MapPin className="w-3.5 h-3.5 text-sky-500" />
- <span>{lang === 'ar' ? 'الموقع' : 'Location'}</span>
- </button>
- </div>
+                  {/* 6. Action Elements for Worker */}
+                  {isOngoing && (
+                    <div className="space-y-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+                      {/* Confirm Arrival Button if Runner & not arrived */}
+                      {(() => {
+                        const isRunnerOnly = (quest.helperId === currentUserId || quest.assignedRunnerId === currentUserId || quest.assignedRunnerIds?.includes(currentUserId)) && quest.creatorId !== currentUserId;
+                        return isRunnerOnly && !isArrived && onArrivedAtQuest ? (
+                          <button
+                            onClick={() => onArrivedAtQuest(quest.id)}
+                            className="w-full bg-gradient-to-r from-[#FFD34D] to-[#FF3B7C] hover:opacity-95 text-white font-black text-xs py-3 rounded-2xl shadow-sm transition duration-200 cursor-pointer flex items-center justify-center gap-2 active:scale-[0.98]"
+                          >
+                            <CheckCircle2 className="w-4 h-4 text-white" />
+                            <span>{lang === 'ar' ? 'تأكيد الوصول إلى الموقع' : 'Confirm Arrival At Location'}</span>
+                          </button>
+                        ) : null;
+                      })()}
 
- {/* Dedicated Danger Actions Row */}
- <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center gap-2 w-full">
- <button
- onClick={() => {
- const refundAmount = Math.round(quest.bookingFeeDA * 0.30);
- onCancelBookedQuest(quest.id, refundAmount);
- }}
- className="flex-1 bg-rose-50/60 hover:bg-rose-100/70 text-rose-600 dark:bg-rose-950/20 dark:text-rose-400 border border-rose-200/70 dark:border-rose-800/40 font-semibold text-[11px] py-2 rounded-xl transition duration-200 cursor-pointer flex items-center justify-center gap-1"
- >
- <span>{lang === 'ar' ? 'إلغاء الحجز' : 'Cancel Reservation'}</span>
- </button>
+                      {/* Primary Worker Action: إتمام المهمة ورفع الإثبات (Full Width Pink) */}
+                      <button
+                        onClick={() => setSelectedProofQuest(quest)}
+                        className="w-full bg-[#FF3B7C] hover:bg-[#FF3B7C]/95 active:scale-[0.98] text-white font-black text-xs py-3 rounded-2xl transition duration-200 cursor-pointer flex items-center justify-center gap-2 shadow-md shadow-pink-500/20"
+                      >
+                        <Camera className="w-4 h-4 text-white" />
+                        <span>{lang === 'ar' ? 'إتمام المهمة ورفع الإثبات' : 'Complete Quest & Upload Proof'}</span>
+                      </button>
 
- <button
- type="button"
- onClick={() => setEndWorkQuestModal(quest)}
- className="flex-1 bg-rose-50/60 hover:bg-rose-100/70 text-rose-600 dark:bg-rose-950/20 dark:text-rose-400 border border-rose-200/70 dark:border-rose-800/40 font-semibold text-[11px] py-2 rounded-xl transition duration-200 cursor-pointer flex items-center justify-center gap-1"
- >
- <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
- <span>{lang === 'ar' ? 'فسخ العقد' : 'Sever Contract'}</span>
- </button>
- </div>
- </div>
- )}
- {isUnderReview && (
- <div className="w-full text-center bg-amber-50/50 rounded-2xl p-3.5 border border-amber-100 text-xs font-extrabold text-amber-800 flex items-center justify-center gap-2 animate-pulse">
- <Clock className="w-4 h-4 text-amber-600" />
- <span>{lang === 'ar' ? 'في انتظار مراجعة صاحب العمل لتأكيد السداد المالي' : 'Awaiting employer confirmation.'}</span>
- </div>
- )}
+                      {/* Discreet Danger Row: Cancel & Sever */}
+                      <div className="flex items-center gap-2 pt-1 w-full">
+                        <button
+                          onClick={() => {
+                            const refundAmount = Math.round(quest.bookingFeeDA * 0.30);
+                            onCancelBookedQuest(quest.id, refundAmount);
+                          }}
+                          className="flex-1 bg-rose-50/70 hover:bg-rose-100 text-rose-600 dark:bg-rose-950/20 dark:text-rose-400 border border-rose-200/70 dark:border-rose-900/40 font-bold text-[11px] py-2 rounded-xl transition duration-200 cursor-pointer text-center"
+                        >
+                          <span>{lang === 'ar' ? 'إلغاء الحجز' : 'Cancel Reservation'}</span>
+                        </button>
 
- {isFinished && (
- <div className="w-full text-center bg-sky-50 rounded-2xl p-3.5 border border-sky-100 text-xs font-extrabold text-sky-800 flex items-center justify-center gap-2">
- <CheckCircle2 className="w-4 h-4 text-sky-600 animate-bounce" />
- <span>{lang === 'ar' ? 'تم اكتمال الكويست واستلام الأموال بنجاح!' : 'Quest successfully completed!'}</span>
- </div>
- )}
+                        <button
+                          type="button"
+                          onClick={() => setEndWorkQuestModal(quest)}
+                          className="flex-1 bg-rose-50/70 hover:bg-rose-100 text-rose-600 dark:bg-rose-950/20 dark:text-rose-400 border border-rose-200/70 dark:border-rose-900/40 font-bold text-[11px] py-2 rounded-xl transition duration-200 cursor-pointer flex items-center justify-center gap-1"
+                        >
+                          <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                          <span>{lang === 'ar' ? 'فسخ العقد' : 'Sever Contract'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
- {onViewQuestDetail && (
- <button
- type="button"
- onClick={() => onViewQuestDetail(quest.id)}
- className="w-full bg-[#1F2A44]/5 hover:bg-[#1F2A44]/10 text-[#1F2A44] dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 border border-[#1F2A44]/10 dark:border-slate-700 font-bold text-xs py-2.5 rounded-xl transition duration-200 cursor-pointer flex items-center justify-center gap-1.5 mt-1"
- >
- <FileText className="w-3.5 h-3.5 text-slate-500" />
- <span>{lang === 'ar' ? 'تفاصيل كاملة 📋' : 'Full Details 📋'}</span>
- </button>
- )}
- </div>
+                  {/* Under Review Notice */}
+                  {isUnderReview && (
+                    <div className="w-full text-center bg-amber-50/70 dark:bg-amber-950/30 rounded-2xl p-3 border border-amber-200/80 dark:border-amber-800 text-xs font-black text-amber-800 dark:text-amber-200 flex items-center justify-center gap-2 animate-pulse">
+                      <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>{lang === 'ar' ? 'في انتظار مراجعة صاحب العمل لتأكيد السداد المالي' : 'Awaiting employer confirmation.'}</span>
+                    </div>
+                  )}
 
- </div>
- );
- })}
- </div>
- ) : appliedQuests.length === 0 ? (
- <div className="py-10 px-4 text-center space-y-3">
- <div className="mx-auto flex justify-center">
- {showHistory ? (
- <svg className="w-24 h-24" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
- <circle cx="60" cy="60" r="50" className="fill-slate-100/90" />
- <circle cx="60" cy="60" r="38" className="fill-slate-200/50" />
- <path d="M36 42C36 38.6863 38.6863 36 42 36H54L60 42H78C81.3137 42 84 44.6863 84 48V78C84 81.3137 81.3137 84 78 84H42C38.6863 84 36 81.3137 36 78V42Z" fill="#FFFFFF" stroke="#64748B" strokeWidth="3" strokeLinejoin="round" />
- <circle cx="52" cy="58" r="2.5" fill="#475569" />
- <circle cx="68" cy="58" r="2.5" fill="#475569" />
- <path d="M53 68C56 64 64 64 67 68" stroke="#475569" strokeWidth="2.5" strokeLinecap="round" />
- </svg>
- ) : (
- <svg className="w-24 h-24" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
- <circle cx="60" cy="60" r="50" className="fill-blue-50/80" />
- <circle cx="60" cy="60" r="38" className="fill-indigo-50/60" />
- <rect x="38" y="32" width="44" height="56" rx="10" fill="#FFFFFF" stroke="#3B82F6" strokeWidth="3" />
- <rect x="48" y="26" width="24" height="10" rx="4" fill="#3B82F6" />
- <circle cx="52" cy="52" r="2.5" fill="#475569" />
- <circle cx="68" cy="52" r="2.5" fill="#475569" />
- <path d="M53 64C56 60 64 60 67 64" stroke="#475569" strokeWidth="2.5" strokeLinecap="round" />
- <line x1="48" y1="72" x2="72" y2="72" stroke="#CBD5E1" strokeWidth="2.5" strokeLinecap="round" strokeDasharray="2 2" />
- <path d="M26 40L32 46M32 40L26 46" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" />
- <path d="M88 70L94 76M94 70L88 76" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" />
- </svg>
- )}
- </div>
- <h3 className="font-extrabold text-sm text-slate-800 dark:text-slate-200">
- {showHistory 
- ? (lang === 'ar' ? 'لا توجد كويستات مؤرشفة' : 'No archived quests')
- : (lang === 'ar' ? 'لم تقم بحجز أو تنفيذ أي مهمة حتى الآن' : 'No booked tasks yet')}
- </h3>
- </div>
- ) : null}
+                  {/* Completed Success Notice */}
+                  {isFinished && (
+                    <div className="w-full text-center bg-emerald-50 dark:bg-emerald-950/30 rounded-2xl p-3 border border-emerald-200 dark:border-emerald-800 text-xs font-black text-emerald-800 dark:text-emerald-200 flex items-center justify-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>{lang === 'ar' ? 'تم اكتمال الكويست واستلام الأموال بنجاح!' : 'Quest successfully completed!'}</span>
+                    </div>
+                  )}
 
- {/* 2. Applied Pending Quests Strip (ALWAYS visible if user has pending booking requests!) */}
- {!showHistory && appliedQuests.length > 0 && (
- <div className="space-y-3 pt-4 border-t border-slate-200 dark:border-slate-800">
- <div className="flex items-center justify-between px-1">
- <h3 className="text-xs font-black text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
- <Clock className="w-4 h-4 text-amber-500" />
- <span>{lang === 'ar' ? 'المهام التي تم طلب حجزها (قيد الانتظار)' : 'Requested Quests (Pending Review)'}</span>
- <span className="text-[10px] font-mono bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300 px-2 py-0.5 rounded-full font-bold">
- {appliedQuests.length}
- </span>
- </h3>
- </div>
+                  {/* 7. View Full Details Button for Worker */}
+                  {onViewQuestDetail && (
+                    <div className="pt-1">
+                      <button
+                        type="button"
+                        onClick={() => onViewQuestDetail(quest.id)}
+                        className="w-full bg-slate-100/80 hover:bg-slate-200/80 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-750 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700 font-black text-xs py-2.5 rounded-xl transition duration-200 cursor-pointer flex items-center justify-center gap-2"
+                      >
+                        <FileText className="w-3.5 h-3.5 text-slate-500" />
+                        <span>{lang === 'ar' ? 'عرض تفاصيل الكويست' : 'View Quest Details'}</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="text-center py-12 px-4 bg-white dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/60 rounded-3xl space-y-3">
+          <div className="w-14 h-14 bg-slate-100 dark:bg-slate-700 rounded-full flex items-center justify-center mx-auto text-slate-400">
+            <Briefcase className="w-6 h-6 text-[#38BDF8]" />
+          </div>
+          <h4 className="font-extrabold text-sm text-slate-800 dark:text-slate-200">
+            {lang === 'ar' ? 'لا توجد مهام أو عقود حالياً' : 'No active tasks or contracts'}
+          </h4>
+          <p className="text-xs text-slate-400 max-w-xs mx-auto">
+            {lang === 'ar' ? 'تصفح قائمة المهام المتاحة وقدم على المهام التي تناسب مهاراتك.' : 'Browse available quests and apply to tasks that suit your skills.'}
+          </p>
+        </div>
+      )}
 
- <div className="grid gap-3">
- {appliedQuests.map((quest) => {
- const isBookedByOther = (quest.status === 'booked' || quest.status === 'active' || quest.status === 'active_employment') &&
- quest.helperId !== currentUserId &&
- quest.assignedRunnerId !== currentUserId &&
- quest.employeeId !== currentUserId &&
- (!quest.assignedRunnerIds || !quest.assignedRunnerIds.includes(currentUserId));
+      {/* Applied / Pending Booking Quests */}
+      {appliedQuests.length > 0 && !showHistory && (
+        <div className="space-y-3 pt-2">
+          <div className="flex items-center gap-2 text-xs font-black text-amber-600 dark:text-amber-400 px-1">
+            <Clock className="w-4 h-4" />
+            <span>{lang === 'ar' ? 'طلبات الحجز قيد المراجعة والانتظار' : 'Pending Applications'} ({appliedQuests.length})</span>
+          </div>
+          <div className="space-y-3">
+            {appliedQuests.map((quest) => (
+              <div 
+                key={quest.id} 
+                className="bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900/40 rounded-3xl p-5 space-y-3 shadow-xs"
+              >
+                <div className="flex items-start justify-between gap-3 text-start">
+                  <h4 className="font-black text-base text-slate-900 dark:text-white leading-snug tracking-tight break-words flex-1">
+                    {quest.title}
+                  </h4>
+                  <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 shrink-0 mt-0.5">
+                    {lang === 'ar' ? 'بانتظار موافقة صاحب العمل' : 'Pending Approval'}
+                  </span>
+                </div>
+                {/* Counterpart: Employer with Inline Direct Action Icons */}
+                {(() => {
+                  const empName = quest.creatorName || (lang === 'ar' ? 'صاحب العمل' : 'Employer');
+                  const empAvatar = quest.creatorAvatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(empName)}&backgroundColor=111827`;
+                  const empPhone = quest.creatorPhone || '0550000000';
+                  return (
+                    <div className="flex items-center justify-between gap-3 p-3 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200/60 dark:border-slate-700/60 w-full text-start">
+                      <div 
+                        onClick={() => onViewPublicProfile && quest.creatorId && onViewPublicProfile(quest.creatorId)}
+                        className={`flex items-center gap-2.5 min-w-0 flex-1 ${quest.creatorId ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+                      >
+                        <img src={empAvatar} alt={empName} className="w-8 h-8 rounded-full object-cover border border-slate-200 dark:border-slate-700 shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold block uppercase tracking-wider">
+                            {lang === 'ar' ? 'صاحب العمل' : 'Employer'}
+                          </span>
+                          <span className="text-xs font-black text-slate-900 dark:text-white truncate flex items-center gap-1">
+                            {empName}
+                            <span className="text-[#FFD34D] font-mono font-bold text-[10px]">★ 5.0</span>
+                          </span>
+                        </div>
+                      </div>
 
- return (
- <div key={quest.id} className="bg-white dark:bg-slate-800 border border-slate-200/90 dark:border-slate-700 p-4 rounded-2xl shadow-xs space-y-3 transition-all">
- <div className="flex justify-between items-start gap-2">
- <div className="space-y-1 text-start min-w-0 flex-1">
- <span className="text-[9px] font-black px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 uppercase">
- {quest.category}
- </span>
- <h4 className="font-extrabold text-sm text-slate-800 dark:text-white truncate mt-1">{quest.title}</h4>
- {quest.location && (
- <p className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
- <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
- <span className="truncate">{cleanLocationName(quest.location)}</span>
- </p>
- )}
- </div>
- <div className="text-right shrink-0">
- <span className="text-[#FF3B7C] font-black text-xs font-mono bg-rose-50 dark:bg-rose-950/30 px-2.5 py-1 rounded-xl border border-rose-100 dark:border-rose-900/40 block">
- {quest.cashReward} DA
- </span>
- </div>
- </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            window.dispatchEvent(new CustomEvent('open-chat', {
+                              detail: {
+                                chatId: `${quest.id}_${quest.creatorId}_${currentUserId}`,
+                                questTitle: quest.title,
+                                recipientName: empName,
+                                recipientAvatar: empAvatar
+                              }
+                            }));
+                          }}
+                          className="w-8 h-8 rounded-xl bg-[#1F2A44] hover:bg-[#152037] active:scale-90 text-white flex items-center justify-center transition-all shadow-xs cursor-pointer"
+                          title={lang === 'ar' ? 'دردشة مباشرة' : 'Chat'}
+                          aria-label={lang === 'ar' ? 'دردشة مباشرة' : 'Chat'}
+                        >
+                          <MessageSquare className="w-4 h-4 text-[#38BDF8]" />
+                        </button>
 
- {isBookedByOther ? (
- <div className="bg-rose-50 dark:bg-rose-950/30 border border-rose-200/70 dark:border-rose-900/40 p-2.5 rounded-xl text-start flex items-center justify-between gap-2">
- <div className="flex items-center gap-1.5 text-xs font-bold text-rose-700 dark:text-rose-400">
- <XCircle className="w-4 h-4 text-rose-500 shrink-0" />
- <span className="text-[11px] leading-snug">
- {lang === 'ar' ? 'تم تعيين منفذ آخر لهذه المهمة' : 'Booked by another runner'}
- </span>
- </div>
- <button
- type="button"
- onClick={() => handleCancelApplicant(quest.id)}
- className="text-[10px] font-bold text-rose-700 dark:text-rose-400 bg-white dark:bg-slate-800 hover:bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg cursor-pointer transition-all shrink-0"
- >
- {lang === 'ar' ? 'حذف من القائمة' : 'Dismiss'}
- </button>
- </div>
- ) : (
- <div className="bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/60 dark:border-amber-800/40 p-2.5 rounded-xl flex items-center justify-between text-start gap-2">
- <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-800 dark:text-amber-300">
- <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0 animate-pulse" />
- <span>{lang === 'ar' ? 'طلب الحجز قيد المراجعة لدى صاحب العمل' : 'Booking pending approval'}</span>
- </div>
- <div className="flex items-center gap-1.5 shrink-0">
- <button
- type="button"
- onClick={() => handleCancelApplicant(quest.id)}
- className="text-[10px] font-bold text-rose-600 hover:text-rose-700 bg-white dark:bg-slate-800 hover:bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg cursor-pointer transition-all"
- >
- {lang === 'ar' ? 'إلغاء الطلب' : 'Cancel'}
- </button>
- {onViewQuestDetail && (
- <button
- type="button"
- onClick={() => onViewQuestDetail(quest.id)}
- className="text-[10px] font-black text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 hover:bg-slate-100 border border-slate-200 dark:border-slate-700 px-2.5 py-1 rounded-lg cursor-pointer transition-all"
- >
- {lang === 'ar' ? 'عرض' : 'View'}
- </button>
- )}
- </div>
- </div>
- )}
- </div>
- );
- })}
- </div>
- </div>
- )}
- </div>
- )}
+                        <a
+                          href={`tel:${empPhone}`}
+                          className="w-8 h-8 rounded-xl bg-[#38BDF8] hover:bg-sky-500 active:scale-90 text-slate-950 flex items-center justify-center transition-all shadow-xs"
+                          title={lang === 'ar' ? 'اتصال هاتفي' : 'Call'}
+                          aria-label={lang === 'ar' ? 'اتصال هاتفي' : 'Call'}
+                        >
+                          <Phone className="w-4 h-4 text-slate-950" />
+                        </a>
+                      </div>
+                    </div>
+                  );
+                })()}
+                <div className="flex items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => handleCancelApplicant(quest.id)}
+                    className="flex-1 py-2.5 px-3 bg-rose-50 hover:bg-rose-100 text-rose-600 dark:bg-rose-950/30 dark:text-rose-400 text-xs font-black rounded-xl transition cursor-pointer"
+                  >
+                    {lang === 'ar' ? 'إلغاء طلب الحجز' : 'Cancel Application'}
+                  </button>
+                  {onViewQuestDetail && (
+                    <button
+                      type="button"
+                      onClick={() => onViewQuestDetail(quest.id)}
+                      className="py-2.5 px-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 text-slate-700 text-xs font-black rounded-xl transition cursor-pointer flex items-center gap-1.5"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-slate-500" />
+                      <span>{lang === 'ar' ? 'عرض تفاصيل الكويست' : 'View Quest Details'}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )}
 
- {/* Poster Mode */}
- {activeTab === 'created' && (
- <div className="space-y-4">
- {displayCreatedQuests.length === 0 ? (
- <div className="py-10 px-4 text-center space-y-3">
- <div className="mx-auto flex justify-center">
- {showHistory ? (
- <svg className="w-24 h-24" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
- <circle cx="60" cy="60" r="50" className="fill-slate-100/90" />
- <circle cx="60" cy="60" r="38" className="fill-slate-200/50" />
- <path d="M36 42C36 38.6863 38.6863 36 42 36H54L60 42H78C81.3137 42 84 44.6863 84 48V78C84 81.3137 81.3137 84 78 84H42C38.6863 84 36 81.3137 36 78V42Z" fill="#FFFFFF" stroke="#64748B" strokeWidth="3" strokeLinejoin="round" />
- <circle cx="52" cy="58" r="2.5" fill="#475569" />
- <circle cx="68" cy="58" r="2.5" fill="#475569" />
- <path d="M53 68C56 64 64 64 67 68" stroke="#475569" strokeWidth="2.5" strokeLinecap="round" />
- </svg>
- ) : (
- <svg className="w-24 h-24" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
- <circle cx="60" cy="60" r="50" className="fill-amber-50/80" />
- <circle cx="60" cy="60" r="38" className="fill-orange-50/60" />
- <path d="M34 46C34 41.5817 37.5817 38 42 38H78C82.4183 38 86 41.5817 86 46V76C86 80.4183 82.4183 84 78 84H42C37.5817 84 34 80.4183 34 76V46Z" fill="#FFFFFF" stroke="#F59E0B" strokeWidth="3" />
- <path d="M52 84L46 94L60 84" fill="#FFFFFF" stroke="#F59E0B" strokeWidth="3" strokeLinejoin="round" />
- <circle cx="52" cy="54" r="2.5" fill="#475569" />
- <circle cx="68" cy="54" r="2.5" fill="#475569" />
- <path d="M53 66C56 62 64 62 67 66" stroke="#475569" strokeWidth="2.5" strokeLinecap="round" />
- <circle cx="92" cy="42" r="3" fill="#FCD34D" />
- <circle cx="28" cy="78" r="2" fill="#FCD34D" />
- </svg>
- )}
- </div>
- <h3 className="font-extrabold text-sm text-slate-800">
- {showHistory
- ? (lang === 'ar' ? 'لا توجد كويستات مؤرشفة' : 'No archived quests')
- : (lang === 'ar' ? 'لم تطلب شيئاً بعد' : 'You haven\'t requested anything yet')}
- </h3>
- </div>
- ) : (
- <div className="space-y-4">
- {displayCreatedQuests.map((quest) => {
- const isAvailable = quest.status === 'open' || quest.status === 'applications' || (quest.status as string) === 'pending';
- const isClaimed = quest.status === 'booked';
- const isSubmitted = quest.status === 'pending_verification';
- const isFinished = quest.status === 'completed';
- const hasHiredWorker = !!(quest.employeeId || quest.helperId || quest.assignedRunnerId || (quest.assignedRunnerIds && quest.assignedRunnerIds.length > 0) || (quest.jobApplicants && quest.jobApplicants.some(a => a.status === 'accepted')));
+  {/* Employer Created Mode */}
+  {activeTab === 'created' && (
+    <div className="space-y-6">
+      {displayCreatedQuests.length > 0 ? (
+        <div className="space-y-4">
+          {displayCreatedQuests.map((quest) => {
+            const assignedWorkers = (() => {
+              if (quest.assignedRunnerIds && quest.assignedRunnerIds.length > 0) {
+                return quest.assignedRunnerIds.map((runnerId, idx) => {
+                  const applicantMatch = quest.applicants?.find(a => a.userId === runnerId);
+                  const name = applicantMatch?.name || (runnerId === quest.helperId && quest.helperName ? quest.helperName : `${lang === 'ar' ? 'العامل' : 'Worker'} ${idx + 1}`);
+                  const avatar = applicantMatch?.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}&backgroundColor=111827`;
+                  const phone = applicantMatch?.phone || (runnerId === quest.helperId ? quest.helperPhone : undefined) || '0550000000';
+                  const rating = applicantMatch?.rating || 5.0;
+                  return { id: runnerId, name, avatar, phone, rating };
+                });
+              }
+              if (quest.helperId || quest.assignedRunnerId) {
+                const singleId = quest.helperId || quest.assignedRunnerId || '';
+                const applicantMatch = quest.applicants?.find(a => a.userId === singleId);
+                const name = applicantMatch?.name || quest.helperName || (lang === 'ar' ? 'العامل' : 'Worker');
+                const avatar = applicantMatch?.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}&backgroundColor=111827`;
+                const phone = applicantMatch?.phone || quest.helperPhone || '0550000000';
+                const rating = applicantMatch?.rating || 5.0;
+                return [{ id: singleId, name, avatar, phone, rating }];
+              }
+              return [];
+            })();
+            const hasAssignedWorker = assignedWorkers.length > 0;
+            const isPendingVerification = quest.status === 'pending_verification';
+            const isCompleted = quest.status === 'completed';
+            const isDisputed = quest.status === 'disputed';
+            const isOngoing = quest.status === 'booked' || quest.status === 'arrived' || quest.status === 'active';
+            const canDelete = !hasAssignedWorker && quest.status === 'active';
 
- return (
- <div
- key={quest.id}
- id={`quest-${quest.id}`}
- className={`bg-white border rounded-[2rem] p-6 space-y-5 shadow-sm transition-all duration-300 relative ${
- showHistory 
- ? 'grayscale opacity-75 border-slate-200 bg-slate-50/50' 
- : initialSelectedQuestId === quest.id
- ? 'border-[#FF3B7C] ring-4 ring-[#FF3B7C]/15 scale-[1.01]'
- : 'border-[#1F2A44] hover:border-[#FF3B7C] hover:shadow-lg'
- }`}
- >
- {/* Header: Status, Category, and Reward */}
- <div className="flex justify-between items-center gap-4 border-b border-slate-100 pb-3">
- <div className="flex items-center gap-2 flex-wrap text-start">
- <span className="text-[10px] font-black px-3 py-1 rounded-full bg-[#1F2A44]/5 text-[#1F2A44] border border-[#1F2A44]/10 uppercase tracking-wider">
- {quest.category}
- </span>
- 
- {isAvailable && (
- <span className="text-[10px] font-black px-3 py-1 rounded-full bg-sky-50 text-sky-600 border border-sky-200 flex items-center gap-1">
- <span className="w-1.5 h-1.5 rounded-full bg-sky-500 animate-ping"></span>
- {lang === 'ar' ? 'مفتوح للتقديم' : 'Open'}
- </span>
- )}
- {isClaimed && (
- <span className="text-[10px] font-black px-3 py-1 rounded-full bg-blue-50 text-blue-600 border border-blue-200 flex items-center gap-1">
- <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
- {lang === 'ar' ? 'تم التعيين' : 'Assigned'}
- </span>
- )}
- {isSubmitted && (
- <span className="text-[10px] font-black px-3 py-1 rounded-full bg-[#FF9800]/10 text-[#E65100] border border-[#FF9800]/20 animate-pulse flex items-center gap-1">
- <span className="w-1.5 h-1.5 rounded-full bg-[#FF9800]"></span>
- {lang === 'ar' ? 'تم استلام الإنجاز' : 'Proof Submitted'}
- </span>
- )}
- {isFinished && (
- <span className="text-[10px] font-black px-3 py-1 rounded-full bg-sky-50 text-sky-700 border border-sky-200 flex items-center gap-1">
- <span className="w-1.5 h-1.5 rounded-full bg-sky-500"></span>
- {lang === 'ar' ? 'مكتمل' : 'Completed'}
- </span>
- )}
- </div>
+            // Top status accent color
+            const statusColor = isCompleted 
+              ? 'bg-emerald-500' 
+              : isDisputed 
+              ? 'bg-[#FF3B7C]' 
+              : isPendingVerification 
+              ? 'bg-amber-500' 
+              : isOngoing && hasAssignedWorker 
+              ? 'bg-[#38BDF8]' 
+              : 'bg-emerald-500';
 
- <div className="shrink-0">
- <span className="text-[#FF3B7C] font-black text-sm md:text-base font-mono block bg-[#FF3B7C]/5 px-3.5 py-1.5 rounded-2xl border border-[#FF3B7C]/20 shadow-2xs">
- {quest.cashReward} DA
- </span>
- </div>
- </div>
+            return (
+              <div 
+                key={quest.id} 
+                className={`bg-white dark:bg-slate-900 border rounded-3xl overflow-hidden shadow-sm transition-all duration-300 relative ${
+                  showHistory 
+                    ? 'grayscale opacity-75 border-slate-200 dark:border-slate-800' 
+                    : 'border-slate-200 dark:border-slate-800 hover:border-[#1F2A44] dark:hover:border-sky-500 hover:shadow-xl'
+                }`}
+              >
+                {/* 1. Top Status Accent Strip */}
+                <div className={`h-1.5 w-full ${statusColor}`} />
 
- {/* Title and Location */}
- <div className="space-y-2 text-start">
- <h3 className="font-black text-xl md:text-2xl text-sky-500 dark:text-sky-400 leading-snug tracking-tight break-words">
- {quest.title}
- </h3>
- <div className="inline-flex items-center gap-1.5 text-xs text-slate-700 bg-slate-100/80 px-3 py-1.5 rounded-2xl font-bold">
- <MapPin className="w-3.5 h-3.5 text-sky-600 shrink-0" />
- <span className="truncate">{quest.location || (lang === 'ar' ? 'الموقع الميداني' : 'Field Location')}</span>
- </div>
- </div>
+                <div className="p-5 space-y-4">
+                  {/* 2. Title, Status Badge & Delete Action (Clean & Direct) */}
+                  <div className="flex items-start justify-between gap-3 text-start">
+                    <h3 className="font-black text-base sm:text-lg text-slate-900 dark:text-white leading-snug tracking-tight break-words flex-1">
+                      {quest.title}
+                    </h3>
+                    <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
+                      {quest.status === 'active' && !hasAssignedWorker && (
+                        <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                          {lang === 'ar' ? 'متاح للتقديم' : 'Open'}
+                        </span>
+                      )}
+                      {isOngoing && hasAssignedWorker && (
+                        <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-[#38BDF8]/10 text-sky-600 dark:text-sky-400 border border-[#38BDF8]/20 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#38BDF8] animate-pulse" />
+                          {lang === 'ar' ? 'قيد التنفيذ' : 'In Progress'}
+                        </span>
+                      )}
+                      {isPendingVerification && (
+                        <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
+                          {lang === 'ar' ? 'بانتظار التأكيد المالي' : 'Pending Review'}
+                        </span>
+                      )}
+                      {isCompleted && (
+                        <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                          {lang === 'ar' ? 'مكتملة' : 'Completed'}
+                        </span>
+                      )}
+                      {isDisputed && (
+                        <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-rose-500/10 text-[#FF3B7C] border border-rose-500/20">
+                          {lang === 'ar' ? 'نزاع مالي' : 'Dispute'}
+                        </span>
+                      )}
+                      {canDelete && (
+                        <button
+                          type="button"
+                          onClick={() => setDeleteConfirmQuestId(quest.id)}
+                          className="p-1 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30 transition cursor-pointer"
+                          title={lang === 'ar' ? 'حذف المهمة' : 'Delete Quest'}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
 
- 
-  
- {/* Minimal Ending Notice if active */}
- {quest.status === "ending" && (
- <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-xs font-bold text-amber-900 dark:text-amber-200 text-center">
- {lang === "ar" ? "هذا العقد في مرحلة إنهاء الارتباط" : "Contract in termination process"}
- </div>
- )}
+                  {/* 4. Counterpart: Assigned Worker(s) with Inline Direct Action Icons OR Open Assignment Status */}
+                  <div className="space-y-2 pt-1 text-start">
+                    {hasAssignedWorker ? (
+                      <div className="space-y-2">
+                        {assignedWorkers.map((worker) => (
+                          <div 
+                            key={worker.id}
+                            className="flex items-center justify-between gap-3 p-3 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200/60 dark:border-slate-700/60 w-full"
+                          >
+                            <div 
+                              onClick={() => onViewPublicProfile && worker.id && onViewPublicProfile(worker.id)}
+                              className={`flex items-center gap-2.5 min-w-0 flex-1 ${worker.id ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+                            >
+                              <img src={worker.avatar} alt={worker.name} className="w-9 h-9 rounded-full object-cover border border-slate-200 dark:border-slate-700 shrink-0" />
+                              <div className="min-w-0 flex-1">
+                                <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold block uppercase tracking-wider">
+                                  {lang === 'ar' ? 'العامل المنفذ' : 'Worker'}
+                                </span>
+                                <span className="text-xs font-black text-slate-900 dark:text-white truncate flex items-center gap-1">
+                                  {worker.name}
+                                  <span className="text-[#FFD34D] font-mono font-bold text-[10px]">★ {worker.rating || '5.0'}</span>
+                                </span>
+                              </div>
+                            </div>
 
- {/* Compact Hired Worker Profile Row */}
- {(quest.helperId || quest.assignedRunnerId) && (() => {
- const runnerId = quest.helperId || quest.assignedRunnerId;
- const name = quest.helperName || (lang === 'ar' ? 'المساعد الميداني' : 'Assistant');
- const avatar = `https://api.dicebear.com/7.x/initials/svg?seed=${name}&backgroundColor=f43f5e`;
- return (
- <div className="flex flex-col gap-2.5 p-3.5 bg-slate-50/80 rounded-2xl border border-slate-100/80 hover:bg-slate-50 transition-colors duration-200 w-full">
- <div 
- onClick={() => onViewPublicProfile && onViewPublicProfile(runnerId!)}
- className="flex items-center gap-2.5 cursor-pointer hover:opacity-85 transition-opacity w-full"
- >
- <img src={avatar} alt={name} className="w-9 h-9 rounded-full object-cover border border-slate-200 shadow-xs shrink-0" />
- <div className="text-start flex-1 min-w-0">
- <span className="text-[9px] text-slate-400 block font-black uppercase tracking-wider whitespace-nowrap">
- {lang === 'ar' ? 'المساعد المعيّن' : 'Hired Assistant'}
- </span>
- <span className="text-xs font-extrabold text-slate-800 leading-none flex items-center gap-1 mt-0.5">
- <span className="truncate">{name}</span>
- <span className="text-amber-500 font-mono font-bold text-[10px] shrink-0">★ 4.9</span>
- </span>
- </div>
- </div>
- 
- <div className="flex items-center gap-2 pt-2 border-t border-slate-200/60 w-full">
- <button
- type="button"
- onClick={() => {
- window.dispatchEvent(new CustomEvent('open-chat', {
- detail: {
- chatId: `${quest.id}_${quest.creatorId}_${runnerId}`,
- questTitle: quest.title,
- recipientName: name,
- recipientAvatar: avatar
- }
- }));
- }}
- className="flex-1 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white font-extrabold text-xs py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer"
- >
- <MessageSquare className="w-3.5 h-3.5 text-sky-400 shrink-0" />
- <span>{lang === 'ar' ? 'دردشة' : 'Chat'}</span>
- </button>
+                            {/* Inline Icon-Only Chat & Call for Employer facing this Worker */}
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  window.dispatchEvent(new CustomEvent('open-chat', {
+                                    detail: {
+                                      chatId: `${quest.id}_${currentUserId}_${worker.id}`,
+                                      questTitle: quest.title,
+                                      recipientName: worker.name,
+                                      recipientAvatar: worker.avatar
+                                    }
+                                  }));
+                                }}
+                                className="w-8 h-8 rounded-xl bg-[#1F2A44] hover:bg-[#152037] active:scale-90 text-white flex items-center justify-center transition-all shadow-xs cursor-pointer"
+                                title={lang === 'ar' ? 'دردشة مباشرة' : 'Chat'}
+                                aria-label={lang === 'ar' ? 'دردشة مباشرة' : 'Chat'}
+                              >
+                                <MessageSquare className="w-4 h-4 text-[#38BDF8]" />
+                              </button>
 
- {quest.helperPhone ? (
- <a
- href={`tel:${quest.helperPhone}`}
- className="flex-1 bg-sky-600 hover:bg-sky-700 active:scale-95 text-white font-extrabold text-xs py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-sm text-center"
- >
- <Phone className="w-3.5 h-3.5 text-white shrink-0" />
- <span>{lang === 'ar' ? 'اتصال' : 'Direct Call'}</span>
- </a>
- ) : (
- <button
- type="button"
- onClick={() => {
- alert(
- lang === 'ar'
- ? 'رقم هاتف العامل غير متوفر في حسابه حالياً'
- : 'Worker phone number is not available'
- );
- }}
- className="flex-1 bg-sky-600/20 text-sky-800 active:scale-95 font-extrabold text-xs py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer text-center"
- >
- <Phone className="w-3.5 h-3.5 text-sky-700 shrink-0" />
- <span>{lang === 'ar' ? 'اتصال' : 'Call'}</span>
- </button>
- )}
- </div>
- </div>
- );
- })()}
+                              <a
+                                href={`tel:${worker.phone}`}
+                                className="w-8 h-8 rounded-xl bg-[#38BDF8] hover:bg-sky-500 active:scale-90 text-slate-950 flex items-center justify-center transition-all shadow-xs"
+                                title={lang === 'ar' ? 'اتصال هاتفي' : 'Call'}
+                                aria-label={lang === 'ar' ? 'اتصال هاتفي' : 'Call'}
+                              >
+                                <Phone className="w-4 h-4 text-slate-950" />
+                              </a>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2.5 p-3 bg-emerald-50/60 dark:bg-emerald-950/20 rounded-2xl border border-emerald-100 dark:border-emerald-900/40 text-start w-full">
+                        <div className="w-8 h-8 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                          <CheckCircle2 className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold block uppercase tracking-wider">
+                            {lang === 'ar' ? 'حالة التعيين' : 'Assignment'}
+                          </span>
+                          <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300 truncate block">
+                            {lang === 'ar' ? 'بانتظار اختيار عامل' : 'Awaiting worker'}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
 
- {/* Applicants pipeline list */}
- {(() => {
- const combinedApps: Applicant[] = [
- ...(quest.applicants || []),
- ...((quest.jobApplicants || []).map(ja => ({
- userId: ja.applicantId,
- name: ja.applicantName,
- avatar: ja.applicantAvatar,
- phone: ja.applicantPhone || "",
- rating: 5.0,
- questsCompleted: 0
- })))
- ].filter((app, idx, self) => idx === self.findIndex(a => a.userId === app.userId));
+                  {/* 6. Applicants List (if quest is open and has applicants) */}
+                  {!hasAssignedWorker && quest.applicants && quest.applicants.length > 0 && (
+                    <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-start">
+                      <span className="text-xs font-black text-slate-700 dark:text-slate-200 block">
+                        {lang === 'ar' ? 'المتقدمون لتنفيذ المهمة' : 'Applicants'} ({quest.applicants.length})
+                      </span>
+                      <div className="space-y-2">
+                        {quest.applicants.map((applicant) => (
+                          <div key={applicant.userId} className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200/60 dark:border-slate-700">
+                            <div 
+                              onClick={() => setSelectedApplicantData({ quest, applicant })}
+                              className="flex items-center gap-2 cursor-pointer hover:opacity-80"
+                            >
+                              <img src={applicant.avatar} alt={applicant.name} className="w-8 h-8 rounded-full object-cover" />
+                              <div>
+                                <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">{applicant.name}</span>
+                                <span className="text-[10px] text-amber-500 font-bold flex items-center gap-0.5">★ {applicant.rating || '5.0'}</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedApplicantData({ quest, applicant })}
+                                className="px-3 py-1.5 bg-[#FF3B7C] hover:bg-[#FF3B7C]/90 text-white text-[11px] font-black rounded-xl transition cursor-pointer shadow-xs"
+                              >
+                                {lang === 'ar' ? 'معاينة وقبول' : 'Review & Accept'}
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
- if (combinedApps.length === 0) return null;
- if (!isAvailable && quest.status !== "applications" && quest.status !== "open" && (quest.status as string) !== "pending") return null;
+                  {/* 7. Verification / Proof Review Action for Employer */}
+                  {isPendingVerification && (
+                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => setRatingQuestId(quest.id)}
+                        className="w-full bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-black text-xs py-3 rounded-2xl shadow-md transition cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        <CheckCircle2 className="w-4 h-4 text-white" />
+                        <span>{lang === 'ar' ? 'تأكيد إتمام العمل وسداد المستحقات' : 'Confirm Completion & Pay'}</span>
+                      </button>
+                    </div>
+                  )}
 
- return (
- <div className="p-4 bg-slate-50 border border-slate-150/50 rounded-2xl space-y-3.5 text-start">
- <div className="text-[10px] font-black text-slate-700 flex items-center gap-2 uppercase tracking-wider">
- <span className="relative flex h-2 w-2">
- <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#FF3B7C] opacity-75"></span>
- <span className="relative inline-flex rounded-full h-2 w-2 bg-[#FF3B7C]"></span>
- </span>
- <span>{lang === "ar" ? `المتقدمون لتنفيذ المهمة (${combinedApps.length})` : `Applicants (${combinedApps.length})`}</span>
- </div>
- <div className="flex flex-wrap gap-2.5">
- {combinedApps.map((app) => (
- <button
- key={app.userId}
- onClick={() => setSelectedApplicantData({ quest, applicant: app })}
- className="flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 py-2 px-4 rounded-full text-xs font-extrabold transition-all duration-200 cursor-pointer shadow-2xs hover:shadow-xs hover:border-slate-400"
- >
- <img src={app.avatar} alt={app.name} className="w-5.5 h-5.5 rounded-full object-cover shadow-2xs border border-white" />
- <span className="text-slate-800">{app.name}</span>
- <span className="text-[10px] text-amber-500 font-mono font-black flex items-center gap-0.5"> {app.rating || "5.0"}</span>
- </button>
- ))}
- </div>
- </div>
- );
- })()}
- {false && (
- <div className="p-4 bg-slate-50 border border-slate-150/50 rounded-2xl space-y-3.5 text-start">
- <div className="text-[10px] font-black text-slate-700 flex items-center gap-2 uppercase tracking-wider">
- <span className="relative flex h-2 w-2">
- <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#FF3B7C] opacity-75"></span>
- <span className="relative inline-flex rounded-full h-2 w-2 bg-[#FF3B7C]"></span>
- </span>
- <span>{lang === 'ar' ? `المتقدمون لتنفيذ المهمة (${quest.applicants.length})` : `Applicants (${quest.applicants.length})`}</span>
- </div>
- <div className="flex flex-wrap gap-2.5">
- {quest.applicants.map((app) => (
- <button
- key={app.userId}
- onClick={() => setSelectedApplicantData({ quest, applicant: app })}
- className="flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 py-2 px-4 rounded-full text-xs font-extrabold transition-all duration-200 cursor-pointer shadow-2xs hover:shadow-xs hover:border-slate-400"
- >
- <img src={app.avatar} alt={app.name} className="w-5.5 h-5.5 rounded-full object-cover shadow-2xs border border-white" />
- <span className="text-slate-800">{app.name}</span>
- <span className="text-[10px] text-amber-500 font-mono font-black flex items-center gap-0.5"> {app.rating || '5.0'}</span>
- </button>
- ))}
- </div>
- </div>
- )}
+                  {/* 8. View Full Details Button for Employer */}
+                  {onViewQuestDetail && (
+                    <div className="pt-1">
+                      <button
+                        type="button"
+                        onClick={() => onViewQuestDetail(quest.id)}
+                        className="w-full bg-slate-100/80 hover:bg-slate-200/80 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-750 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700 font-black text-xs py-2.5 rounded-xl transition duration-200 cursor-pointer flex items-center justify-center gap-2"
+                      >
+                        <FileText className="w-3.5 h-3.5 text-slate-500" />
+                        <span>{lang === 'ar' ? 'عرض تفاصيل الكويست' : 'View Quest Details'}</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="text-center py-12 px-4 bg-white dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/60 rounded-3xl space-y-3">
+          <div className="w-14 h-14 bg-slate-100 dark:bg-slate-700 rounded-full flex items-center justify-center mx-auto text-slate-400">
+            <Plus className="w-6 h-6 text-[#FF3B7C]" />
+          </div>
+          <h4 className="font-extrabold text-sm text-slate-800 dark:text-slate-200">
+            {lang === 'ar' ? 'لا توجد طلبات معلنة حالياً' : 'No posted quests yet'}
+          </h4>
+          <p className="text-xs text-slate-400 max-w-xs mx-auto">
+            {lang === 'ar' ? 'قم بنشر مهمة جديدة ليصلك عروض من المساعدين والعمال الميدانيين.' : 'Post a new quest to receive offers from nearby helpers.'}
+          </p>
+        </div>
+      )}
+    </div>
+  )}
 
- {/* Pending proof view for creator verification */}
- {isSubmitted && quest.proofImageUrl && (
- <div className="p-4 bg-amber-50/30 border border-amber-200 rounded-2xl space-y-3 text-start">
- <div className="text-xs font-extrabold text-amber-800 flex items-center gap-1.5">
- <Sparkles className="w-4 h-4 text-amber-600 fill-amber-500" />
- <span>{lang === 'ar' ? 'صورة إثبات الإنجاز المرفوعة بواسطة المساعد:' : 'Visual completion proof uploaded:'}</span>
- </div>
- <div 
-   onClick={() => {
-     setLightboxImage(quest.proofImageUrl!);
-     setLightboxMeta({ title: lang === 'ar' ? 'إثبات إنجاز المهمة' : 'Completion Proof', subtitle: quest.title, caption: quest.description });
-   }}
-   className="overflow-hidden rounded-xl border border-amber-200 shadow-2xs max-h-56 bg-white flex items-center justify-center cursor-zoom-in group relative"
- >
-   <img 
-     src={quest.proofImageUrl} 
-     alt="Proof of completion"
-     className="w-full object-cover max-h-56 group-hover:scale-[1.01] transition duration-300"
-   />
-   <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/60 backdrop-blur-xs rounded-lg text-white text-[10px] font-bold flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-     <span>{lang === 'ar' ? 'تكبير' : 'Zoom'}</span>
-   </div>
- </div>
- </div>
- )}
-
- {/* Action buttons footer */}
- <div className="flex flex-col gap-2 pt-2 border-t border-slate-150/40 w-full">
- <div className="flex gap-2 w-full">
- {(((quest.status as string) === 'pending' || quest.status === 'open' || !quest.assignedRunnerId) && !quest.helperId && !showHistory) && (
- <button
- id={`delete-quest-btn-${quest.id}`}
- onClick={() => setDeleteConfirmQuestId(quest.id)}
- className="w-full bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-150/55 font-extrabold text-xs py-3 rounded-2xl transition duration-200 cursor-pointer flex items-center justify-center gap-1.5"
- >
- <Trash2 className="w-4 h-4 text-rose-500" />
- <span>{lang === 'ar' ? 'إلغاء المنشور وحذف الطلب' : 'Cancel & Delete Post'}</span>
- </button>
- )}
-
- {((isClaimed || !!quest.helperId || !!quest.assignedRunnerId) && !isFinished && quest.status !== 'cancelled' && quest.status !== 'cancelled_by_timeout') && (
- <div className="flex gap-2 w-full">
- <button
- type="button"
- onClick={() => {
- if (quest.status === 'arrived' || quest.status === 'pending_verification' || quest.status === 'completed') {
- alert(lang === 'ar'
- ? ' لا يمكن إلغاء العقد بعد وصول العامل إلى الموقع الميداني أو إكمال المهمة!'
- : ' Cannot cancel contract after the worker has arrived at the location!'
- );
- return;
- }
- if (window.confirm(lang === 'ar' ? 'هل أنت متأكد من رغبتك في إلغاء العقد وحذف الكويست وتحرير الارتباط؟' : 'Are you sure you want to cancel contract and delete quest?')) {
- if (onForceReleaseContract) {
- onForceReleaseContract(quest.id);
- }
- }
- }}
- className={`w-full py-2.5 px-4 font-bold text-xs rounded-2xl transition duration-200 flex items-center justify-center gap-1.5 ${
- (quest.status === 'arrived' || quest.status === 'pending_verification' || quest.status === 'completed')
- ? 'opacity-40 cursor-not-allowed text-gray-400 bg-gray-50 border border-gray-200'
- : 'hover:bg-rose-50 text-rose-600 border border-rose-200 hover:border-rose-300 cursor-pointer bg-white'
- }`}
- title={
- (quest.status === 'arrived' || quest.status === 'pending_verification' || quest.status === 'completed')
- ? (lang === 'ar' ? 'وصل العامل - يمنع إلغاء العقد' : 'Worker Arrived - Cancellation Blocked')
- : (lang === 'ar' ? 'إلغاء العقد الميداني' : 'Cancel Contract')
- }
- >
- <X className="w-4 h-4 text-rose-500" />
- <span>{lang === 'ar' ? 'إلغاء العقد' : 'Cancel Contract'}</span>
- </button>
- </div>
- )}
-
- {isSubmitted && (
- <div className="w-full">
- <button
- onClick={() => {
- setRatingQuestId(quest.id);
- setRatingVal(5);
- setRatingComment('');
- }}
- className="w-full bg-[#FF3B7C] hover:bg-[#FF3B7C]/95 text-white font-extrabold text-xs py-3.5 rounded-2xl transition duration-200 flex items-center justify-center gap-2 shadow-lg shadow-[#FF3B7C]/15 cursor-pointer"
- >
- <CheckCircle2 className="w-4.5 h-4.5 text-white" />
- <span>{lang === 'ar' ? 'تأكيد إتمام العمل وتحرير الأموال' : 'Confirm Completion & Release Cash'}</span>
- </button>
- </div>
- )}
-
- {isFinished && (
- <div className="w-full text-center bg-slate-50 py-3 rounded-2xl text-xs text-slate-400 font-bold border border-slate-150/50">
- {lang === 'ar' ? 'تم الاكتمال والسداد بالكامل ' : 'Completed and fully paid '}
- </div>
- )}
- </div>
-
- {onViewQuestDetail && (
- <button
- onClick={() => onViewQuestDetail(quest.id)}
- className="w-full bg-[#1F2A44]/5 hover:bg-[#1F2A44]/10 text-[#1F2A44] border border-[#1F2A44]/10 font-bold text-xs py-2.5 rounded-2xl transition duration-200 cursor-pointer flex items-center justify-center gap-1.5"
- >
- <span>{lang === 'ar' ? 'تفاصيل كاملة ' : 'Full Details '}</span>
- </button>
- )}
- </div>
- </div>
- );
- })}
- </div>
- )}
- </div>
- )}
-
- {/* Bottom Archive & History Access Button */}
+  {/* Bottom Archive & History Access Button */}
  <div className="pt-6 pb-2 flex justify-center">
  <button
  type="button"

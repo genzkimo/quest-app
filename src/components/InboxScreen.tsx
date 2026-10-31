@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { db, auth, handleFirestoreError, OperationType } from '../utils/firebase';
 import { doc, updateDoc, arrayUnion, onSnapshot, getDoc, setDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { Quest } from '../types';
 
 interface InboxScreenProps {
  userChats: any[];
@@ -521,55 +522,110 @@ function InboxScreen({
  return !readBy.includes(currentUserId);
  };
 
+  // Helper to find the active or related quest for this chat
+  const getRelatedQuestForChat = (chat: any): Quest | null => {
+    if (!chat) return null;
+    const qId = chat.questId || (chat.id ? chat.id.split('_')[0] : null);
+    if (qId) {
+      const directMatch = quests.find(item => item.id === qId);
+      if (directMatch) return directMatch;
+    }
+    const details = getInboxItemDetails(chat);
+    const otherUserId = details.recipientId || (chat.ownerId === currentUserId ? chat.applicantId : chat.ownerId);
+    if (otherUserId) {
+      const activeMatch = quests.find(q => {
+        if (['completed', 'cancelled', 'expired', 'cancelled_by_timeout', 'stale_cleared', 'terminated', 'archived', 'withdrawn'].includes(q.status)) {
+          return false;
+        }
+        if (q.archived) return false;
+        const isUserCreator = q.creatorId === currentUserId;
+        const isOtherHelper = q.helperId === otherUserId || q.assignedRunnerId === otherUserId || q.assignedRunnerIds?.includes(otherUserId) || q.applicants?.some(a => a.userId === otherUserId);
+        const isOtherCreator = q.creatorId === otherUserId;
+        const isUserHelper = q.helperId === currentUserId || q.assignedRunnerId === currentUserId || q.assignedRunnerIds?.includes(currentUserId) || q.applicants?.some(a => a.userId === currentUserId);
+        return (isUserCreator && isOtherHelper) || (isOtherCreator && isUserHelper);
+      });
+      if (activeMatch) return activeMatch;
+    }
+    return null;
+  };
+
   // Check if archived
   const isChatArchived = (chat: any) => {
     if (!chat) return false;
     if (chat.isArchived === true || chat.isArchived === 'true') return true;
-    const qId = chat.questId || (chat.id ? chat.id.split('_')[0] : null);
-    if (!qId) return true;
-    const q = quests.find(item => item.id === qId);
-    if (!q) return true;
-    if (
-      q.archived === true ||
-      (q as any).archived === 'true' ||
-      ['completed', 'cancelled', 'expired', 'cancelled_by_timeout', 'stale_cleared', 'terminated', 'archived', 'withdrawn'].includes(q.status)
-    ) {
-      return true;
+    const relatedQuest = getRelatedQuestForChat(chat);
+    if (relatedQuest) {
+      return (
+        relatedQuest.archived === true ||
+        (relatedQuest as any).archived === 'true' ||
+        ['completed', 'cancelled', 'expired', 'cancelled_by_timeout', 'stale_cleared', 'terminated', 'archived', 'withdrawn'].includes(relatedQuest.status)
+      );
     }
     return false;
   };
- // Check if chat is locked (pending booking acceptance)
- const isChatPendingBooking = (chat: any) => {
- if (!chat) return false;
- const chatParts = chat.id.split('_');
- const qId = chatParts[0] || chat.questId;
- const applicantId = chatParts[2] || chat.applicantId;
- const relatedQuest = quests.find(q => q.id === qId);
- if (!relatedQuest) return false;
- 
- // If quest status is active/booked/arrived or if applicantId/currentUserId is assigned
- const isContractActive = (
- relatedQuest.status === 'booked' ||
- relatedQuest.status === 'active' ||
- relatedQuest.status === 'arrived' ||
- relatedQuest.status === 'pending_verification' ||
- relatedQuest.status === 'completed' ||
- relatedQuest.status === 'disputed'
- );
 
- const isApplicantAssigned = (
- relatedQuest.helperId === applicantId ||
- relatedQuest.assignedRunnerId === applicantId ||
- relatedQuest.assignedRunnerIds?.includes(applicantId) ||
- relatedQuest.helperId === currentUserId ||
- relatedQuest.assignedRunnerId === currentUserId ||
- relatedQuest.assignedRunnerIds?.includes(currentUserId) ||
- relatedQuest.creatorId === currentUserId
- );
+  // Check if chat is locked (pending booking acceptance)
+  const isChatPendingBooking = (chat: any) => {
+    if (!chat) return false;
+    const relatedQuest = getRelatedQuestForChat(chat);
+    if (!relatedQuest) return false;
 
- return !(isContractActive || isApplicantAssigned);
- };
+    const isContractActive = (
+      relatedQuest.status === 'booked' ||
+      relatedQuest.status === 'active' ||
+      relatedQuest.status === 'arrived' ||
+      relatedQuest.status === 'pending_verification' ||
+      relatedQuest.status === 'completed' ||
+      relatedQuest.status === 'disputed' ||
+      relatedQuest.status === 'hired' ||
+      relatedQuest.status === 'active_employment'
+    );
 
+    const details = getInboxItemDetails(chat);
+    const otherUserId = details.recipientId || (chat.ownerId === currentUserId ? chat.applicantId : chat.ownerId);
+
+    const isAssigned = (
+      relatedQuest.helperId === currentUserId ||
+      relatedQuest.assignedRunnerId === currentUserId ||
+      relatedQuest.assignedRunnerIds?.includes(currentUserId) ||
+      relatedQuest.creatorId === currentUserId ||
+      (otherUserId && (
+        relatedQuest.helperId === otherUserId ||
+        relatedQuest.assignedRunnerId === otherUserId ||
+        relatedQuest.assignedRunnerIds?.includes(otherUserId) ||
+        relatedQuest.creatorId === otherUserId
+      ))
+    );
+
+    if (isContractActive && isAssigned) {
+      return false;
+    }
+
+    if (relatedQuest.status === 'open' || relatedQuest.status === 'applications') {
+      const isApplicantAccepted = (
+        relatedQuest.helperId === currentUserId ||
+        relatedQuest.assignedRunnerId === currentUserId ||
+        relatedQuest.assignedRunnerIds?.includes(currentUserId) ||
+        (otherUserId && (
+          relatedQuest.helperId === otherUserId ||
+          relatedQuest.assignedRunnerId === otherUserId ||
+          relatedQuest.assignedRunnerIds?.includes(otherUserId)
+        ))
+      );
+      return !isApplicantAccepted;
+    }
+
+    return false;
+  };
+
+  // Listen to close-active-chat event from system/hardware back
+  useEffect(() => {
+    const handleCloseActiveChat = () => {
+      setSelectedChat(null);
+    };
+    window.addEventListener('close-active-chat', handleCloseActiveChat);
+    return () => window.removeEventListener('close-active-chat', handleCloseActiveChat);
+  }, []);
  // Local/real-time synchronization for the selected chat messages
  useEffect(() => {
  if (!selectedChat) {
@@ -627,35 +683,32 @@ function InboxScreen({
  const handleSendChatMessage = async () => {
  if (!chatInputText.trim() || !selectedChat) return;
 
- const chatParts = selectedChat.id.split('_');
- const qId = chatParts[0];
- const creatorId = chatParts[1];
-
- // Assignment and contract state checking
  if (isChatPendingBooking(selectedChat)) {
- alert(lang === 'ar'
- ? ' التواصل بالدردشة مغلق حالياً، وسيتم تفعيله تلقائياً فور قبول صاحب المهمة لطلب الحجز.'
- : ' Chat is locked until the creator accepts the booking request.'
- );
  return;
  }
 
- if (currentUserId !== creatorId) {
- const relatedQuest = quests.find(q => q.id === qId);
- const isAssigned = relatedQuest && (
+ if (isChatArchived(selectedChat)) {
+ return;
+ }
+
+ const relatedQuest = getRelatedQuestForChat(selectedChat);
+ if (relatedQuest) {
+ const details = getInboxItemDetails(selectedChat);
+ const otherUserId = details.recipientId || (selectedChat.ownerId === currentUserId ? selectedChat.applicantId : selectedChat.ownerId);
+
+ const isAuthorizedParticipant = (
+ relatedQuest.creatorId === currentUserId ||
  relatedQuest.helperId === currentUserId ||
  relatedQuest.assignedRunnerId === currentUserId ||
- relatedQuest.assignedRunnerIds?.includes(currentUserId)
- ) && (
- relatedQuest.status === 'booked' ||
- relatedQuest.status === 'active' ||
- relatedQuest.status === 'arrived' ||
- relatedQuest.status === 'pending_verification' ||
- relatedQuest.status === 'completed' ||
- relatedQuest.status === 'disputed'
+ relatedQuest.assignedRunnerIds?.includes(currentUserId) ||
+ relatedQuest.creatorId === otherUserId ||
+ relatedQuest.helperId === otherUserId ||
+ relatedQuest.assignedRunnerId === otherUserId ||
+ relatedQuest.assignedRunnerIds?.includes(otherUserId) ||
+ relatedQuest.applicants?.some((a: any) => a.userId === currentUserId || a.userId === otherUserId)
  );
- if (!isAssigned) {
- alert(t.notAssignedError);
+
+ if (!isAuthorizedParticipant && currentUserId !== selectedChat.ownerId && currentUserId !== selectedChat.applicantId) {
  return;
  }
  }
@@ -1294,7 +1347,7 @@ function InboxScreen({
 
   {/* Chat Input Dock */}
   {isChatArchived(selectedChat) ? (
-    <div className={`p-4 bg-amber-50/80 text-center text-amber-800 text-xs font-black flex items-center justify-center gap-2 shrink-0 border-t border-amber-200/60 ${isNavVisible ? "pb-20 md:pb-4" : "pb-4"}`}>
+    <div className="p-4 bg-amber-50/80 text-center text-amber-800 text-xs font-black flex items-center justify-center gap-2 shrink-0 border-t border-amber-200/60 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
       <FolderArchive className="w-4 h-4 text-amber-600 shrink-0" />
       <span>
         {lang === "ar" 
@@ -1305,12 +1358,12 @@ function InboxScreen({
       </span>
     </div>
   ) : isChatPendingBooking(selectedChat) ? (
-    <div className={`p-4 bg-amber-50 text-center text-amber-900 text-xs font-black flex items-center justify-center gap-2 shrink-0 ${isNavVisible ? "pb-20 md:pb-4" : "pb-4"}`}>
+    <div className="p-4 bg-amber-50 text-center text-amber-900 text-xs font-black flex items-center justify-center gap-2 shrink-0 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
       <Lock className="w-4 h-4 text-amber-600 shrink-0" />
       <span>{lang === "ar" ? " التواصل بالدردشة مغلق حالياً، وسيتم تفعيله فور قبول صاحب المهمة لطلب الحجز " : " Chat is locked until the creator accepts the booking request "}</span>
     </div>
   ) : (
-    <div className={`p-3 bg-white/95 dark:bg-[#151F32]/95 backdrop-blur-md flex items-center gap-2 shrink-0 border-t border-slate-100 dark:border-slate-800 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] ${isNavVisible ? "mb-16 md:mb-0" : "mb-0"}`}>
+    <div className="p-3 bg-white/95 dark:bg-[#151F32]/95 backdrop-blur-md flex items-center gap-2 shrink-0 border-t border-slate-100 dark:border-slate-800 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] mb-0">
       <input
         type="text"
         placeholder={t.typeMessage}

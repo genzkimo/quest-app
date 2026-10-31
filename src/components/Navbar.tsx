@@ -47,6 +47,7 @@ interface NavbarProps {
  onCloseGlobalBroadcast?: () => void;
  onNavVisibilityChange?: (visible: boolean) => void;
  isHeaderHidden?: boolean;
+ isInsideChat?: boolean;
 }
 
 function Navbar({ 
@@ -56,7 +57,7 @@ function Navbar({
  unreadTasksCount,
  tokenBalance,
  lang,
- 
+
  audioEnabled = true,
  unreadNotificationsCount,
  unreadChatsCount,
@@ -73,12 +74,19 @@ function Navbar({
  globalBroadcast,
  onCloseGlobalBroadcast,
  onNavVisibilityChange,
- isHeaderHidden = false
+ isHeaderHidden = false,
+ isInsideChat = false
 }: NavbarProps) {
  
  const [showTokenMenu, setShowTokenMenu] = useState(false);
  const [isVisible, setIsVisible] = useState(true);
  const [isTyping, setIsTyping] = useState(false);
+
+ useEffect(() => {
+ if (isInsideChat && onNavVisibilityChange) {
+ onNavVisibilityChange(false);
+ }
+ }, [isInsideChat, onNavVisibilityChange]);
 
  useEffect(() => {
  const isInputElement = (el: Element | null) => {
@@ -440,6 +448,7 @@ function Navbar({
  )}
 
  {/* Bottom bar as sleek modern mobile dock */}
+ {!isInsideChat && (
  <nav 
  style={{ 
  direction: isRtl ? 'rtl' : 'ltr'
@@ -564,6 +573,7 @@ function Navbar({
  })}
  </div>
  </nav>
+ )}
  </>
  );
 }
